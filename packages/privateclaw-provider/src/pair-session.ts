@@ -70,10 +70,15 @@ export async function runPairSession({
     }
 
     writeLine("Waiting for the PrivateClaw app to connect. Press Ctrl+C to stop.");
-    const signal = await waitForShutdownSignal();
-    writeLine(`[privateclaw-provider] received ${signal}, shutting down`);
-    await provider.dispose();
-    return bundle;
+    process.stdin.resume();
+    try {
+      const signal = await waitForShutdownSignal();
+      writeLine(`[privateclaw-provider] received ${signal}, shutting down`);
+      await provider.dispose();
+      return bundle;
+    } finally {
+      process.stdin.pause();
+    }
   } catch (error) {
     await provider.dispose();
     throw error;

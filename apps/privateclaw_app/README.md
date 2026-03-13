@@ -35,6 +35,13 @@ flutter build ios --simulator
 - Play internal testing: `cd android && fastlane internal`
 - Play metadata only: `cd android && fastlane metadata`
 
+You can also run the same lanes from the repository root:
+
+- `npm run ios:testflight`
+- `npm run ios:metadata`
+- `npm run android:internal`
+- `npm run android:metadata`
+
 Note: the first Play Console binary upload for a brand-new app still needs to be done manually in the Play Console once before the `internal` lane can be used for follow-up uploads.
 
 ## Notes

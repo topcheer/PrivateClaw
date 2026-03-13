@@ -12,6 +12,10 @@
     "test": "npm run test --workspace @privateclaw/protocol && npm run test --workspace @privateclaw/relay-server && npm run test --workspace @privateclaw/privateclaw && (cd apps/privateclaw_app && flutter test)",
     "dev:relay": "npm run dev --workspace @privateclaw/relay-server",
     "demo:provider": "npm run demo --workspace @privateclaw/privateclaw",
+    "ios:testflight": "cd apps/privateclaw_app/ios && fastlane beta",
+    "ios:metadata": "cd apps/privateclaw_app/ios && fastlane metadata",
+    "android:internal": "cd apps/privateclaw_app/android && fastlane internal",
+    "android:metadata": "cd apps/privateclaw_app/android && fastlane metadata",
     "publish:provider": "npm publish --workspace @privateclaw/privateclaw --access public",
     "publish:provider:dry-run": "npm publish --dry-run --workspace @privateclaw/privateclaw --access public"
   },

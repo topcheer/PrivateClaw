@@ -235,6 +235,26 @@ flutter build ios --simulator
 - npm protocol package: `@privateclaw/protocol`
 - relay container image: `ghcr.io/topcheer/privateclaw-relay`
 
+## Mobile store delivery
+
+Repository-level shortcuts:
+
+```bash
+npm run ios:testflight
+npm run android:internal
+```
+
+Supporting metadata-only lanes:
+
+```bash
+npm run ios:metadata
+npm run android:metadata
+```
+
+These commands assume your App Store Connect and Play Console credentials are exported as described in `apps/privateclaw_app/fastlane.env.example`.
+
+Important Play Console note: for a brand-new Android app, Google requires the first binary upload to be completed manually in Play Console before automated uploads to the `internal` track can take over.
+
 The provider publish flow is available from the repository root:
 
 ```bash

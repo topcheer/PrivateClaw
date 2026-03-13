@@ -81,19 +81,22 @@ From npm:
 
 ```bash
 openclaw plugins install @privateclaw/privateclaw@latest
+openclaw plugins enable privateclaw
+openclaw config set plugins.entries.privateclaw.config.relayBaseUrl https://relay.example.com
 ```
 
 From this repository during development:
 
 ```bash
 openclaw plugins install --link ./packages/privateclaw-provider
+openclaw plugins enable privateclaw
 ```
 
-Then point the provider at your relay:
+PrivateClaw is an OpenClaw plugin command provider, not a built-in chat transport. That means you do **not** configure it with `openclaw channels add privateclaw`. Instead:
 
-```bash
-export PRIVATECLAW_RELAY_BASE_URL=ws://127.0.0.1:8787
-```
+- use `openclaw plugins install ...` to install it,
+- use `openclaw plugins enable privateclaw` to enable it,
+- and configure it under `plugins.entries.privateclaw.config`.
 
 The provider package also exports `resolveRelayEndpoints(...)` if you want to derive provider and app socket URLs from a single relay base URL:
 
@@ -103,14 +106,36 @@ import { resolveRelayEndpoints } from "@privateclaw/privateclaw";
 const relay = resolveRelayEndpoints("https://relay.example.com");
 ```
 
-### 4. Run the app
+### 4. Choose how to start a session
+
+#### Path A: existing OpenClaw chat channel
+
+Add a normal OpenClaw transport such as Telegram, Discord, or QQ:
+
+```bash
+openclaw channels add --channel telegram --token <token>
+```
+
+Then send `/privateclaw` from that chat surface and scan the returned QR code in the app.
+
+#### Path B: local pairing directly from the OpenClaw CLI
+
+If you want to start a session without another chat app, use the plugin-provided local pair command:
+
+```bash
+openclaw privateclaw pair
+```
+
+This command creates a session immediately and renders the pairing QR code in your terminal. It keeps the provider session alive until you stop it with `Ctrl+C`.
+
+### 5. Run the app
 
 ```bash
 cd apps/privateclaw_app
 flutter run
 ```
 
-Trigger `/privateclaw` from one of your existing OpenClaw channels, scan the QR code in the app, and the secure session will attach to the relay.
+Then either scan the QR code returned by `/privateclaw` from your existing channel, or scan the QR code rendered by `openclaw privateclaw pair`.
 
 ## Self-hosting the relay
 

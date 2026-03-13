@@ -20,13 +20,18 @@ To install it into OpenClaw from npm:
 
 ```bash
 openclaw plugins install @privateclaw/privateclaw@latest
+openclaw plugins enable privateclaw
+openclaw config set plugins.entries.privateclaw.config.relayBaseUrl https://relay.example.com
 ```
 
 For local development from this repository:
 
 ```bash
 openclaw plugins install --link ./packages/privateclaw-provider
+openclaw plugins enable privateclaw
 ```
+
+PrivateClaw is not configured with `openclaw channels add privateclaw`. If you want `/privateclaw` to be available inside Telegram/Discord/QQ, add one of those normal OpenClaw channels separately with `openclaw channels add --channel ...`.
 
 ## Relay endpoints
 
@@ -78,6 +83,16 @@ That means the installed extension can surface `/privateclaw` in native command 
 ```bash
 PRIVATECLAW_RELAY_BASE_URL=ws://127.0.0.1:8787 npm run demo --workspace @privateclaw/privateclaw
 ```
+
+## OpenClaw local pairing command
+
+Once the plugin is installed and enabled, OpenClaw exposes a plugin CLI command:
+
+```bash
+openclaw privateclaw pair
+```
+
+This starts a local PrivateClaw session and renders the pairing QR code directly in the terminal, without requiring another chat app to trigger `/privateclaw`.
 
 ## Relay deployment
 

@@ -121,12 +121,38 @@ export interface OpenClawPluginServiceCompat {
   }): Promise<void> | void;
 }
 
+export interface OpenClawCliCommandCompat {
+  command(name: string): OpenClawCliCommandCompat;
+  description(text: string): OpenClawCliCommandCompat;
+  option(
+    flags: string,
+    description?: string,
+    defaultValue?: string | boolean,
+  ): OpenClawCliCommandCompat;
+  action(handler: (...args: unknown[]) => void | Promise<void>): OpenClawCliCommandCompat;
+}
+
+export interface OpenClawPluginCliContextCompat {
+  program: OpenClawCliCommandCompat;
+  config: unknown;
+  workspaceDir?: string;
+  logger: OpenClawPluginLoggerCompat;
+}
+
+export type OpenClawPluginCliRegistrarCompat = (
+  ctx: OpenClawPluginCliContextCompat,
+) => Promise<void> | void;
+
 export interface OpenClawPluginApiCompat {
   runtime: unknown;
   pluginConfig?: Record<string, unknown>;
   logger: OpenClawPluginLoggerCompat;
   registerChannel?(params: { plugin: unknown }): void;
   registerCommand(command: OpenClawPluginCommandDefinitionCompat): void;
+  registerCli?(
+    registrar: OpenClawPluginCliRegistrarCompat,
+    opts?: { commands?: string[] },
+  ): void;
   registerService?(service: OpenClawPluginServiceCompat): void;
 }
 

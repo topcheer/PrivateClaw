@@ -4,6 +4,7 @@ import { EchoBridge } from "./bridges/echo-bridge.js";
 import { OpenClawAgentBridge } from "./bridges/openclaw-agent-bridge.js";
 import { OpenAICompatibleBridge } from "./bridges/openai-compatible-bridge.js";
 import { WebhookBridge } from "./bridges/webhook-bridge.js";
+import { runPairSession } from "./pair-session.js";
 import { PrivateClawProvider } from "./provider.js";
 import { resolveRelayEndpoints } from "./relay-endpoints.js";
 
@@ -93,23 +94,10 @@ const provider = new PrivateClawProvider({
   },
 });
 
-await provider.connect();
-const inviteBundle = await provider.createInviteBundle();
-
-console.log(inviteBundle.announcementText);
-console.log(`Invite URI: ${inviteBundle.inviteUri}`);
-console.log(inviteBundle.qrTerminal);
-
-async function shutdown(signal: string): Promise<void> {
-  console.log(`[privateclaw-provider] received ${signal}, shutting down`);
-  await provider.dispose();
-  process.exit(0);
-}
-
-process.on("SIGINT", () => {
-  void shutdown("SIGINT");
+await runPairSession({
+  provider,
+  ttlMs,
+  writeLine: (line) => {
+    console.log(line);
+  },
 });
-process.on("SIGTERM", () => {
-  void shutdown("SIGTERM");
-});
-process.stdin.resume();

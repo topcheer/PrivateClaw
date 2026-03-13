@@ -8,6 +8,7 @@ import {
   type OpenClawAgentBridgeOptions,
 } from "./bridges/openclaw-agent-bridge.js";
 import { loadAvailableOpenClawCommands } from "./openclaw-command-discovery.js";
+import { parsePositiveIntegerFlag, runPairSession } from "./pair-session.js";
 import { WebhookBridge } from "./bridges/webhook-bridge.js";
 import {
   type OpenClawExtensionPluginCompat,
@@ -65,6 +66,12 @@ interface ResolvedPrivateClawPluginConfig {
   openclawAgentLocal?: boolean;
   openclawAgentThinking?: OpenClawThinkingLevel;
   openclawAgentTimeoutSeconds?: number;
+}
+
+interface PrivateClawPairCliOptions {
+  ttlMs?: string;
+  label?: string;
+  printOnly?: boolean;
 }
 
 const DEFAULT_RELAY_BASE_URL = "ws://127.0.0.1:8787";
@@ -259,6 +266,21 @@ function buildBridge(config: ResolvedPrivateClawPluginConfig): PrivateClawAgentB
   });
 }
 
+function normalizePairCliOptions(raw: unknown): PrivateClawPairCliOptions {
+  if (!raw || typeof raw !== "object") {
+    return {};
+  }
+
+  const options = raw as Record<string, unknown>;
+  const ttlMs = readString(options.ttlMs);
+  const label = readString(options.label);
+  return {
+    ...(ttlMs ? { ttlMs } : {}),
+    ...(label ? { label } : {}),
+    ...(typeof options.printOnly === "boolean" ? { printOnly: options.printOnly } : {}),
+  };
+}
+
 function buildProviderOptions(
   pluginConfig: ResolvedPrivateClawPluginConfig,
   api: Pick<OpenClawPluginApiCompat, "logger">,
@@ -318,9 +340,19 @@ class PrivateClawPluginRuntime {
     return this.provider;
   }
 
-  async createInviteBundle(): Promise<PrivateClawInviteBundle> {
+  async createInviteBundle(params?: {
+    ttlMs?: number;
+    label?: string;
+  }): Promise<PrivateClawInviteBundle> {
     return this.getProvider().createInviteBundle(
-      typeof this.defaultTtlMs === "number" ? { ttlMs: this.defaultTtlMs } : undefined,
+      {
+        ...(typeof params?.ttlMs === "number"
+          ? { ttlMs: params.ttlMs }
+          : typeof this.defaultTtlMs === "number"
+            ? { ttlMs: this.defaultTtlMs }
+            : {}),
+        ...(params?.label ? { label: params.label } : {}),
+      },
     );
   }
 
@@ -331,6 +363,21 @@ class PrivateClawPluginRuntime {
       text,
       mediaUrl: qrPngPath,
     };
+  }
+
+  async runPairSession(params?: {
+    ttlMs?: number;
+    label?: string;
+    printOnly?: boolean;
+    writeLine?: (line: string) => void;
+  }): Promise<PrivateClawInviteBundle> {
+    return runPairSession({
+      provider: this.getProvider(),
+      ...(typeof params?.ttlMs === "number" ? { ttlMs: params.ttlMs } : {}),
+      ...(params?.label ? { label: params.label } : {}),
+      ...(typeof params?.printOnly === "boolean" ? { printOnly: params.printOnly } : {}),
+      ...(params?.writeLine ? { writeLine: params.writeLine } : {}),
+    });
   }
 
   async dispose(): Promise<void> {
@@ -414,6 +461,42 @@ function createPluginDefinition(
           }
         },
       });
+
+      api.registerCli?.(
+        ({ program }) => {
+          const privateclaw = program
+            .command("privateclaw")
+            .description("PrivateClaw local pairing and session utilities.");
+
+          privateclaw
+            .command("pair")
+            .description(
+              "Start a local PrivateClaw session and render the pairing QR code in the terminal.",
+            )
+            .option("--ttl-ms <ms>", "Session TTL in milliseconds.")
+            .option("--label <label>", "Optional relay session label.")
+            .option(
+              "--print-only",
+              "Print the invite and QR code, then exit immediately.",
+            )
+            .action(async (rawOptions: unknown) => {
+              const options = normalizePairCliOptions(rawOptions);
+              const ttlMs = parsePositiveIntegerFlag(options.ttlMs, "--ttl-ms");
+              const label = readString(options.label);
+              await runtime.runPairSession({
+                ...(typeof ttlMs === "number" ? { ttlMs } : {}),
+                ...(label ? { label } : {}),
+                ...(typeof options.printOnly === "boolean"
+                  ? { printOnly: options.printOnly }
+                  : {}),
+                writeLine: (line) => {
+                  console.log(line);
+                },
+              });
+            });
+        },
+        { commands: ["privateclaw"] },
+      );
     },
   };
 }

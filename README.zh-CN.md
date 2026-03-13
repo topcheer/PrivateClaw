@@ -50,28 +50,53 @@ npm run dev:relay
 
 ```bash
 openclaw plugins install @privateclaw/privateclaw@latest
+openclaw plugins enable privateclaw
+openclaw config set plugins.entries.privateclaw.config.relayBaseUrl https://relay.example.com
 ```
 
 从当前仓库联调：
 
 ```bash
 openclaw plugins install --link ./packages/privateclaw-provider
+openclaw plugins enable privateclaw
 ```
 
-配置 relay 地址：
+PrivateClaw 是一个 OpenClaw 插件命令提供者，不是内置的聊天传输 channel。因此**不要**使用 `openclaw channels add privateclaw`。正确方式是：
+
+- 用 `openclaw plugins install ...` 安装插件
+- 用 `openclaw plugins enable privateclaw` 启用插件
+- 用 `plugins.entries.privateclaw.config` 进行配置
+
+### 4. 选择如何启动会话
+
+#### 方式 A：通过已有 OpenClaw 聊天渠道触发
+
+先添加一个普通聊天渠道，例如 Telegram：
 
 ```bash
-export PRIVATECLAW_RELAY_BASE_URL=ws://127.0.0.1:8787
+openclaw channels add --channel telegram --token <token>
 ```
 
-### 4. 运行 App
+然后在该渠道里发送 `/privateclaw`，再用 App 扫描返回的二维码。
+
+#### 方式 B：直接用 OpenClaw CLI 本地起配对会话
+
+如果你不想借助另一个聊天工具，可以直接运行：
+
+```bash
+openclaw privateclaw pair
+```
+
+这个命令会立刻创建会话，并在终端里直接渲染配对二维码；命令会保持运行，直到你按 `Ctrl+C` 停止。
+
+### 5. 运行 App
 
 ```bash
 cd apps/privateclaw_app
 flutter run
 ```
 
-随后在你的 OpenClaw 公开渠道中发送 `/privateclaw`，用 App 扫码即可进入私有会话。
+随后扫描 `/privateclaw` 返回的二维码，或者扫描 `openclaw privateclaw pair` 在终端里打印的二维码，即可进入私有会话。
 
 ## 自建 relay
 

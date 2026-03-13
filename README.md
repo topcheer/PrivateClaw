@@ -1,0 +1,226 @@
+# PrivateClaw
+
+[中文说明](./README.zh-CN.md)
+
+PrivateClaw is a lightweight, end-to-end encrypted private channel for OpenClaw. It lets a user leave a public bot surface, scan a one-time QR code, and continue the conversation inside a dedicated mobile app without giving the relay access to plaintext.
+
+The repository contains:
+
+- `services/relay-server`: a blind WebSocket relay for encrypted session traffic.
+- `packages/privateclaw-provider`: the OpenClaw-facing provider runtime and plugin package published as `@privateclaw/privateclaw`.
+- `packages/privateclaw-protocol`: the shared invite, envelope, and control-message types.
+- `apps/privateclaw_app`: the Flutter mobile client.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  User["User"] --> Public["Telegram / Discord / QQ / ..."]
+  Public -->|/privateclaw| OpenClaw["OpenClaw + PrivateClaw provider"]
+  OpenClaw -->|create session + QR| Public
+  User -->|scan QR| App["PrivateClaw app"]
+  OpenClaw <-->|ciphertext only| Relay["PrivateClaw relay"]
+  App <-->|ciphertext only| Relay
+```
+
+### Session flow
+
+1. The provider connects to the relay at `/ws/provider`.
+2. `/privateclaw` creates a relay session ID and a local 32-byte session key.
+3. The provider returns a one-time `privateclaw://connect?payload=...` QR invite.
+4. The mobile app scans the QR code and connects to `/ws/app?sessionId=...`.
+5. The app and provider exchange encrypted envelopes using AES-256-GCM.
+6. The relay only routes ciphertext plus the metadata needed to deliver it.
+7. The provider forwards user messages into OpenClaw and encrypts responses back to the app.
+
+### Security properties
+
+- AES-256-GCM for message envelopes.
+- Session key stays local to the provider and the app.
+- `sessionId` is bound as additional authenticated data.
+- Relay never receives plaintext message contents.
+- Session renewal rotates the key without creating a new public invite.
+
+## Repository layout
+
+```text
+.
+├── apps/privateclaw_app
+├── packages/privateclaw-protocol
+├── packages/privateclaw-provider
+└── services/relay-server
+```
+
+## Quick start
+
+### 1. Install dependencies
+
+```bash
+npm install
+cd apps/privateclaw_app && flutter pub get
+cd ../..
+```
+
+### 2. Start the relay
+
+For local development:
+
+```bash
+npm run docker:relay
+```
+
+For a direct Node.js run:
+
+```bash
+npm run dev:relay
+```
+
+### 3. Install the provider into OpenClaw
+
+From npm:
+
+```bash
+openclaw plugins install @privateclaw/privateclaw@latest
+```
+
+From this repository during development:
+
+```bash
+openclaw plugins install --link ./packages/privateclaw-provider
+```
+
+Then point the provider at your relay:
+
+```bash
+export PRIVATECLAW_RELAY_BASE_URL=ws://127.0.0.1:8787
+```
+
+The provider package also exports `resolveRelayEndpoints(...)` if you want to derive provider and app socket URLs from a single relay base URL:
+
+```ts
+import { resolveRelayEndpoints } from "@privateclaw/privateclaw";
+
+const relay = resolveRelayEndpoints("https://relay.example.com");
+```
+
+### 4. Run the app
+
+```bash
+cd apps/privateclaw_app
+flutter run
+```
+
+Trigger `/privateclaw` from one of your existing OpenClaw channels, scan the QR code in the app, and the secure session will attach to the relay.
+
+## Self-hosting the relay
+
+The relay is intentionally small. It can run with only Node.js, or as a Docker container with optional Redis-backed frame caching.
+
+### Docker Compose
+
+```bash
+docker compose up --build relay
+```
+
+With the optional Redis profile:
+
+```bash
+PRIVATECLAW_REDIS_URL=redis://redis:6379 docker compose --profile redis up --build
+```
+
+### GitHub-hosted container image
+
+This repository includes `.github/workflows/relay-image.yml`, which builds and publishes a multi-architecture relay image to GHCR on pushes to `main`, version tags, and manual runs.
+
+Example:
+
+```bash
+docker run --rm \
+  -p 8787:8787 \
+  -e PRIVATECLAW_RELAY_HOST=0.0.0.0 \
+  ghcr.io/topcheer/privateclaw-relay:main
+```
+
+### Relay environment variables
+
+The relay reads the following variables directly from the process environment:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `PRIVATECLAW_RELAY_HOST` | `127.0.0.1` | Host interface to bind |
+| `PRIVATECLAW_RELAY_PORT` | `8787` | Relay HTTP/WebSocket port |
+| `PRIVATECLAW_SESSION_TTL_MS` | `900000` | Session lifetime in milliseconds |
+| `PRIVATECLAW_FRAME_CACHE_SIZE` | `25` | Buffered ciphertext frames per direction |
+| `PRIVATECLAW_REDIS_URL` | unset | Optional Redis URL for encrypted frame caching |
+
+The relay also exposes `/healthz` for container and platform health checks.
+
+## Provider runtime
+
+`@privateclaw/privateclaw` is the published provider/runtime package. It supports:
+
+- OpenClaw plugin registration through `api.registerCommand(...)`
+- QR invite generation for `/privateclaw`
+- OpenClaw agent, webhook, echo, and OpenAI-compatible bridge modes
+- reconnect, heartbeat, session renewal, and dynamic slash-command sync
+
+See `packages/privateclaw-provider/README.md` for package-level usage examples.
+
+## Mobile app
+
+The Flutter app supports:
+
+- QR scanning and manual invite paste
+- encrypted chat over the relay
+- markdown rendering, best-effort Mermaid support, and media/file rendering
+- reconnect, session renewal, and slash-command sync
+
+See `apps/privateclaw_app/README.md` for app-specific commands.
+
+## Development
+
+### Common commands
+
+```bash
+npm run build
+npm test
+npm run dev:relay
+npm run demo:provider
+```
+
+Flutter app:
+
+```bash
+cd apps/privateclaw_app
+flutter test
+flutter build apk --debug
+flutter build ios --simulator
+```
+
+### Contributing
+
+1. Clone the repository.
+2. Install Node.js dependencies and Flutter dependencies.
+3. Run `npm run build` and `npm test` before opening a PR.
+4. If you change relay packaging, validate with `docker compose build relay`.
+
+## Published artifacts
+
+- npm provider package: `@privateclaw/privateclaw`
+- npm protocol package: `@privateclaw/protocol`
+- relay container image: `ghcr.io/topcheer/privateclaw-relay`
+
+The provider publish flow is available from the repository root:
+
+```bash
+npm run publish:provider:dry-run
+npm run publish:provider
+```
+
+## Historical implementation notes
+
+The `OPENCLAW_*` documents in the repository are preserved research and implementation notes from the original integration work. They are useful background material, but the current source of truth is:
+
+- this `README.md`
+- `README.zh-CN.md`
+- the current source code in `packages/`, `services/`, and `apps/`

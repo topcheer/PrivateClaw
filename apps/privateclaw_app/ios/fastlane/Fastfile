@@ -1,0 +1,79 @@
+require "shellwords"
+
+default_platform(:ios)
+
+platform :ios do
+  def privateclaw_app_store_api_key
+    app_store_connect_api_key(
+      key_id: ENV.fetch("PRIVATECLAW_APP_STORE_CONNECT_KEY_ID"),
+      issuer_id: ENV.fetch("PRIVATECLAW_APP_STORE_CONNECT_ISSUER_ID"),
+      key_filepath: ENV.fetch("PRIVATECLAW_APP_STORE_CONNECT_KEY_FILE"),
+      duration: 1200,
+      in_house: false
+    )
+  end
+
+  def privateclaw_signing_xcargs
+    [
+      "-allowProvisioningUpdates",
+      "-authenticationKeyPath #{Shellwords.escape(ENV.fetch('PRIVATECLAW_APP_STORE_CONNECT_KEY_FILE'))}",
+      "-authenticationKeyID #{Shellwords.escape(ENV.fetch('PRIVATECLAW_APP_STORE_CONNECT_KEY_ID'))}",
+      "-authenticationKeyIssuerID #{Shellwords.escape(ENV.fetch('PRIVATECLAW_APP_STORE_CONNECT_ISSUER_ID'))}"
+    ].join(" ")
+  end
+
+  desc "Build an App Store signed IPA for PrivateClaw"
+  lane :build_release do
+    build_app(
+      workspace: "Runner.xcworkspace",
+      scheme: "Runner",
+      clean: true,
+      export_method: "app-store",
+      export_options: {
+        signingStyle: "automatic"
+      },
+      xcargs: privateclaw_signing_xcargs,
+      output_directory: "../builds/ios",
+      output_name: "PrivateClaw.ipa"
+    )
+  end
+
+  desc "Upload localized metadata only"
+  lane :metadata do
+    upload_to_app_store(
+      api_key: privateclaw_app_store_api_key,
+      skip_binary_upload: true,
+      skip_screenshots: true,
+      metadata_path: "./fastlane/metadata",
+      force: true
+    )
+  end
+
+  desc "Build and upload to TestFlight"
+  lane :beta do
+    build_release
+    upload_to_testflight(
+      api_key: privateclaw_app_store_api_key,
+      ipa: "../builds/ios/PrivateClaw.ipa",
+      skip_waiting_for_build_processing: true
+    )
+  end
+
+  desc "Build and submit a production App Store release"
+  lane :release do
+    build_release
+    upload_to_app_store(
+      api_key: privateclaw_app_store_api_key,
+      ipa: "../builds/ios/PrivateClaw.ipa",
+      metadata_path: "./fastlane/metadata",
+      skip_screenshots: true,
+      submit_for_review: true,
+      automatic_release: ENV["PRIVATECLAW_AUTOMATIC_RELEASE"] == "true",
+      force: true,
+      precheck_include_in_app_purchases: false,
+      submission_information: {
+        add_id_info_uses_idfa: false
+      }
+    )
+  end
+end

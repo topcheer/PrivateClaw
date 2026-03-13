@@ -1,0 +1,10 @@
+PrivateClaw schafft einen privaten, Ende-zu-Ende-verschlüsselten Kanal zwischen einem Nutzer und einer selbst gehosteten oder cloudbasierten OpenClaw-Instanz.
+
+Treten Sie per Einmal-QR-Code bei, halten Sie den Relay-Server blind für Nachrichteninhalte und verlagern Sie sensible Gespräche aus öffentlichen Chats.
+
+Funktionen
+- Einmalige Einladungslinks scannen oder einfügen
+- Ende-zu-Ende-verschlüsselter Relay-Transport
+- Funktioniert mit Heimservern oder Cloud-Relays
+- Für private OpenClaw-Unterhaltungen entwickelt
+- Leichter und sicherer Sitzungsfluss

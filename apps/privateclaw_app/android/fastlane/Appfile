@@ -1,0 +1,2 @@
+json_key_file(ENV["PRIVATECLAW_PLAY_STORE_JSON_KEY"]) if ENV["PRIVATECLAW_PLAY_STORE_JSON_KEY"]
+package_name("gg.ai.privateclaw")

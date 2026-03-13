@@ -1,0 +1,25 @@
+{
+  "name": "privateclaw",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "services/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace @privateclaw/protocol && npm run build --workspace @privateclaw/relay-server && npm run build --workspace @privateclaw/privateclaw",
+    "docker:relay": "docker compose up --build relay",
+    "test": "npm run test --workspace @privateclaw/protocol && npm run test --workspace @privateclaw/relay-server && npm run test --workspace @privateclaw/privateclaw && (cd apps/privateclaw_app && flutter test)",
+    "dev:relay": "npm run dev --workspace @privateclaw/relay-server",
+    "demo:provider": "npm run demo --workspace @privateclaw/privateclaw",
+    "publish:provider": "npm publish --workspace @privateclaw/privateclaw --access public",
+    "publish:provider:dry-run": "npm publish --dry-run --workspace @privateclaw/privateclaw --access public"
+  },
+  "devDependencies": {
+    "@types/node": "^24.7.2",
+    "@types/qrcode": "^1.5.6",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}

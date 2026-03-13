@@ -1,0 +1,24 @@
+{
+  "name": "@privateclaw/relay-server",
+  "version": "0.1.0",
+  "description": "Blind WebSocket relay for PrivateClaw encrypted sessions",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/cli.ts",
+    "start": "node dist/cli.js",
+    "test": "node --import tsx --test src/**/*.test.ts"
+  },
+  "dependencies": {
+    "@privateclaw/protocol": "^0.1.0",
+    "ioredis": "^5.8.1",
+    "ws": "^8.18.3"
+  }
+}

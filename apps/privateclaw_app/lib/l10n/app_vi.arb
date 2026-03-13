@@ -1,0 +1,106 @@
+{
+  "@@locale": "vi",
+  "appTitle": "PrivateClaw",
+  "disconnectTooltip": "Ngắt kết nối",
+  "entryTitle": "Phiên riêng tư dùng một lần",
+  "inviteInputLabel": "Liên kết mời hoặc nội dung QR",
+  "inviteInputHint": "privateclaw://connect?payload=...",
+  "scanQrButton": "Quét mã QR",
+  "connectSessionButton": "Tham gia phiên",
+  "sessionLabel": "Phiên",
+  "expiresLabel": "Hết hạn",
+  "initialStatus": "Quét mã QR PrivateClaw hoặc dán liên kết mời để bắt đầu một phiên dùng một lần.",
+  "enterValidInvite": "Dán hoặc quét liên kết mời PrivateClaw hợp lệ.",
+  "connectingRelay": "Đang kết nối tới relay PrivateClaw…",
+  "connectFailed": "Kết nối thất bại: {error}",
+  "@connectFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String",
+        "example": "hết thời gian chờ"
+      }
+    }
+  },
+  "encryptedChatPlaceholder": "Đoạn chat được mã hóa đầu cuối sẽ xuất hiện ở đây sau khi phiên kết nối.",
+  "sendHintActive": "Gửi tin nhắn được mã hóa…",
+  "sendHintInactive": "Chờ phiên hoàn tất kết nối…",
+  "sendTooltip": "Gửi",
+  "sendFailed": "Gửi thất bại: {error}",
+  "@sendFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String",
+        "example": "socket đã đóng"
+      }
+    }
+  },
+  "sessionDisconnected": "Phiên đã ngắt kết nối. Hãy quét lại để bắt đầu một phiên PrivateClaw mới.",
+  "scanSheetTitle": "Quét QR mời PrivateClaw",
+  "scanSheetHint": "Nếu trình mô phỏng không thể quét, hãy dán liên kết mời trực tiếp.",
+  "scannerPermissionDenied": "Cần quyền truy cập camera để quét QR mời.",
+  "scannerUnsupported": "Thiết bị hoặc trình mô phỏng này không hỗ trợ quét bằng camera. Hãy dán liên kết mời.",
+  "scannerUnavailable": "Tạm thời không thể quét QR. Hãy dán liên kết mời.",
+  "scannerLoading": "Đang khởi động camera…",
+  "relayConnecting": "Đang kết nối tới relay…",
+  "relayHandshake": "Đã kết nối relay. Đang hoàn tất bắt tay mã hóa…",
+  "relayConnectionError": "Lỗi kết nối: {details}",
+  "@relayConnectionError": {
+    "placeholders": {
+      "details": {
+        "type": "String",
+        "example": "ECONNREFUSED"
+      }
+    }
+  },
+  "relaySessionClosed": "Phiên đã đóng.",
+  "relaySessionClosedWithReason": "Phiên đã đóng: {reason}",
+  "@relaySessionClosedWithReason": {
+    "placeholders": {
+      "reason": {
+        "type": "String",
+        "example": "expired"
+      }
+    }
+  },
+  "relayError": "Lỗi relay: {details}",
+  "@relayError": {
+    "placeholders": {
+      "details": {
+        "type": "String",
+        "example": "session_not_found"
+      }
+    }
+  },
+  "relayUnknownEvent": "Nhận được sự kiện relay không xác định: {eventType}",
+  "@relayUnknownEvent": {
+    "placeholders": {
+      "eventType": {
+        "type": "String",
+        "example": "relay:custom"
+      }
+    }
+  },
+  "relayUnknownPayload": "Nhận được loại tin nhắn mã hóa không xác định: {payloadType}",
+  "@relayUnknownPayload": {
+    "placeholders": {
+      "payloadType": {
+        "type": "String",
+        "example": "custom_message"
+      }
+    }
+  },
+  "welcomeFallback": "PrivateClaw đã kết nối.",
+  "sessionRenewedNotice": "Session renewed. New expiry: {expiresAt} ({remaining} left).",
+  "@sessionRenewedNotice": {
+    "placeholders": {
+      "expiresAt": {
+        "type": "String",
+        "example": "3/14/2026 9:30 PM"
+      },
+      "remaining": {
+        "type": "String",
+        "example": "8h"
+      }
+    }
+  }
+}

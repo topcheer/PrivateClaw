@@ -1,0 +1,106 @@
+{
+  "@@locale": "zh_Hant",
+  "appTitle": "PrivateClaw",
+  "disconnectTooltip": "中斷連線",
+  "entryTitle": "一次性私密會話入口",
+  "inviteInputLabel": "邀請連結或 QR 內容",
+  "inviteInputHint": "privateclaw://connect?payload=...",
+  "scanQrButton": "掃描 QR Code",
+  "connectSessionButton": "連接會話",
+  "sessionLabel": "會話",
+  "expiresLabel": "到期時間",
+  "initialStatus": "掃描 PrivateClaw QR Code 或貼上邀請連結，即可開始一次性會話。",
+  "enterValidInvite": "請貼上或掃描有效的 PrivateClaw 邀請連結。",
+  "connectingRelay": "正在連接 PrivateClaw 中繼服務…",
+  "connectFailed": "連線失敗：{error}",
+  "@connectFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String",
+        "example": "網路逾時"
+      }
+    }
+  },
+  "encryptedChatPlaceholder": "會話連線成功後，這裡會顯示端對端加密的聊天內容。",
+  "sendHintActive": "傳送加密訊息…",
+  "sendHintInactive": "等待會話完成連線…",
+  "sendTooltip": "傳送",
+  "sendFailed": "傳送失敗：{error}",
+  "@sendFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String",
+        "example": "連線已關閉"
+      }
+    }
+  },
+  "sessionDisconnected": "會話已中斷，請重新掃碼開始新的 PrivateClaw 會話。",
+  "scanSheetTitle": "掃描 PrivateClaw 邀請 QR Code",
+  "scanSheetHint": "如果模擬器無法掃碼，也可以直接貼上邀請連結。",
+  "scannerPermissionDenied": "需要相機權限才能掃描邀請 QR Code。",
+  "scannerUnsupported": "此裝置或模擬器無法提供相機掃描，請直接貼上邀請連結。",
+  "scannerUnavailable": "掃碼功能暫時不可用，請直接貼上邀請連結。",
+  "scannerLoading": "正在啟動相機…",
+  "relayConnecting": "正在連接中繼服務…",
+  "relayHandshake": "已連接中繼服務，正在完成加密握手…",
+  "relayConnectionError": "連線錯誤：{details}",
+  "@relayConnectionError": {
+    "placeholders": {
+      "details": {
+        "type": "String",
+        "example": "連線被拒絕"
+      }
+    }
+  },
+  "relaySessionClosed": "會話已關閉。",
+  "relaySessionClosedWithReason": "會話已關閉：{reason}",
+  "@relaySessionClosedWithReason": {
+    "placeholders": {
+      "reason": {
+        "type": "String",
+        "example": "已過期"
+      }
+    }
+  },
+  "relayError": "中繼錯誤：{details}",
+  "@relayError": {
+    "placeholders": {
+      "details": {
+        "type": "String",
+        "example": "session_not_found"
+      }
+    }
+  },
+  "relayUnknownEvent": "收到未知的中繼事件：{eventType}",
+  "@relayUnknownEvent": {
+    "placeholders": {
+      "eventType": {
+        "type": "String",
+        "example": "relay:custom"
+      }
+    }
+  },
+  "relayUnknownPayload": "收到未知的加密訊息類型：{payloadType}",
+  "@relayUnknownPayload": {
+    "placeholders": {
+      "payloadType": {
+        "type": "String",
+        "example": "custom_message"
+      }
+    }
+  },
+  "welcomeFallback": "PrivateClaw 已連線。",
+  "sessionRenewedNotice": "工作階段已續期。新的到期時間：{expiresAt}（剩餘 {remaining}）。",
+  "@sessionRenewedNotice": {
+    "placeholders": {
+      "expiresAt": {
+        "type": "String",
+        "example": "3/14/2026 9:30 PM"
+      },
+      "remaining": {
+        "type": "String",
+        "example": "8h"
+      }
+    }
+  }
+}

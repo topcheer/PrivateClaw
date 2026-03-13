@@ -1,0 +1,1 @@
+Corrections de bugs, meilleure localisation et préparation de la sortie sur les stores.

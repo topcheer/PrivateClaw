@@ -1,0 +1,10 @@
+PrivateClaw cria um canal privado com criptografia de ponta a ponta entre um usuário e uma implantação OpenClaw hospedada em casa ou na nuvem.
+
+Entre em uma sessão com um convite QR de uso único, mantenha o relay sem acesso ao conteúdo das mensagens e tire conversas sensíveis dos chats públicos.
+
+Recursos:
+- Escanear ou colar links de convite de uso único
+- Transporte por relay com criptografia de ponta a ponta
+- Funciona com relays personalizados em casa ou na nuvem
+- Feito para conversas privadas com OpenClaw
+- Fluxo de sessão leve e seguro

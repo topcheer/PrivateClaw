@@ -1,0 +1,10 @@
+PrivateClaw crée un canal privé chiffré de bout en bout entre un utilisateur et un déploiement OpenClaw auto-hébergé ou dans le cloud.
+
+Rejoignez une session via une invitation QR à usage unique, gardez le relais aveugle au contenu des messages et déplacez les conversations sensibles hors des surfaces de chat publiques.
+
+Fonctionnalités :
+- Scanner ou coller des liens d’invitation à usage unique
+- Transport relais chiffré de bout en bout
+- Compatible avec des relais personnalisés à la maison ou dans le cloud
+- Conçu pour des conversations OpenClaw privées
+- Flux de session léger et sécurisé

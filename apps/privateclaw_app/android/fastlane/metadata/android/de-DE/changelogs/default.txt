@@ -1,0 +1,1 @@
+Fehlerbehebungen, bessere Lokalisierung und Vorbereitungen für den Store-Release.

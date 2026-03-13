@@ -1,0 +1,106 @@
+{
+  "@@locale": "de",
+  "appTitle": "PrivateClaw",
+  "disconnectTooltip": "Trennen",
+  "entryTitle": "Einmalige private Sitzung",
+  "inviteInputLabel": "Einladungslink oder QR-Inhalt",
+  "inviteInputHint": "privateclaw://connect?payload=...",
+  "scanQrButton": "QR-Code scannen",
+  "connectSessionButton": "Sitzung beitreten",
+  "sessionLabel": "Sitzung",
+  "expiresLabel": "Läuft ab",
+  "initialStatus": "Scannen Sie einen PrivateClaw-QR-Code oder fügen Sie einen Einladungslink ein, um eine einmalige Sitzung zu starten.",
+  "enterValidInvite": "Fügen Sie einen gültigen PrivateClaw-Einladungslink ein oder scannen Sie ihn.",
+  "connectingRelay": "Verbindung zum PrivateClaw-Relay wird hergestellt…",
+  "connectFailed": "Verbindung fehlgeschlagen: {error}",
+  "@connectFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String",
+        "example": "Netzwerk-Timeout"
+      }
+    }
+  },
+  "encryptedChatPlaceholder": "Der Ende-zu-Ende-verschlüsselte Chat wird hier angezeigt, sobald die Sitzung verbunden ist.",
+  "sendHintActive": "Verschlüsselte Nachricht senden…",
+  "sendHintInactive": "Warten Sie, bis die Sitzung verbunden ist…",
+  "sendTooltip": "Senden",
+  "sendFailed": "Senden fehlgeschlagen: {error}",
+  "@sendFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String",
+        "example": "Socket geschlossen"
+      }
+    }
+  },
+  "sessionDisconnected": "Sitzung getrennt. Scannen Sie erneut, um eine neue PrivateClaw-Sitzung zu starten.",
+  "scanSheetTitle": "PrivateClaw-Einladungs-QR-Code scannen",
+  "scanSheetHint": "Wenn der Simulator nicht scannen kann, fügen Sie stattdessen den Einladungslink ein.",
+  "scannerPermissionDenied": "Für das Scannen des Einladungs-QR-Codes ist Kamerazugriff erforderlich.",
+  "scannerUnsupported": "Dieses Gerät oder dieser Simulator unterstützt kein Kamera-Scannen. Fügen Sie stattdessen den Einladungslink ein.",
+  "scannerUnavailable": "QR-Scannen ist vorübergehend nicht verfügbar. Fügen Sie stattdessen den Einladungslink ein.",
+  "scannerLoading": "Kamera wird gestartet…",
+  "relayConnecting": "Verbindung zum Relay wird hergestellt…",
+  "relayHandshake": "Relay verbunden. Verschlüsselten Handshake abschließen…",
+  "relayConnectionError": "Verbindungsfehler: {details}",
+  "@relayConnectionError": {
+    "placeholders": {
+      "details": {
+        "type": "String",
+        "example": "ECONNREFUSED"
+      }
+    }
+  },
+  "relaySessionClosed": "Sitzung geschlossen.",
+  "relaySessionClosedWithReason": "Sitzung geschlossen: {reason}",
+  "@relaySessionClosedWithReason": {
+    "placeholders": {
+      "reason": {
+        "type": "String",
+        "example": "expired"
+      }
+    }
+  },
+  "relayError": "Relay-Fehler: {details}",
+  "@relayError": {
+    "placeholders": {
+      "details": {
+        "type": "String",
+        "example": "session_not_found"
+      }
+    }
+  },
+  "relayUnknownEvent": "Unbekanntes Relay-Ereignis empfangen: {eventType}",
+  "@relayUnknownEvent": {
+    "placeholders": {
+      "eventType": {
+        "type": "String",
+        "example": "relay:custom"
+      }
+    }
+  },
+  "relayUnknownPayload": "Unbekannter verschlüsselter Nachrichtentyp empfangen: {payloadType}",
+  "@relayUnknownPayload": {
+    "placeholders": {
+      "payloadType": {
+        "type": "String",
+        "example": "custom_message"
+      }
+    }
+  },
+  "welcomeFallback": "PrivateClaw ist verbunden.",
+  "sessionRenewedNotice": "Session renewed. New expiry: {expiresAt} ({remaining} left).",
+  "@sessionRenewedNotice": {
+    "placeholders": {
+      "expiresAt": {
+        "type": "String",
+        "example": "3/14/2026 9:30 PM"
+      },
+      "remaining": {
+        "type": "String",
+        "example": "8h"
+      }
+    }
+  }
+}

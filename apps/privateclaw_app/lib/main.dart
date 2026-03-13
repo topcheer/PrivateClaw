@@ -1,0 +1,896 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:intl/intl.dart';
+
+import 'l10n/app_localizations.dart';
+import 'models/chat_attachment.dart';
+import 'models/chat_message.dart';
+import 'models/privateclaw_invite.dart';
+import 'models/privateclaw_slash_command.dart';
+import 'services/privateclaw_session_client.dart';
+import 'widgets/chat_message_bubble.dart';
+import 'widgets/invite_scanner_sheet.dart';
+
+const int _maxInlineAttachmentBytes = 5 * 1024 * 1024;
+
+void main() {
+  runApp(const PrivateClawApp());
+}
+
+class PrivateClawApp extends StatelessWidget {
+  const PrivateClawApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      onGenerateTitle: (BuildContext context) =>
+          AppLocalizations.of(context)!.appTitle,
+      debugShowCheckedModeBanner: false,
+      localizationsDelegates: const <LocalizationsDelegate<dynamic>>[
+        AppLocalizations.delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: AppLocalizations.supportedLocales,
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF5D5FEF)),
+        useMaterial3: true,
+      ),
+      home: const PrivateClawHomePage(),
+    );
+  }
+}
+
+class PrivateClawHomePage extends StatefulWidget {
+  const PrivateClawHomePage({super.key});
+
+  @override
+  State<PrivateClawHomePage> createState() => _PrivateClawHomePageState();
+}
+
+class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
+  final TextEditingController _inviteController = TextEditingController();
+  final TextEditingController _messageController = TextEditingController();
+  final FocusNode _composerFocusNode = FocusNode();
+  final ScrollController _scrollController = ScrollController();
+  final List<ChatMessage> _messages = <ChatMessage>[];
+  final List<ChatAttachment> _selectedAttachments = <ChatAttachment>[];
+  final List<PrivateClawSlashCommand> _availableCommands =
+      <PrivateClawSlashCommand>[];
+
+  PrivateClawInvite? _invite;
+  PrivateClawSessionClient? _client;
+  StreamSubscription<PrivateClawSessionEvent>? _clientSubscription;
+  PrivateClawSessionStatus _sessionStatus = PrivateClawSessionStatus.idle;
+  String _statusText = '';
+  bool _isPairingPanelCollapsed = false;
+  int _attachmentCounter = 0;
+
+  bool get _canSend => _sessionStatus == PrivateClawSessionStatus.active;
+  bool get _hasPendingReply => _messages.any((ChatMessage message) => message.isPending);
+  bool get _hasDraftContent =>
+      _messageController.text.trim().isNotEmpty || _selectedAttachments.isNotEmpty;
+  bool get _canCollapsePairingPanel =>
+      _invite != null && _sessionStatus == PrivateClawSessionStatus.active;
+
+  @override
+  void initState() {
+    super.initState();
+    _messageController.addListener(_handleComposerChanged);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_statusText.isEmpty) {
+      _statusText = AppLocalizations.of(context)!.initialStatus;
+    }
+  }
+
+  @override
+  void dispose() {
+    unawaited(_disposeClient(reason: 'widget_disposed'));
+    _inviteController.dispose();
+    _composerFocusNode.dispose();
+    _messageController
+      ..removeListener(_handleComposerChanged)
+      ..dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _handleComposerChanged() {
+    if (!mounted) {
+      return;
+    }
+    setState(() {});
+  }
+
+  Future<void> _disposeClient({String reason = 'user_left'}) async {
+    await _clientSubscription?.cancel();
+    _clientSubscription = null;
+
+    final PrivateClawSessionClient? client = _client;
+    _client = null;
+    if (client != null) {
+      await client.dispose(reason: reason);
+    }
+  }
+
+  Future<void> _connectFromInput(String rawInvite) async {
+    final AppLocalizations l10n = AppLocalizations.of(context)!;
+    final String trimmed = rawInvite.trim();
+    if (trimmed.isEmpty) {
+      setState(() {
+        _sessionStatus = PrivateClawSessionStatus.error;
+        _statusText = l10n.enterValidInvite;
+        _isPairingPanelCollapsed = false;
+      });
+      return;
+    }
+
+    await _disposeClient(reason: 'switch_session');
+
+    try {
+      final PrivateClawInvite invite = PrivateClawInvite.fromScan(trimmed);
+      final PrivateClawSessionClient client = PrivateClawSessionClient(invite);
+      final StreamSubscription<PrivateClawSessionEvent> subscription = client
+          .events
+          .listen(_handleClientEvent);
+
+      setState(() {
+        _invite = invite;
+        _client = client;
+        _clientSubscription = subscription;
+        _messages.clear();
+        _availableCommands.clear();
+        _selectedAttachments.clear();
+        _sessionStatus = PrivateClawSessionStatus.connecting;
+        _statusText = l10n.connectingRelay;
+        _inviteController.text = trimmed;
+        _isPairingPanelCollapsed = false;
+      });
+
+      await client.connect();
+    } catch (error) {
+      setState(() {
+        _sessionStatus = PrivateClawSessionStatus.error;
+        _statusText = l10n.connectFailed(error.toString());
+        _isPairingPanelCollapsed = false;
+      });
+    }
+  }
+
+  void _handleClientEvent(PrivateClawSessionEvent event) {
+    if (!mounted) {
+      return;
+    }
+
+    final AppLocalizations l10n = AppLocalizations.of(context)!;
+    final PrivateClawSessionStatus previousStatus = _sessionStatus;
+    setState(() {
+      if (event.updatedInvite != null) {
+        _invite = event.updatedInvite;
+      }
+      if (event.commands != null) {
+        _availableCommands
+          ..clear()
+          ..addAll(event.commands!);
+      }
+      if (event.message != null) {
+        _upsertMessage(event.message!);
+      }
+      if (event.renewedExpiresAt != null) {
+        final String renewedMessage = l10n.sessionRenewedNotice(
+          _formatDateTime(event.renewedExpiresAt!),
+          _formatRemainingDuration(
+            event.renewedExpiresAt!.difference(DateTime.now().toUtc()),
+          ),
+        );
+        _statusText = renewedMessage;
+        _upsertMessage(
+          ChatMessage(
+            id: _nextSystemMessageId('renewed'),
+            sender: ChatSender.system,
+            text: renewedMessage,
+            sentAt: DateTime.now().toUtc(),
+            replyTo: event.renewedReplyTo,
+          ),
+        );
+      }
+      if (event.notice != null) {
+        _statusText = _localizeNotice(l10n, event);
+      }
+      if (event.connectionStatus != null) {
+        _sessionStatus = event.connectionStatus!;
+        if (event.notice == null &&
+            _sessionStatus == PrivateClawSessionStatus.active &&
+            previousStatus != PrivateClawSessionStatus.active &&
+            event.renewedExpiresAt == null) {
+          _statusText = l10n.welcomeFallback;
+        }
+        if (_sessionStatus == PrivateClawSessionStatus.active) {
+          _isPairingPanelCollapsed = true;
+        }
+        if (_sessionStatus == PrivateClawSessionStatus.closed ||
+            _sessionStatus == PrivateClawSessionStatus.error ||
+            _sessionStatus == PrivateClawSessionStatus.idle) {
+          _isPairingPanelCollapsed = false;
+        }
+      }
+    });
+    _scheduleScrollToBottom();
+  }
+
+  void _upsertMessage(ChatMessage message) {
+    if (message.isPending) {
+      final int existingPendingIndex = _messages.indexWhere(
+        (ChatMessage item) => item.id == message.id,
+      );
+      if (existingPendingIndex >= 0) {
+        _messages[existingPendingIndex] = message;
+        return;
+      }
+      _messages.add(message);
+      return;
+    }
+
+    if (message.replyTo != null) {
+      _messages.removeWhere(
+        (ChatMessage item) => item.isPending && item.replyTo == message.replyTo,
+      );
+    }
+    _messages.add(message);
+  }
+
+  void _scheduleScrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) {
+        return;
+      }
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
+  String _localizeNotice(AppLocalizations l10n, PrivateClawSessionEvent event) {
+    final String details = event.details?.trim() ?? '';
+
+    switch (event.notice) {
+      case PrivateClawSessionNotice.connectingRelay:
+        return l10n.relayConnecting;
+      case PrivateClawSessionNotice.relayAttached:
+        return l10n.relayHandshake;
+      case PrivateClawSessionNotice.connectionError:
+        return l10n.relayConnectionError(
+          details.isEmpty ? 'unknown_error' : details,
+        );
+      case PrivateClawSessionNotice.sessionClosed:
+        return details.isEmpty
+            ? l10n.relaySessionClosed
+            : l10n.relaySessionClosedWithReason(details);
+      case PrivateClawSessionNotice.relayError:
+        return l10n.relayError(details.isEmpty ? 'unknown_error' : details);
+      case PrivateClawSessionNotice.unknownRelayEvent:
+        return l10n.relayUnknownEvent(
+          details.isEmpty ? 'unknown_event' : details,
+        );
+      case PrivateClawSessionNotice.unknownPayload:
+        return l10n.relayUnknownPayload(
+          details.isEmpty ? 'unknown_payload' : details,
+        );
+      case PrivateClawSessionNotice.welcome:
+        return details.isEmpty ? l10n.welcomeFallback : details;
+      case null:
+        return _statusText;
+    }
+  }
+
+  Future<void> _openScanner() async {
+    final String? scannedInvite = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (BuildContext context) {
+        return InviteScannerSheet(
+          onDetected: (String value) {
+            Navigator.of(context).pop(value);
+          },
+        );
+      },
+    );
+
+    if (!mounted || scannedInvite == null) {
+      return;
+    }
+
+    _inviteController.text = scannedInvite;
+    await _connectFromInput(scannedInvite);
+  }
+
+  Future<void> _pickAttachments() async {
+    final AppLocalizations l10n = AppLocalizations.of(context)!;
+    try {
+      final FilePickerResult? result = await FilePicker.platform.pickFiles(
+        allowMultiple: true,
+        withData: true,
+        type: FileType.any,
+      );
+      if (result == null || result.files.isEmpty) {
+        return;
+      }
+
+      final List<ChatAttachment> nextAttachments = <ChatAttachment>[];
+      for (final PlatformFile file in result.files) {
+        final Uint8List? bytes = file.bytes;
+        if (bytes == null || bytes.isEmpty) {
+          continue;
+        }
+        if (bytes.length > _maxInlineAttachmentBytes) {
+          setState(() {
+            _statusText = l10n.sendFailed('attachment_too_large:${file.name}');
+          });
+          continue;
+        }
+
+        nextAttachments.add(
+          ChatAttachment(
+            id: _nextAttachmentId(),
+            name: file.name,
+            mimeType: _inferMimeType(file.name),
+            sizeBytes: bytes.length,
+            dataBase64: base64Encode(bytes),
+          ),
+        );
+      }
+
+      if (nextAttachments.isEmpty || !mounted) {
+        return;
+      }
+
+      setState(() {
+        _selectedAttachments.addAll(nextAttachments);
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _statusText = l10n.sendFailed(error.toString());
+      });
+    }
+  }
+
+  Future<void> _sendMessage() async {
+    final AppLocalizations l10n = AppLocalizations.of(context)!;
+    final PrivateClawSessionClient? client = _client;
+    final String text = _messageController.text.trim();
+    final List<ChatAttachment> attachments = List<ChatAttachment>.from(
+      _selectedAttachments,
+    );
+    if (client == null || (text.isEmpty && attachments.isEmpty)) {
+      return;
+    }
+
+    _messageController.clear();
+    setState(() {
+      _selectedAttachments.clear();
+    });
+
+    try {
+      await client.sendUserMessage(text, attachments: attachments);
+      _scheduleScrollToBottom();
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _messageController.text = text;
+        _messageController.selection = TextSelection.collapsed(
+          offset: _messageController.text.length,
+        );
+        _selectedAttachments
+          ..clear()
+          ..addAll(attachments);
+        _sessionStatus = PrivateClawSessionStatus.error;
+        _statusText = l10n.sendFailed(error.toString());
+      });
+    }
+  }
+
+  Future<void> _disconnect() async {
+    final AppLocalizations l10n = AppLocalizations.of(context)!;
+    await _disposeClient(reason: 'user_disconnect');
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _invite = null;
+      _messages.clear();
+      _availableCommands.clear();
+      _selectedAttachments.clear();
+      _sessionStatus = PrivateClawSessionStatus.idle;
+      _statusText = l10n.sessionDisconnected;
+      _isPairingPanelCollapsed = false;
+    });
+  }
+
+  Future<void> _openSlashCommands() async {
+    if (!_canSend || _availableCommands.isEmpty) {
+      return;
+    }
+
+    final PrivateClawSlashCommand? command =
+        await showModalBottomSheet<PrivateClawSlashCommand>(
+          context: context,
+          useSafeArea: true,
+          showDragHandle: true,
+          builder: (BuildContext context) {
+            return ListView.separated(
+              shrinkWrap: true,
+              itemCount: _availableCommands.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (BuildContext context, int index) {
+                final PrivateClawSlashCommand item = _availableCommands[index];
+                return ListTile(
+                  leading: const Icon(Icons.terminal),
+                  title: Text(item.slash),
+                  subtitle: Text(item.description),
+                  trailing: item.acceptsArgs
+                      ? const Icon(Icons.edit_outlined)
+                      : null,
+                  onTap: () {
+                    Navigator.of(context).pop(item);
+                  },
+                );
+              },
+            );
+          },
+        );
+
+    if (!mounted || command == null) {
+      return;
+    }
+
+    final String nextText =
+        command.acceptsArgs ? '${command.slash} ' : command.slash;
+    _messageController.value = TextEditingValue(
+      text: nextText,
+      selection: TextSelection.collapsed(offset: nextText.length),
+    );
+    _composerFocusNode.requestFocus();
+  }
+
+  void _removeAttachment(String attachmentId) {
+    setState(() {
+      _selectedAttachments.removeWhere(
+        (ChatAttachment attachment) => attachment.id == attachmentId,
+      );
+    });
+  }
+
+  String _nextAttachmentId() {
+    _attachmentCounter += 1;
+    return 'attachment-${DateTime.now().microsecondsSinceEpoch}-$_attachmentCounter';
+  }
+
+  String _inferMimeType(String filename) {
+    final String extension = filename.contains('.')
+        ? filename.split('.').last.toLowerCase()
+        : '';
+    switch (extension) {
+      case 'png':
+        return 'image/png';
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'gif':
+        return 'image/gif';
+      case 'webp':
+        return 'image/webp';
+      case 'mp3':
+        return 'audio/mpeg';
+      case 'wav':
+        return 'audio/wav';
+      case 'm4a':
+        return 'audio/mp4';
+      case 'mp4':
+        return 'video/mp4';
+      case 'mov':
+        return 'video/quicktime';
+      case 'pdf':
+        return 'application/pdf';
+      case 'doc':
+        return 'application/msword';
+      case 'docx':
+        return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      case 'xls':
+        return 'application/vnd.ms-excel';
+      case 'xlsx':
+        return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      case 'ppt':
+        return 'application/vnd.ms-powerpoint';
+      case 'pptx':
+        return 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+      case 'txt':
+        return 'text/plain';
+      case 'md':
+      case 'markdown':
+        return 'text/markdown';
+      case 'csv':
+        return 'text/csv';
+      case 'json':
+        return 'application/json';
+      case 'xml':
+        return 'application/xml';
+      default:
+        return 'application/octet-stream';
+    }
+  }
+
+  Color _statusColor(BuildContext context) {
+    switch (_sessionStatus) {
+      case PrivateClawSessionStatus.active:
+        return Theme.of(context).colorScheme.primaryContainer;
+      case PrivateClawSessionStatus.error:
+        return Theme.of(context).colorScheme.errorContainer;
+      case PrivateClawSessionStatus.closed:
+        return Theme.of(context).colorScheme.surfaceContainerHighest;
+      case PrivateClawSessionStatus.reconnecting:
+      case PrivateClawSessionStatus.connecting:
+      case PrivateClawSessionStatus.relayAttached:
+        return Theme.of(context).colorScheme.tertiaryContainer;
+      case PrivateClawSessionStatus.idle:
+        return Theme.of(context).colorScheme.surfaceContainerHighest;
+    }
+  }
+
+  IconData _statusIcon() {
+    switch (_sessionStatus) {
+      case PrivateClawSessionStatus.active:
+        return Icons.lock;
+      case PrivateClawSessionStatus.error:
+        return Icons.error_outline;
+      case PrivateClawSessionStatus.closed:
+        return Icons.link_off;
+      case PrivateClawSessionStatus.reconnecting:
+      case PrivateClawSessionStatus.connecting:
+      case PrivateClawSessionStatus.relayAttached:
+        return Icons.sync;
+      case PrivateClawSessionStatus.idle:
+        return Icons.qr_code_2;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final AppLocalizations l10n = AppLocalizations.of(context)!;
+    final double keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+
+    return Scaffold(
+      resizeToAvoidBottomInset: false,
+      appBar: AppBar(
+        title: Text(l10n.appTitle),
+        actions: <Widget>[
+          if (_client != null)
+            IconButton(
+              tooltip: l10n.disconnectTooltip,
+              onPressed: _disconnect,
+              icon: const Icon(Icons.link_off),
+            ),
+        ],
+      ),
+      body: GestureDetector(
+        onTap: () => FocusScope.of(context).unfocus(),
+        child: SafeArea(
+          bottom: false,
+          child: AnimatedPadding(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOut,
+            padding: EdgeInsets.only(bottom: keyboardInset),
+            child: Column(
+              children: <Widget>[
+                _buildPairingSection(context, l10n),
+                Expanded(child: _buildMessageList(l10n)),
+                _buildComposer(l10n),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPairingSection(
+    BuildContext context,
+    AppLocalizations l10n,
+  ) {
+    if (_canCollapsePairingPanel && _isPairingPanelCollapsed) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+        child: SizedBox(
+          width: double.infinity,
+          child: FilledButton.tonal(
+            onPressed: () {
+              setState(() {
+                _isPairingPanelCollapsed = false;
+              });
+            },
+            child: Row(
+              children: <Widget>[
+                Icon(_statusIcon()),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        _statusText,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if (_invite != null)
+                        Text(
+                          _invite!.sessionId,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.expand_more),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: Text(
+                      l10n.entryTitle,
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                  ),
+                  if (_canCollapsePairingPanel)
+                    IconButton(
+                      onPressed: () {
+                        setState(() {
+                          _isPairingPanelCollapsed = true;
+                        });
+                      },
+                      icon: const Icon(Icons.expand_less),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _inviteController,
+                minLines: 2,
+                maxLines: 4,
+                decoration: InputDecoration(
+                  labelText: l10n.inviteInputLabel,
+                  hintText: l10n.inviteInputHint,
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: <Widget>[
+                  FilledButton.icon(
+                    onPressed: _openScanner,
+                    icon: const Icon(Icons.qr_code_scanner),
+                    label: Text(l10n.scanQrButton),
+                  ),
+                  FilledButton.tonalIcon(
+                    onPressed: () {
+                      unawaited(
+                        _connectFromInput(_inviteController.text),
+                      );
+                    },
+                    icon: const Icon(Icons.login),
+                    label: Text(l10n.connectSessionButton),
+                  ),
+                ],
+              ),
+              if (_invite != null) ...<Widget>[
+                const SizedBox(height: 12),
+                Text(
+                  '${l10n.sessionLabel}: ${_invite!.sessionId}',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                Text(
+                  '${l10n.expiresLabel}: ${_formatDateTime(_invite!.expiresAt)}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: _statusColor(context),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: <Widget>[
+                    Icon(_statusIcon()),
+                    const SizedBox(width: 12),
+                    Expanded(child: Text(_statusText)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMessageList(AppLocalizations l10n) {
+    if (_messages.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Text(
+            l10n.encryptedChatPlaceholder,
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodyLarge,
+          ),
+        ),
+      );
+    }
+
+    return ListView.separated(
+      controller: _scrollController,
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      itemCount: _messages.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      itemBuilder: (BuildContext context, int index) {
+        final ChatMessage message = _messages[index];
+        return ChatMessageBubble(message: message);
+      },
+    );
+  }
+
+  Widget _buildComposer(AppLocalizations l10n) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          if (_selectedAttachments.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _selectedAttachments
+                      .map(
+                        (ChatAttachment attachment) => InputChip(
+                          avatar: Icon(_attachmentIcon(attachment)),
+                          label: SizedBox(
+                            width: 160,
+                            child: Text(
+                              attachment.name,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          onDeleted: () => _removeAttachment(attachment.id),
+                        ),
+                      )
+                      .toList(growable: false),
+                ),
+              ),
+            ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: <Widget>[
+              IconButton(
+                onPressed: _canSend ? _pickAttachments : null,
+                icon: const Icon(Icons.attach_file),
+              ),
+              if (_availableCommands.isNotEmpty)
+                IconButton(
+                  onPressed: _canSend ? _openSlashCommands : null,
+                  icon: const Icon(Icons.terminal),
+                ),
+              Expanded(
+                child: TextField(
+                  controller: _messageController,
+                  focusNode: _composerFocusNode,
+                  enabled: _canSend,
+                  minLines: 1,
+                  maxLines: 1,
+                  textInputAction: TextInputAction.send,
+                  onSubmitted: (_) {
+                    unawaited(_sendMessage());
+                  },
+                  decoration: InputDecoration(
+                    hintText:
+                        _canSend ? l10n.sendHintActive : l10n.sendHintInactive,
+                    border: const OutlineInputBorder(),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              IconButton.filled(
+                onPressed: _canSend && _hasDraftContent ? _sendMessage : null,
+                icon: _hasPendingReply
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.send),
+                tooltip: l10n.sendTooltip,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  IconData _attachmentIcon(ChatAttachment attachment) {
+    if (attachment.isImage) {
+      return Icons.image_outlined;
+    }
+    if (attachment.isAudio) {
+      return Icons.audiotrack;
+    }
+    if (attachment.isVideo) {
+      return Icons.videocam_outlined;
+    }
+    return Icons.attach_file;
+  }
+
+  String _formatDateTime(DateTime value) {
+    final Locale locale = Localizations.localeOf(context);
+    return DateFormat.yMd(locale.toString()).add_jm().format(value.toLocal());
+  }
+
+  String _formatRemainingDuration(Duration value) {
+    final Duration safeValue =
+        value.isNegative ? Duration.zero : value;
+    final int totalMinutes = safeValue.inMinutes;
+    final int hours = totalMinutes ~/ 60;
+    final int minutes = totalMinutes % 60;
+    if (hours <= 0) {
+      return '${minutes}m';
+    }
+    if (minutes == 0) {
+      return '${hours}h';
+    }
+    return '${hours}h ${minutes}m';
+  }
+
+  String _nextSystemMessageId(String label) {
+    return '$label-${DateTime.now().microsecondsSinceEpoch}';
+  }
+}

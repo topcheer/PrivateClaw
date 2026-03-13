@@ -1,0 +1,106 @@
+{
+  "@@locale": "ko",
+  "appTitle": "PrivateClaw",
+  "disconnectTooltip": "연결 끊기",
+  "entryTitle": "일회성 비공개 세션",
+  "inviteInputLabel": "초대 링크 또는 QR 페이로드",
+  "inviteInputHint": "privateclaw://connect?payload=...",
+  "scanQrButton": "QR 코드 스캔",
+  "connectSessionButton": "세션 연결",
+  "sessionLabel": "세션",
+  "expiresLabel": "만료 시간",
+  "initialStatus": "PrivateClaw QR 코드를 스캔하거나 초대 링크를 붙여 넣어 일회성 세션을 시작하세요.",
+  "enterValidInvite": "유효한 PrivateClaw 초대 링크를 붙여 넣거나 스캔하세요.",
+  "connectingRelay": "PrivateClaw 릴레이에 연결하는 중…",
+  "connectFailed": "연결 실패: {error}",
+  "@connectFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String",
+        "example": "네트워크 시간 초과"
+      }
+    }
+  },
+  "encryptedChatPlaceholder": "세션이 연결되면 종단간 암호화된 대화가 여기에 표시됩니다.",
+  "sendHintActive": "암호화된 메시지 보내기…",
+  "sendHintInactive": "세션 연결이 완료되기를 기다리는 중…",
+  "sendTooltip": "보내기",
+  "sendFailed": "전송 실패: {error}",
+  "@sendFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String",
+        "example": "소켓이 닫힘"
+      }
+    }
+  },
+  "sessionDisconnected": "세션 연결이 끊어졌습니다. 새 PrivateClaw 세션을 시작하려면 다시 스캔하세요.",
+  "scanSheetTitle": "PrivateClaw 초대 QR 코드 스캔",
+  "scanSheetHint": "시뮬레이터에서 스캔할 수 없으면 초대 링크를 직접 붙여 넣으세요.",
+  "scannerPermissionDenied": "초대 QR 코드를 스캔하려면 카메라 권한이 필요합니다.",
+  "scannerUnsupported": "이 기기 또는 시뮬레이터에서는 카메라 스캔을 사용할 수 없습니다. 대신 초대 링크를 붙여 넣으세요.",
+  "scannerUnavailable": "QR 스캔을 현재 사용할 수 없습니다. 대신 초대 링크를 붙여 넣으세요.",
+  "scannerLoading": "카메라를 시작하는 중…",
+  "relayConnecting": "릴레이에 연결하는 중…",
+  "relayHandshake": "릴레이에 연결되었습니다. 암호화 핸드셰이크를 마무리하는 중…",
+  "relayConnectionError": "연결 오류: {details}",
+  "@relayConnectionError": {
+    "placeholders": {
+      "details": {
+        "type": "String",
+        "example": "ECONNREFUSED"
+      }
+    }
+  },
+  "relaySessionClosed": "세션이 종료되었습니다.",
+  "relaySessionClosedWithReason": "세션이 종료되었습니다: {reason}",
+  "@relaySessionClosedWithReason": {
+    "placeholders": {
+      "reason": {
+        "type": "String",
+        "example": "expired"
+      }
+    }
+  },
+  "relayError": "릴레이 오류: {details}",
+  "@relayError": {
+    "placeholders": {
+      "details": {
+        "type": "String",
+        "example": "session_not_found"
+      }
+    }
+  },
+  "relayUnknownEvent": "알 수 없는 릴레이 이벤트를 받았습니다: {eventType}",
+  "@relayUnknownEvent": {
+    "placeholders": {
+      "eventType": {
+        "type": "String",
+        "example": "relay:custom"
+      }
+    }
+  },
+  "relayUnknownPayload": "알 수 없는 암호화 메시지 유형을 받았습니다: {payloadType}",
+  "@relayUnknownPayload": {
+    "placeholders": {
+      "payloadType": {
+        "type": "String",
+        "example": "custom_message"
+      }
+    }
+  },
+  "welcomeFallback": "PrivateClaw에 연결되었습니다.",
+  "sessionRenewedNotice": "Session renewed. New expiry: {expiresAt} ({remaining} left).",
+  "@sessionRenewedNotice": {
+    "placeholders": {
+      "expiresAt": {
+        "type": "String",
+        "example": "3/14/2026 9:30 PM"
+      },
+      "remaining": {
+        "type": "String",
+        "example": "8h"
+      }
+    }
+  }
+}

@@ -1,0 +1,14 @@
+node_modules
+apps/privateclaw_app/.dart_tool
+apps/privateclaw_app/build
+apps/privateclaw_app/builds
+packages/*/dist
+services/*/dist
+npm-debug.log
+.DS_Store
+*.aab
+*.apk
+*.ipa
+*.tgz
+*.xcarchive
+*.xcresult

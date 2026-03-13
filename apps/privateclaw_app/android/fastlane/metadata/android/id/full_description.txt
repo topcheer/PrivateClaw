@@ -1,0 +1,10 @@
+PrivateClaw membuat jalur privat terenkripsi end-to-end antara pengguna dan deployment OpenClaw yang di-host sendiri atau di cloud.
+
+Gabung dengan undangan QR sekali pakai, biarkan relay tetap buta terhadap isi pesan, dan pindahkan percakapan sensitif dari permukaan chat publik.
+
+Fitur
+- Pindai atau tempel tautan undangan sekali pakai
+- Transport relay terenkripsi end-to-end
+- Mendukung relay kustom di rumah atau cloud
+- Dirancang untuk percakapan OpenClaw yang privat
+- Alur sesi yang ringan dan aman

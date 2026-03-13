@@ -1,0 +1,10 @@
+PrivateClaw crea un canal privado cifrado de extremo a extremo entre un usuario y una implementación de OpenClaw autoalojada o en la nube.
+
+Únete a una sesión con una invitación QR de un solo uso, mantén el relay ciego al contenido de los mensajes y saca las conversaciones sensibles de las superficies de chat públicas.
+
+Funciones:
+- Escanear o pegar enlaces de invitación de un solo uso
+- Transporte por relay cifrado de extremo a extremo
+- Compatible con relays personalizados en casa o en la nube
+- Diseñado para conversaciones privadas con OpenClaw
+- Flujo de sesión ligero y seguro

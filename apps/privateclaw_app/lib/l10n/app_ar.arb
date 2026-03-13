@@ -1,0 +1,106 @@
+{
+  "@@locale": "ar",
+  "appTitle": "PrivateClaw",
+  "disconnectTooltip": "قطع الاتصال",
+  "entryTitle": "جلسة خاصة لمرة واحدة",
+  "inviteInputLabel": "رابط الدعوة أو محتوى QR",
+  "inviteInputHint": "privateclaw://connect?payload=...",
+  "scanQrButton": "مسح رمز QR",
+  "connectSessionButton": "الانضمام إلى الجلسة",
+  "sessionLabel": "الجلسة",
+  "expiresLabel": "ينتهي في",
+  "initialStatus": "امسح رمز PrivateClaw QR أو الصق رابط الدعوة لبدء جلسة لمرة واحدة.",
+  "enterValidInvite": "الصق أو امسح رابط دعوة PrivateClaw صالحًا.",
+  "connectingRelay": "جارٍ الاتصال بوسيط PrivateClaw…",
+  "connectFailed": "فشل الاتصال: {error}",
+  "@connectFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String",
+        "example": "انتهت مهلة الشبكة"
+      }
+    }
+  },
+  "encryptedChatPlaceholder": "ستظهر هنا المحادثة المشفرة من الطرف إلى الطرف بعد اتصال الجلسة.",
+  "sendHintActive": "إرسال رسالة مشفرة…",
+  "sendHintInactive": "انتظر حتى يكتمل اتصال الجلسة…",
+  "sendTooltip": "إرسال",
+  "sendFailed": "فشل الإرسال: {error}",
+  "@sendFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String",
+        "example": "تم إغلاق المقبس"
+      }
+    }
+  },
+  "sessionDisconnected": "تم قطع الجلسة. امسح مرة أخرى لبدء جلسة PrivateClaw جديدة.",
+  "scanSheetTitle": "مسح رمز دعوة PrivateClaw QR",
+  "scanSheetHint": "إذا تعذر المسح في المحاكي، الصق رابط الدعوة بدلًا من ذلك.",
+  "scannerPermissionDenied": "يلزم الوصول إلى الكاميرا لمسح رمز الدعوة QR.",
+  "scannerUnsupported": "هذا الجهاز أو المحاكي لا يدعم المسح بالكاميرا. الصق رابط الدعوة بدلًا من ذلك.",
+  "scannerUnavailable": "مسح QR غير متاح مؤقتًا. الصق رابط الدعوة بدلًا من ذلك.",
+  "scannerLoading": "جارٍ تشغيل الكاميرا…",
+  "relayConnecting": "جارٍ الاتصال بالوسيط…",
+  "relayHandshake": "تم الاتصال بالوسيط. جارٍ إنهاء المصافحة المشفرة…",
+  "relayConnectionError": "خطأ في الاتصال: {details}",
+  "@relayConnectionError": {
+    "placeholders": {
+      "details": {
+        "type": "String",
+        "example": "ECONNREFUSED"
+      }
+    }
+  },
+  "relaySessionClosed": "أُغلقت الجلسة.",
+  "relaySessionClosedWithReason": "أُغلقت الجلسة: {reason}",
+  "@relaySessionClosedWithReason": {
+    "placeholders": {
+      "reason": {
+        "type": "String",
+        "example": "expired"
+      }
+    }
+  },
+  "relayError": "خطأ في الوسيط: {details}",
+  "@relayError": {
+    "placeholders": {
+      "details": {
+        "type": "String",
+        "example": "session_not_found"
+      }
+    }
+  },
+  "relayUnknownEvent": "تم استلام حدث وسيط غير معروف: {eventType}",
+  "@relayUnknownEvent": {
+    "placeholders": {
+      "eventType": {
+        "type": "String",
+        "example": "relay:custom"
+      }
+    }
+  },
+  "relayUnknownPayload": "تم استلام نوع رسالة مشفرة غير معروف: {payloadType}",
+  "@relayUnknownPayload": {
+    "placeholders": {
+      "payloadType": {
+        "type": "String",
+        "example": "custom_message"
+      }
+    }
+  },
+  "welcomeFallback": "تم الاتصال بـ PrivateClaw.",
+  "sessionRenewedNotice": "Session renewed. New expiry: {expiresAt} ({remaining} left).",
+  "@sessionRenewedNotice": {
+    "placeholders": {
+      "expiresAt": {
+        "type": "String",
+        "example": "3/14/2026 9:30 PM"
+      },
+      "remaining": {
+        "type": "String",
+        "example": "8h"
+      }
+    }
+  }
+}

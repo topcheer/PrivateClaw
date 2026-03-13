@@ -1,0 +1,66 @@
+{
+  "name": "@privateclaw/privateclaw",
+  "version": "0.1.0",
+  "description": "PrivateClaw provider runtime and OpenClaw-compatible plugin adapter",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "bin": {
+    "privateclaw-provider": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "src",
+    "index.ts",
+    "tsconfig.json",
+    "openclaw.plugin.json",
+    "README.md"
+  ],
+  "keywords": [
+    "privateclaw",
+    "openclaw",
+    "provider",
+    "relay",
+    "chat",
+    "encryption"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "demo": "tsx src/cli.ts",
+    "prepack": "npm run build",
+    "test": "node --import tsx --test src/*.test.ts src/**/*.test.ts"
+  },
+  "dependencies": {
+    "@privateclaw/protocol": "^0.1.0",
+    "fflate": "^0.8.2",
+    "qrcode": "^1.5.4",
+    "ws": "^8.18.3"
+  },
+  "peerDependencies": {
+    "openclaw": ">=0.1.0"
+  },
+  "peerDependenciesMeta": {
+    "openclaw": {
+      "optional": true
+    }
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  }
+}

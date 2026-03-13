@@ -1,0 +1,35 @@
+FROM node:22-alpine AS build
+
+WORKDIR /app
+
+COPY package.json package-lock.json tsconfig.base.json ./
+COPY packages/privateclaw-protocol/package.json packages/privateclaw-protocol/package.json
+COPY services/relay-server/package.json services/relay-server/package.json
+
+RUN npm install
+
+COPY packages/privateclaw-protocol packages/privateclaw-protocol
+COPY services/relay-server services/relay-server
+
+RUN npm run build --workspace @privateclaw/protocol \
+  && npm run build --workspace @privateclaw/relay-server
+
+FROM node:22-alpine AS runtime
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV PRIVATECLAW_RELAY_HOST=0.0.0.0
+ENV PRIVATECLAW_RELAY_PORT=8787
+
+COPY --from=build /app/package.json ./package.json
+COPY --from=build /app/package-lock.json ./package-lock.json
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/packages/privateclaw-protocol/package.json ./packages/privateclaw-protocol/package.json
+COPY --from=build /app/packages/privateclaw-protocol/dist ./packages/privateclaw-protocol/dist
+COPY --from=build /app/services/relay-server/package.json ./services/relay-server/package.json
+COPY --from=build /app/services/relay-server/dist ./services/relay-server/dist
+
+EXPOSE 8787
+
+CMD ["node", "services/relay-server/dist/cli.js"]

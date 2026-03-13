@@ -1,0 +1,46 @@
+default_platform(:android)
+
+platform :android do
+  desc "Build a release Android App Bundle via Flutter"
+  lane :build_release do
+    sh("cd .. && flutter build appbundle --release")
+  end
+
+  desc "Upload localized Play Store metadata only"
+  lane :metadata do
+    upload_to_play_store(
+      package_name: "gg.ai.privateclaw",
+      skip_upload_apk: true,
+      skip_upload_aab: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true
+    )
+  end
+
+  desc "Build and upload to internal testing"
+  lane :internal do
+    build_release
+    upload_to_play_store(
+      package_name: "gg.ai.privateclaw",
+      aab: "../build/app/outputs/bundle/release/app-release.aab",
+      track: "internal",
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+      skip_upload_apk: true
+    )
+  end
+
+  desc "Build and upload a production Play Store release"
+  lane :production do
+    build_release
+    upload_to_play_store(
+      package_name: "gg.ai.privateclaw",
+      aab: "../build/app/outputs/bundle/release/app-release.aab",
+      track: "production",
+      release_status: "completed",
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+      skip_upload_apk: true
+    )
+  end
+end

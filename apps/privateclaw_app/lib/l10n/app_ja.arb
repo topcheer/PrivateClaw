@@ -1,0 +1,106 @@
+{
+  "@@locale": "ja",
+  "appTitle": "PrivateClaw",
+  "disconnectTooltip": "切断",
+  "entryTitle": "ワンタイムのプライベートセッション",
+  "inviteInputLabel": "招待リンクまたは QR ペイロード",
+  "inviteInputHint": "privateclaw://connect?payload=...",
+  "scanQrButton": "QR コードをスキャン",
+  "connectSessionButton": "セッションに接続",
+  "sessionLabel": "セッション",
+  "expiresLabel": "有効期限",
+  "initialStatus": "PrivateClaw の QR コードをスキャンするか招待リンクを貼り付けて、ワンタイムセッションを開始します。",
+  "enterValidInvite": "有効な PrivateClaw 招待リンクを貼り付けるかスキャンしてください。",
+  "connectingRelay": "PrivateClaw リレーに接続しています…",
+  "connectFailed": "接続に失敗しました: {error}",
+  "@connectFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String",
+        "example": "ネットワークタイムアウト"
+      }
+    }
+  },
+  "encryptedChatPlaceholder": "セッションの接続が完了すると、エンドツーエンドで暗号化されたチャットがここに表示されます。",
+  "sendHintActive": "暗号化メッセージを送信…",
+  "sendHintInactive": "セッション接続の完了を待っています…",
+  "sendTooltip": "送信",
+  "sendFailed": "送信に失敗しました: {error}",
+  "@sendFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String",
+        "example": "ソケットが閉じられました"
+      }
+    }
+  },
+  "sessionDisconnected": "セッションが切断されました。新しい PrivateClaw セッションを開始するには再度スキャンしてください。",
+  "scanSheetTitle": "PrivateClaw 招待 QR コードをスキャン",
+  "scanSheetHint": "シミュレータでスキャンできない場合は、代わりに招待リンクを貼り付けてください。",
+  "scannerPermissionDenied": "招待 QR コードをスキャンするにはカメラ権限が必要です。",
+  "scannerUnsupported": "このデバイスまたはシミュレータではカメラのスキャンを利用できません。代わりに招待リンクを貼り付けてください。",
+  "scannerUnavailable": "QR スキャンを現在利用できません。代わりに招待リンクを貼り付けてください。",
+  "scannerLoading": "カメラを起動しています…",
+  "relayConnecting": "リレーに接続しています…",
+  "relayHandshake": "リレーに接続しました。暗号化ハンドシェイクを完了しています…",
+  "relayConnectionError": "接続エラー: {details}",
+  "@relayConnectionError": {
+    "placeholders": {
+      "details": {
+        "type": "String",
+        "example": "ECONNREFUSED"
+      }
+    }
+  },
+  "relaySessionClosed": "セッションが終了しました。",
+  "relaySessionClosedWithReason": "セッションが終了しました: {reason}",
+  "@relaySessionClosedWithReason": {
+    "placeholders": {
+      "reason": {
+        "type": "String",
+        "example": "expired"
+      }
+    }
+  },
+  "relayError": "リレーエラー: {details}",
+  "@relayError": {
+    "placeholders": {
+      "details": {
+        "type": "String",
+        "example": "session_not_found"
+      }
+    }
+  },
+  "relayUnknownEvent": "不明なリレーイベントを受信しました: {eventType}",
+  "@relayUnknownEvent": {
+    "placeholders": {
+      "eventType": {
+        "type": "String",
+        "example": "relay:custom"
+      }
+    }
+  },
+  "relayUnknownPayload": "不明な暗号化メッセージ種別を受信しました: {payloadType}",
+  "@relayUnknownPayload": {
+    "placeholders": {
+      "payloadType": {
+        "type": "String",
+        "example": "custom_message"
+      }
+    }
+  },
+  "welcomeFallback": "PrivateClaw に接続しました。",
+  "sessionRenewedNotice": "Session renewed. New expiry: {expiresAt} ({remaining} left).",
+  "@sessionRenewedNotice": {
+    "placeholders": {
+      "expiresAt": {
+        "type": "String",
+        "example": "3/14/2026 9:30 PM"
+      },
+      "remaining": {
+        "type": "String",
+        "example": "8h"
+      }
+    }
+  }
+}

@@ -1,0 +1,1 @@
+공개 채팅을 벗어나 일회성 암호화 채널로 PrivateClaw / OpenClaw 세션에 연결하세요.

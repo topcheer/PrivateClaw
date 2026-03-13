@@ -1,0 +1,106 @@
+{
+  "@@locale": "id",
+  "appTitle": "PrivateClaw",
+  "disconnectTooltip": "Putuskan",
+  "entryTitle": "Sesi privat sekali pakai",
+  "inviteInputLabel": "Tautan undangan atau payload QR",
+  "inviteInputHint": "privateclaw://connect?payload=...",
+  "scanQrButton": "Pindai kode QR",
+  "connectSessionButton": "Gabung sesi",
+  "sessionLabel": "Sesi",
+  "expiresLabel": "Kedaluwarsa",
+  "initialStatus": "Pindai kode QR PrivateClaw atau tempel tautan undangan untuk memulai sesi sekali pakai.",
+  "enterValidInvite": "Tempel atau pindai tautan undangan PrivateClaw yang valid.",
+  "connectingRelay": "Menghubungkan ke relay PrivateClaw…",
+  "connectFailed": "Gagal terhubung: {error}",
+  "@connectFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String",
+        "example": "waktu habis"
+      }
+    }
+  },
+  "encryptedChatPlaceholder": "Chat terenkripsi end-to-end akan muncul di sini setelah sesi terhubung.",
+  "sendHintActive": "Kirim pesan terenkripsi…",
+  "sendHintInactive": "Tunggu sesi selesai terhubung…",
+  "sendTooltip": "Kirim",
+  "sendFailed": "Gagal mengirim: {error}",
+  "@sendFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String",
+        "example": "socket tertutup"
+      }
+    }
+  },
+  "sessionDisconnected": "Sesi terputus. Pindai lagi untuk memulai sesi PrivateClaw baru.",
+  "scanSheetTitle": "Pindai QR undangan PrivateClaw",
+  "scanSheetHint": "Jika simulator tidak bisa memindai, tempel tautan undangan secara langsung.",
+  "scannerPermissionDenied": "Akses kamera diperlukan untuk memindai QR undangan.",
+  "scannerUnsupported": "Perangkat atau simulator ini tidak dapat menyediakan pemindaian kamera. Tempel tautan undangan sebagai gantinya.",
+  "scannerUnavailable": "Pemindaian QR sedang tidak tersedia. Tempel tautan undangan sebagai gantinya.",
+  "scannerLoading": "Memulai kamera…",
+  "relayConnecting": "Menghubungkan ke relay…",
+  "relayHandshake": "Relay terhubung. Menyelesaikan handshake terenkripsi…",
+  "relayConnectionError": "Kesalahan koneksi: {details}",
+  "@relayConnectionError": {
+    "placeholders": {
+      "details": {
+        "type": "String",
+        "example": "ECONNREFUSED"
+      }
+    }
+  },
+  "relaySessionClosed": "Sesi ditutup.",
+  "relaySessionClosedWithReason": "Sesi ditutup: {reason}",
+  "@relaySessionClosedWithReason": {
+    "placeholders": {
+      "reason": {
+        "type": "String",
+        "example": "expired"
+      }
+    }
+  },
+  "relayError": "Kesalahan relay: {details}",
+  "@relayError": {
+    "placeholders": {
+      "details": {
+        "type": "String",
+        "example": "session_not_found"
+      }
+    }
+  },
+  "relayUnknownEvent": "Menerima event relay yang tidak dikenal: {eventType}",
+  "@relayUnknownEvent": {
+    "placeholders": {
+      "eventType": {
+        "type": "String",
+        "example": "relay:custom"
+      }
+    }
+  },
+  "relayUnknownPayload": "Menerima jenis pesan terenkripsi yang tidak dikenal: {payloadType}",
+  "@relayUnknownPayload": {
+    "placeholders": {
+      "payloadType": {
+        "type": "String",
+        "example": "custom_message"
+      }
+    }
+  },
+  "welcomeFallback": "PrivateClaw terhubung.",
+  "sessionRenewedNotice": "Session renewed. New expiry: {expiresAt} ({remaining} left).",
+  "@sessionRenewedNotice": {
+    "placeholders": {
+      "expiresAt": {
+        "type": "String",
+        "example": "3/14/2026 9:30 PM"
+      },
+      "remaining": {
+        "type": "String",
+        "example": "8h"
+      }
+    }
+  }
+}

@@ -1,0 +1,10 @@
+PrivateClaw tạo một đường kết nối riêng tư được mã hóa đầu cuối giữa người dùng và hệ triển khai OpenClaw tự lưu trữ hoặc trên đám mây.
+
+Tham gia bằng mã QR dùng một lần, giữ cho relay không thể đọc nội dung tin nhắn, và đưa các cuộc trò chuyện nhạy cảm ra khỏi bề mặt chat công khai.
+
+Tính năng
+- Quét hoặc dán liên kết mời dùng một lần
+- Truyền relay được mã hóa đầu cuối
+- Hỗ trợ relay tùy chỉnh tại nhà hoặc trên cloud
+- Thiết kế cho hội thoại OpenClaw riêng tư
+- Luồng phiên nhẹ và an toàn

@@ -1,0 +1,106 @@
+{
+  "@@locale": "zh",
+  "appTitle": "PrivateClaw",
+  "disconnectTooltip": "断开连接",
+  "entryTitle": "一次性私有会话入口",
+  "inviteInputLabel": "邀请链接或二维码内容",
+  "inviteInputHint": "privateclaw://connect?payload=...",
+  "scanQrButton": "扫描二维码",
+  "connectSessionButton": "连接会话",
+  "sessionLabel": "会话",
+  "expiresLabel": "过期时间",
+  "initialStatus": "扫描 PrivateClaw 二维码或粘贴邀请链接，开始一次性会话。",
+  "enterValidInvite": "请输入或扫描有效的 PrivateClaw 邀请链接。",
+  "connectingRelay": "正在连接 PrivateClaw 中继服务…",
+  "connectFailed": "连接失败：{error}",
+  "@connectFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String",
+        "example": "网络超时"
+      }
+    }
+  },
+  "encryptedChatPlaceholder": "会话连接成功后，这里会显示端到端加密的聊天记录。",
+  "sendHintActive": "发送加密消息…",
+  "sendHintInactive": "等待会话完成连接…",
+  "sendTooltip": "发送",
+  "sendFailed": "发送失败：{error}",
+  "@sendFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String",
+        "example": "连接已关闭"
+      }
+    }
+  },
+  "sessionDisconnected": "会话已断开，请重新扫码以开始新的 PrivateClaw 会话。",
+  "scanSheetTitle": "扫描 PrivateClaw 邀请二维码",
+  "scanSheetHint": "如果模拟器无法扫码，也可以直接粘贴邀请链接。",
+  "scannerPermissionDenied": "需要相机权限才能扫描邀请二维码。",
+  "scannerUnsupported": "当前设备或模拟器无法提供摄像头扫描，请直接粘贴邀请链接。",
+  "scannerUnavailable": "扫码暂时不可用，请直接粘贴邀请链接。",
+  "scannerLoading": "正在启动摄像头…",
+  "relayConnecting": "正在连接中继服务…",
+  "relayHandshake": "已连接中继服务，正在完成加密握手…",
+  "relayConnectionError": "连接错误：{details}",
+  "@relayConnectionError": {
+    "placeholders": {
+      "details": {
+        "type": "String",
+        "example": "连接被拒绝"
+      }
+    }
+  },
+  "relaySessionClosed": "会话已关闭。",
+  "relaySessionClosedWithReason": "会话已关闭：{reason}",
+  "@relaySessionClosedWithReason": {
+    "placeholders": {
+      "reason": {
+        "type": "String",
+        "example": "已过期"
+      }
+    }
+  },
+  "relayError": "中继错误：{details}",
+  "@relayError": {
+    "placeholders": {
+      "details": {
+        "type": "String",
+        "example": "session_not_found"
+      }
+    }
+  },
+  "relayUnknownEvent": "收到未知中继事件：{eventType}",
+  "@relayUnknownEvent": {
+    "placeholders": {
+      "eventType": {
+        "type": "String",
+        "example": "relay:custom"
+      }
+    }
+  },
+  "relayUnknownPayload": "收到未知加密消息类型：{payloadType}",
+  "@relayUnknownPayload": {
+    "placeholders": {
+      "payloadType": {
+        "type": "String",
+        "example": "custom_message"
+      }
+    }
+  },
+  "welcomeFallback": "PrivateClaw 已连接。",
+  "sessionRenewedNotice": "会话已续期。新的过期时间：{expiresAt}（剩余 {remaining}）。",
+  "@sessionRenewedNotice": {
+    "placeholders": {
+      "expiresAt": {
+        "type": "String",
+        "example": "3/14/2026 9:30 PM"
+      },
+      "remaining": {
+        "type": "String",
+        "example": "8h"
+      }
+    }
+  }
+}

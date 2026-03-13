@@ -28,6 +28,15 @@ flutter build apk --debug
 flutter build ios --simulator
 ```
 
+## Store delivery
+
+- TestFlight: `cd ios && fastlane beta`
+- App Store metadata only: `cd ios && fastlane metadata`
+- Play internal testing: `cd android && fastlane internal`
+- Play metadata only: `cd android && fastlane metadata`
+
+Note: the first Play Console binary upload for a brand-new app still needs to be done manually in the Play Console once before the `internal` lane can be used for follow-up uploads.
+
 ## Notes
 
 - App name: `PrivateClaw`

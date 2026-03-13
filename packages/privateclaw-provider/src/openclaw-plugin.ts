@@ -9,6 +9,11 @@ import {
 } from "./bridges/openclaw-agent-bridge.js";
 import { loadAvailableOpenClawCommands } from "./openclaw-command-discovery.js";
 import { parsePositiveIntegerFlag, runPairSession } from "./pair-session.js";
+import {
+  PRIVATECLAW_QR_ERROR_CORRECTION_LEVEL,
+  PRIVATECLAW_QR_IMAGE_MARGIN,
+  PRIVATECLAW_QR_PNG_WIDTH,
+} from "./qr-options.js";
 import { WebhookBridge } from "./bridges/webhook-bridge.js";
 import {
   type OpenClawExtensionPluginCompat,
@@ -396,9 +401,9 @@ async function writeInviteQrPng(
 ): Promise<string> {
   const pngBuffer = await QRCode.toBuffer(bundle.inviteUri, {
     type: "png",
-    errorCorrectionLevel: "M",
-    margin: 1,
-    width: 512,
+    errorCorrectionLevel: PRIVATECLAW_QR_ERROR_CORRECTION_LEVEL,
+    margin: PRIVATECLAW_QR_IMAGE_MARGIN,
+    width: PRIVATECLAW_QR_PNG_WIDTH,
   });
   await mkdir(mediaDir, { recursive: true });
   const qrPath = path.join(mediaDir, `privateclaw-${bundle.invite.sessionId}.png`);

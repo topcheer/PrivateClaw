@@ -9,6 +9,11 @@ import {
   type PrivateClawSlashCommand,
 } from "@privateclaw/protocol";
 import QRCode from "qrcode";
+import {
+  PRIVATECLAW_QR_ERROR_CORRECTION_LEVEL,
+  PRIVATECLAW_QR_SVG_MARGIN,
+  PRIVATECLAW_QR_TERMINAL_MARGIN,
+} from "./qr-options.js";
 import { RelayProviderClient } from "./relay-provider-client.js";
 import type {
   BridgeMessage,
@@ -419,11 +424,12 @@ export class PrivateClawProvider {
     const inviteUri = encodeInviteToUri(invite);
     const qrSvg = await QRCode.toString(inviteUri, {
       type: "svg",
-      errorCorrectionLevel: "M",
-      margin: 1,
+      errorCorrectionLevel: PRIVATECLAW_QR_ERROR_CORRECTION_LEVEL,
+      margin: PRIVATECLAW_QR_SVG_MARGIN,
     });
     const qrTerminal = await QRCode.toString(inviteUri, {
       type: "terminal",
+      margin: PRIVATECLAW_QR_TERMINAL_MARGIN,
       small: true,
     });
 

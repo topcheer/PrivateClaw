@@ -273,6 +273,8 @@ If the Play API returns `Package not found: gg.ai.privateclaw`, finish the first
 
 If the Play API returns `The apk has permissions that require a privacy policy set for the app`, add a public HTTPS privacy policy URL in Play Console before retrying the upload. A project policy document is included at [`PRIVACY.md`](./PRIVACY.md).
 
+If the Play app itself is still in draft state, upload with `PRIVATECLAW_PLAY_RELEASE_STATUS=draft` so the internal release is created as a draft as well.
+
 The provider publish flow is available from the repository root:
 
 ```bash

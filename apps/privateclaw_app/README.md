@@ -62,6 +62,8 @@ If Play responds with `Package not found: gg.ai.privateclaw`, complete the first
 
 If Play responds with `The apk has permissions that require a privacy policy set for the app`, add a public HTTPS privacy policy URL in Play Console before retrying the upload. The repository now ships a baseline policy in `PRIVACY.md`.
 
+If the Play app is still in draft state, run the Android upload with `PRIVATECLAW_PLAY_RELEASE_STATUS=draft` so Google accepts the internal release while the app is still a draft.
+
 ## Notes
 
 - App name: `PrivateClaw`

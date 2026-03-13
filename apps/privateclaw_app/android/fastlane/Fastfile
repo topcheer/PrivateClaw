@@ -1,6 +1,10 @@
 default_platform(:android)
 
 platform :android do
+  def privateclaw_play_release_status(default_status = "completed")
+    ENV.fetch("PRIVATECLAW_PLAY_RELEASE_STATUS", default_status)
+  end
+
   desc "Build a release Android App Bundle via Flutter"
   lane :build_release do
     sh("cd .. && flutter build appbundle --release")
@@ -23,6 +27,7 @@ platform :android do
       package_name: "gg.ai.privateclaw",
       aab: "../build/app/outputs/bundle/release/app-release.aab",
       track: "internal",
+      release_status: privateclaw_play_release_status("completed"),
       skip_upload_images: true,
       skip_upload_screenshots: true,
       skip_upload_apk: true
@@ -42,7 +47,7 @@ platform :android do
       package_name: "gg.ai.privateclaw",
       aab: "../build/app/outputs/bundle/release/app-release.aab",
       track: "production",
-      release_status: "completed",
+      release_status: privateclaw_play_release_status("completed"),
       skip_upload_images: true,
       skip_upload_screenshots: true,
       skip_upload_apk: true

@@ -17,9 +17,8 @@ platform :android do
     )
   end
 
-  desc "Build and upload to internal testing"
-  lane :internal do
-    build_release
+  desc "Upload an existing release App Bundle to internal testing without rebuilding"
+  lane :upload_internal do
     upload_to_play_store(
       package_name: "gg.ai.privateclaw",
       aab: "../build/app/outputs/bundle/release/app-release.aab",
@@ -28,6 +27,12 @@ platform :android do
       skip_upload_screenshots: true,
       skip_upload_apk: true
     )
+  end
+
+  desc "Build and upload to internal testing"
+  lane :internal do
+    build_release
+    upload_internal
   end
 
   desc "Build and upload a production Play Store release"

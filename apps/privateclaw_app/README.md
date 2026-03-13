@@ -37,12 +37,30 @@ flutter build ios --simulator
 
 You can also run the same lanes from the repository root:
 
+- `npm run store:check`
+- `npm run store:check:ggai`
 - `npm run ios:testflight`
+- `npm run ios:testflight:upload`
+- `npm run ios:testflight:ggai`
+- `npm run ios:testflight:upload:ggai`
 - `npm run ios:metadata`
 - `npm run android:internal`
+- `npm run android:internal:upload`
+- `npm run android:internal:ggai`
+- `npm run android:internal:upload:ggai`
 - `npm run android:metadata`
 
+Run `npm run store:check` first to verify that the required App Store Connect / Play Console environment variables and credential file paths are available from the current shell.
+
+If you already keep the same signing material in `~/ggai/GGAiDoodle`, the `*:ggai` scripts will auto-load those local values before running the check or upload lane. Override the lookup root with `PRIVATECLAW_GGAIDOODLE_ROOT=/your/GGAiDoodle/path` when needed.
+
+Use the `*:upload` variants when you already have a fresh IPA or AAB on disk and only want to retry the store upload without rebuilding first.
+
 Note: the first Play Console binary upload for a brand-new app still needs to be done manually in the Play Console once before the `internal` lane can be used for follow-up uploads.
+
+If Play responds with `Package not found: gg.ai.privateclaw`, complete the first manual Play Console upload for that package and confirm that the service account tied to your Play JSON key has been granted access to the app.
+
+If Play responds with `The apk has permissions that require a privacy policy set for the app`, add a public HTTPS privacy policy URL in Play Console before retrying the upload. The repository now ships a baseline policy in `PRIVACY.md`.
 
 ## Notes
 

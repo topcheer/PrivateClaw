@@ -240,8 +240,16 @@ flutter build ios --simulator
 Repository-level shortcuts:
 
 ```bash
+npm run store:check
+npm run store:check:ggai
 npm run ios:testflight
+npm run ios:testflight:upload
+npm run ios:testflight:ggai
+npm run ios:testflight:upload:ggai
 npm run android:internal
+npm run android:internal:upload
+npm run android:internal:ggai
+npm run android:internal:upload:ggai
 ```
 
 Supporting metadata-only lanes:
@@ -253,7 +261,17 @@ npm run android:metadata
 
 These commands assume your App Store Connect and Play Console credentials are exported as described in `apps/privateclaw_app/fastlane.env.example`.
 
+Run `npm run store:check` first to confirm that the expected credential environment variables, referenced key files, and existing IPA / AAB artifacts are all visible from your current shell before attempting an upload.
+
+If you keep the same local signing material under `~/ggai/GGAiDoodle`, the `*:ggai` variants auto-load the reusable App Store Connect / Play / keystore settings from that project before running the preflight or fastlane lane. Set `PRIVATECLAW_GGAIDOODLE_ROOT` if your local `GGAiDoodle` checkout lives somewhere else.
+
+The `*:upload` variants skip the rebuild step and upload the existing `apps/privateclaw_app/builds/ios/PrivateClaw.ipa` or `apps/privateclaw_app/build/app/outputs/bundle/release/app-release.aab` directly, which is useful for retrying failed store submissions quickly.
+
 Important Play Console note: for a brand-new Android app, Google requires the first binary upload to be completed manually in Play Console before automated uploads to the `internal` track can take over.
+
+If the Play API returns `Package not found: gg.ai.privateclaw`, finish the first manual Play Console upload for that package and make sure the service account behind your Play JSON key has access to the app.
+
+If the Play API returns `The apk has permissions that require a privacy policy set for the app`, add a public HTTPS privacy policy URL in Play Console before retrying the upload. A project policy document is included at [`PRIVACY.md`](./PRIVACY.md).
 
 The provider publish flow is available from the repository root:
 

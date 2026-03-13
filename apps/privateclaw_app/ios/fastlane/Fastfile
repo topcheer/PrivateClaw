@@ -49,14 +49,19 @@ platform :ios do
     )
   end
 
-  desc "Build and upload to TestFlight"
-  lane :beta do
-    build_release
+  desc "Upload an existing IPA to TestFlight without rebuilding"
+  lane :upload_beta do
     upload_to_testflight(
       api_key: privateclaw_app_store_api_key,
       ipa: "../builds/ios/PrivateClaw.ipa",
       skip_waiting_for_build_processing: true
     )
+  end
+
+  desc "Build and upload to TestFlight"
+  lane :beta do
+    build_release
+    upload_beta
   end
 
   desc "Build and submit a production App Store release"

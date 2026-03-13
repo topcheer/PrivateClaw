@@ -31,6 +31,14 @@ Build an App Store signed IPA for PrivateClaw
 
 Upload localized metadata only
 
+### ios upload_beta
+
+```sh
+[bundle exec] fastlane ios upload_beta
+```
+
+Upload an existing IPA to TestFlight without rebuilding
+
 ### ios beta
 
 ```sh

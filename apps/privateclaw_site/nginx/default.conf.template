@@ -1,0 +1,20 @@
+server {
+  listen ${PORT};
+  server_name _;
+
+  root /usr/share/nginx/html;
+  index index.html;
+
+  location = /healthz {
+    add_header Content-Type text/plain;
+    return 200 'ok';
+  }
+
+  location = /chat {
+    return 301 /chat/;
+  }
+
+  location / {
+    try_files $uri $uri/ =404;
+  }
+}

@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0b1020" />
+    <meta name="description" content="PrivateClaw gives you beautiful, private rooms for the people you trust around one shared OpenClaw." />
+    <title>PrivateClaw</title>
+    <link rel="icon" type="image/png" href="./assets/privateclaw_app_icon.png" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body class="marketing-page">
+    <div class="aurora aurora-a"></div>
+    <div class="aurora aurora-b"></div>
+    <div class="aurora aurora-c"></div>
+    <div class="noise-layer"></div>
+
+    <div class="site-shell">
+      <header class="topbar glass-panel">
+        <a class="brand-mark" href="./" aria-label="PrivateClaw home">
+          <span class="brand-icon-wrap">
+            <img src="./assets/privateclaw_app_icon.png" alt="PrivateClaw" class="brand-icon" />
+          </span>
+          <span class="brand-copy">
+            <strong>PrivateClaw</strong>
+            <span data-i18n="site.brandTagline"></span>
+          </span>
+        </a>
+
+        <nav class="topbar-actions">
+          <a class="ghost-button" href="https://groups.google.com/g/gg-studio-ai-products" target="_blank" rel="noreferrer" data-i18n="site.navBetaGroup"></a>
+          <label class="locale-picker" for="locale-select">
+            <span class="sr-only" data-i18n="site.languageLabel"></span>
+            <select id="locale-select" aria-label="Language"></select>
+          </label>
+        </nav>
+      </header>
+
+      <main>
+        <section class="hero-grid">
+          <div class="hero-copy-column">
+            <div class="eyebrow-pill" data-i18n="site.heroBadge"></div>
+            <h1 class="hero-title" data-i18n="site.heroTitle"></h1>
+            <p class="hero-body" data-i18n="site.heroBody"></p>
+
+            <div class="hero-cta-row">
+              <a id="mobile-web-entry" class="primary-button hidden" href="./chat/" hidden>
+                <span data-i18n="site.heroPrimaryCta"></span>
+              </a>
+              <a class="ghost-button" href="https://groups.google.com/g/gg-studio-ai-products" target="_blank" rel="noreferrer" data-i18n="site.heroSecondaryCta"></a>
+            </div>
+
+            <div class="device-hint card-inline">
+              <p id="device-hint-copy" data-i18n="site.heroDesktopHint"></p>
+            </div>
+
+            <div class="coming-soon-row">
+              <span class="coming-soon-badge" data-i18n="site.appComingSoon"></span>
+              <div class="store-button-grid">
+                <button class="store-button" type="button" disabled>
+                  <span class="store-button-label" data-i18n="site.iosComingSoon"></span>
+                </button>
+                <button class="store-button" type="button" disabled>
+                  <span class="store-button-label" data-i18n="site.androidComingSoon"></span>
+                </button>
+              </div>
+            </div>
+
+            <div class="hero-stats" id="hero-stats"></div>
+          </div>
+
+          <div class="hero-stage-column">
+            <div class="hero-stage-frame">
+              <div class="hero-stage-backdrop"></div>
+              <img src="./assets/privateclaw_feature_graphic.png" alt="PrivateClaw feature graphic" class="hero-stage-art" />
+              <div class="phone-shell">
+                <div class="phone-notch"></div>
+                <div class="phone-screen">
+                  <div class="preview-status-pill" data-i18n="site.previewStatus"></div>
+                  <h2 class="preview-title" data-i18n="site.previewTitle"></h2>
+                  <p class="preview-body" data-i18n="site.previewBody"></p>
+                  <div class="preview-chat" id="preview-chat"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="section-block">
+          <div class="section-heading">
+            <span class="section-kicker" data-i18n="site.featuresKicker"></span>
+            <h2 data-i18n="site.featuresTitle"></h2>
+            <p data-i18n="site.featuresBody"></p>
+          </div>
+          <div class="feature-grid" id="feature-grid"></div>
+        </section>
+
+        <section class="section-block scenic-section">
+          <div class="section-heading">
+            <span class="section-kicker" data-i18n="site.scenariosKicker"></span>
+            <h2 data-i18n="site.scenariosTitle"></h2>
+            <p data-i18n="site.scenariosBody"></p>
+          </div>
+          <div class="scenario-grid" id="scenario-grid"></div>
+        </section>
+
+        <section class="section-block community-section">
+          <div class="community-card glass-panel">
+            <div>
+              <span class="section-kicker" data-i18n="site.betaKicker"></span>
+              <h2 data-i18n="site.betaTitle"></h2>
+              <p data-i18n="site.betaBody"></p>
+            </div>
+            <div class="community-actions">
+              <a class="primary-button" href="https://groups.google.com/g/gg-studio-ai-products" target="_blank" rel="noreferrer" data-i18n="site.betaPrimaryCta"></a>
+              <span class="community-footnote" data-i18n="site.betaFootnote"></span>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <footer class="footer-bar glass-panel">
+        <div>
+          <strong>PrivateClaw</strong>
+          <p data-i18n="site.footerLine"></p>
+        </div>
+        <div class="footer-meta">
+          <span>privateclaw.us</span>
+          <span data-i18n="site.footerSupport"></span>
+        </div>
+      </footer>
+    </div>
+
+    <script type="module" src="./scripts/site.js"></script>
+  </body>
+</html>

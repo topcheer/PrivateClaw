@@ -682,12 +682,13 @@ export class PrivateClawProvider {
       excludeAppId?: string;
       severity?: "info" | "error";
       sentAt?: string;
+      messageId?: string;
     },
   ): Promise<void> {
     const session = this.requireSession(sessionId);
     const sentAt = params?.sentAt ?? nowIso();
     const severity = params?.severity ?? "info";
-    const messageId = buildMessageId("system");
+    const messageId = params?.messageId ?? buildMessageId("system");
     const targetAppIds = [...session.participants.keys()].filter(
       (appId) => appId !== params?.excludeAppId,
     );
@@ -1118,12 +1119,30 @@ export class PrivateClawProvider {
           }
 
           session.botMuted = shouldMute;
+          const messageId = buildMessageId("system");
+          const message = shouldMute
+            ? buildBotMutedMessage(participant.displayName)
+            : buildBotUnmutedMessage(participant.displayName);
+          await this.sendSystemMessage(
+            sessionId,
+            message,
+            "info",
+            payload.clientMessageId,
+            {
+              messageId,
+              sentAt: payload.sentAt,
+              targetAppId: participant.appId,
+              storeHistory: false,
+            },
+          );
           await this.sendSystemMessageToGroupParticipants(
             sessionId,
-            shouldMute
-              ? buildBotMutedMessage(participant.displayName)
-              : buildBotUnmutedMessage(participant.displayName),
-            { sentAt: payload.sentAt },
+            message,
+            {
+              excludeAppId: participant.appId,
+              sentAt: payload.sentAt,
+              messageId,
+            },
           );
           await this.sendCapabilities(sessionId);
           return;

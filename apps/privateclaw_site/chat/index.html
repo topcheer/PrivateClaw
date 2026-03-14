@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0b1020" />
+    <meta name="description" content="PrivateClaw mobile web chat preview." />
+    <title>PrivateClaw Web Chat</title>
+    <link rel="icon" type="image/png" href="../assets/privateclaw_app_icon.png" />
+    <link rel="stylesheet" href="../styles.css" />
+  </head>
+  <body class="chat-page">
+    <div class="aurora aurora-a"></div>
+    <div class="aurora aurora-b"></div>
+    <div class="aurora aurora-c"></div>
+    <div class="noise-layer"></div>
+
+    <div class="chat-shell">
+      <header class="chat-header glass-panel">
+        <div class="chat-header-left">
+          <a class="brand-mark compact" href="../">
+            <span class="brand-icon-wrap">
+              <img src="../assets/privateclaw_app_icon.png" alt="PrivateClaw" class="brand-icon" />
+            </span>
+            <span class="brand-copy">
+              <strong>PrivateClaw</strong>
+              <span data-i18n="chat.headerTagline"></span>
+            </span>
+          </a>
+        </div>
+
+        <div class="chat-header-actions">
+          <span class="status-pill" id="status-pill"></span>
+          <label class="locale-picker" for="chat-locale-select">
+            <span class="sr-only" data-i18n="site.languageLabel"></span>
+            <select id="chat-locale-select" aria-label="Language"></select>
+          </label>
+          <button id="disconnect-button" class="ghost-button subtle-button hidden" type="button" hidden>
+            <span data-i18n="chat.disconnectButton"></span>
+          </button>
+        </div>
+      </header>
+
+      <main class="chat-main">
+        <section class="session-sidebar glass-panel" id="session-sidebar">
+          <div class="desktop-warning hidden" id="desktop-warning" hidden>
+            <strong data-i18n="chat.desktopWarningTitle"></strong>
+            <p data-i18n="chat.desktopWarningBody"></p>
+          </div>
+
+          <div class="session-card-header">
+            <div>
+              <span class="section-kicker" data-i18n="chat.connectKicker"></span>
+              <h1 data-i18n="chat.connectTitle"></h1>
+              <p data-i18n="chat.connectBody"></p>
+            </div>
+            <button id="toggle-invite-button" class="ghost-button subtle-button hidden" type="button" hidden>
+              <span data-i18n="chat.changeInviteButton"></span>
+            </button>
+          </div>
+
+          <div class="status-panel" id="status-panel">
+            <div class="status-panel-icon">&#128274;</div>
+            <div>
+              <div class="status-panel-title" data-i18n="chat.statusPanelTitle"></div>
+              <div class="status-panel-copy" id="status-copy"></div>
+            </div>
+          </div>
+
+          <form id="connect-form" class="connect-form">
+            <label class="field-label" for="invite-input" data-i18n="chat.inviteInputLabel"></label>
+            <textarea id="invite-input" rows="4" spellcheck="false"></textarea>
+            <p class="field-help" data-i18n="chat.inviteInputHelp"></p>
+            <button class="primary-button full-width" id="connect-button" type="submit">
+              <span data-i18n="chat.connectButton"></span>
+            </button>
+          </form>
+
+          <div class="session-meta hidden" id="session-meta" hidden>
+            <div class="meta-grid">
+              <div class="meta-item">
+                <span class="meta-label" data-i18n="chat.providerLabel"></span>
+                <strong id="provider-label">-</strong>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label" data-i18n="chat.expiresLabel"></span>
+                <strong id="expires-label">-</strong>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label" data-i18n="chat.modeLabel"></span>
+                <strong id="mode-label">-</strong>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label" data-i18n="chat.identityLabel"></span>
+                <strong id="identity-label">-</strong>
+              </div>
+            </div>
+            <div class="participant-section">
+              <div class="participant-header">
+                <span data-i18n="chat.participantsLabel"></span>
+                <span class="participant-count" id="participant-count">0</span>
+              </div>
+              <div class="participant-chips" id="participant-chips"></div>
+            </div>
+          </div>
+
+          <a class="ghost-button full-width beta-link" href="https://groups.google.com/g/gg-studio-ai-products" target="_blank" rel="noreferrer" data-i18n="chat.betaGroupButton"></a>
+        </section>
+
+        <section class="chat-card glass-panel">
+          <div class="messages-scroll" id="messages-scroll">
+            <div class="empty-state" id="empty-state">
+              <div class="empty-icon">&#10024;</div>
+              <h2 data-i18n="chat.emptyTitle"></h2>
+              <p data-i18n="chat.emptyBody"></p>
+            </div>
+            <div class="message-list" id="message-list"></div>
+          </div>
+
+          <div class="draft-strip hidden" id="draft-strip" hidden>
+            <div class="draft-strip-header">
+              <span data-i18n="chat.draftAttachmentsLabel"></span>
+            </div>
+            <div class="draft-chip-row" id="draft-chip-row"></div>
+          </div>
+
+          <form class="composer" id="composer-form">
+            <input id="file-input" type="file" multiple hidden />
+            <button id="attach-button" class="icon-button" type="button" aria-label="Attach file">&#43;</button>
+            <button id="command-button" class="icon-button" type="button" aria-label="Slash commands">&#47;</button>
+            <textarea id="composer-input" rows="1" spellcheck="true"></textarea>
+            <button id="send-button" class="primary-button send-button" type="submit">
+              <span data-i18n="chat.sendButton"></span>
+            </button>
+          </form>
+        </section>
+      </main>
+    </div>
+
+    <div class="sheet-overlay hidden" id="command-sheet" hidden>
+      <div class="sheet-card glass-panel">
+        <div class="sheet-header">
+          <strong data-i18n="chat.commandSheetTitle"></strong>
+          <button id="close-command-sheet" class="ghost-button subtle-button" type="button">Close</button>
+        </div>
+        <div class="command-list" id="command-list"></div>
+      </div>
+    </div>
+
+    <div class="toast-stack" id="toast-stack"></div>
+
+    <script type="module" src="../scripts/chat.js"></script>
+  </body>
+</html>

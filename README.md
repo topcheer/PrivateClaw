@@ -104,17 +104,18 @@ PrivateClaw's public production relay is:
 https://relay.privateclaw.us
 ```
 
-The repo code now defaults to that relay. For production installs, I still recommend setting it explicitly in OpenClaw so the currently published npm package and future versions behave the same way.
+The repo code now defaults to that relay, so production installs can use it without any extra relay configuration unless you want to override it.
 
 ### 1. Install the provider into OpenClaw from npm
 
 ```bash
 openclaw plugins install @privateclaw/privateclaw@latest
 openclaw plugins enable privateclaw
-openclaw config set plugins.entries.privateclaw.config.relayBaseUrl https://relay.privateclaw.us
 ```
 
 `openclaw plugins install` is the correct production entrypoint here. Its built-in help explicitly says it installs a plugin from a `path, archive, or npm spec`, so `@privateclaw/privateclaw@latest` is a first-class npm install path rather than a local-only shortcut.
+
+If you are using the default public relay at `https://relay.privateclaw.us`, the `relayBaseUrl` config step is optional and can be skipped. Only run `openclaw config set plugins.entries.privateclaw.config.relayBaseUrl ...` when you want to override the relay and point PrivateClaw at your own deployment.
 
 PrivateClaw is an OpenClaw plugin command provider, not a built-in chat transport. That means you do **not** configure it with `openclaw channels add privateclaw`. Instead:
 
@@ -128,8 +129,9 @@ If npm is temporarily behind the GitHub repo and you need the newest GitHub chec
 TARBALL="$(npm pack --workspace @privateclaw/privateclaw | tail -n 1)"
 openclaw plugins install "./${TARBALL}"
 openclaw plugins enable privateclaw
-openclaw config set plugins.entries.privateclaw.config.relayBaseUrl https://relay.privateclaw.us
 ```
+
+After `openclaw plugins install`, `openclaw plugins enable`, or any `openclaw config set plugins.entries.privateclaw.config...` change, restart the running OpenClaw gateway/service before testing so it reloads the plugin and config. In practice, that means restarting the running `openclaw start` process or whichever service unit is hosting your gateway.
 
 ### 2. Choose how to start a session
 
@@ -203,6 +205,8 @@ openclaw plugins enable privateclaw
 openclaw config set plugins.entries.privateclaw.config.relayBaseUrl ws://127.0.0.1:8787
 ```
 
+Because this flow changes both the installed plugin and the relay target, restart the running OpenClaw gateway/service before testing.
+
 The provider package also exports `resolveRelayEndpoints(...)` if you want to derive provider and app socket URLs from one base URL:
 
 ```ts
@@ -214,7 +218,7 @@ const relay = resolveRelayEndpoints("ws://127.0.0.1:8787");
 ## Self-hosting the relay
 
 The relay is intentionally small. It can run with only Node.js, or as a Docker container with optional Redis-backed frame caching.
-If you use your own relay instead of `https://relay.privateclaw.us`, point OpenClaw at it with `openclaw config set plugins.entries.privateclaw.config.relayBaseUrl <your-relay-base-url>`.
+If you use your own relay instead of `https://relay.privateclaw.us`, point OpenClaw at it with `openclaw config set plugins.entries.privateclaw.config.relayBaseUrl <your-relay-base-url>` and then restart the running OpenClaw gateway/service.
 
 ### Docker Compose
 

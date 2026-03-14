@@ -83,17 +83,18 @@ PrivateClaw 的公共生产 relay 是：
 https://relay.privateclaw.us
 ```
 
-仓库里的源码默认值已经切到这个地址。为了让当前 npm 已发布版本和后续版本都表现一致，生产环境里仍建议在 OpenClaw 配置里显式写入它。
+仓库里的源码默认值已经切到这个地址，所以生产环境默认可以直接使用；只有当你想覆盖成自己的 relay 时，才需要额外写 `relayBaseUrl` 配置。
 
 ### 1. 通过 npm 把 provider 安装到 OpenClaw
 
 ```bash
 openclaw plugins install @privateclaw/privateclaw@latest
 openclaw plugins enable privateclaw
-openclaw config set plugins.entries.privateclaw.config.relayBaseUrl https://relay.privateclaw.us
 ```
 
 这里应该使用 `openclaw plugins install`，而且它的帮助信息已经明确说明支持 `path, archive, or npm spec`，所以 `@privateclaw/privateclaw@latest` 是标准的 npm 安装路径，不是只能本地联调时用的命令。
+
+如果你直接使用默认公共 relay `https://relay.privateclaw.us`，那么 `relayBaseUrl` 这一步是可选的，可以跳过。只有在你想把 PrivateClaw 指向自己的 relay 部署时，才需要额外执行 `openclaw config set plugins.entries.privateclaw.config.relayBaseUrl ...`。
 
 PrivateClaw 是一个 OpenClaw 插件命令提供者，不是内置聊天传输 channel。因此**不要**使用 `openclaw channels add privateclaw`。正确方式是：
 
@@ -107,8 +108,9 @@ PrivateClaw 是一个 OpenClaw 插件命令提供者，不是内置聊天传输 
 TARBALL="$(npm pack --workspace @privateclaw/privateclaw | tail -n 1)"
 openclaw plugins install "./${TARBALL}"
 openclaw plugins enable privateclaw
-openclaw config set plugins.entries.privateclaw.config.relayBaseUrl https://relay.privateclaw.us
 ```
+
+执行完 `openclaw plugins install`、`openclaw plugins enable`，或者任何 `openclaw config set plugins.entries.privateclaw.config...` 改动后，在测试前都要重启正在运行的 OpenClaw gateway / service，让它重新加载插件和配置。实际操作上，就是重启正在跑的 `openclaw start` 进程，或者你用来托管 gateway 的 service。
 
 ### 2. 选择如何启动会话
 
@@ -185,6 +187,8 @@ openclaw plugins enable privateclaw
 openclaw config set plugins.entries.privateclaw.config.relayBaseUrl ws://127.0.0.1:8787
 ```
 
+因为这个流程同时变更了已安装插件和 relay 目标地址，所以开始测试前也需要重启正在运行的 OpenClaw gateway / service。
+
 如果你希望从一个 relay base URL 推导 provider / app 两个 WebSocket 地址，也可以直接使用导出的辅助函数：
 
 ```ts
@@ -195,7 +199,7 @@ const relay = resolveRelayEndpoints("ws://127.0.0.1:8787");
 
 ## 自建 relay
 
-如果你使用自己的 relay，而不是 `https://relay.privateclaw.us`，记得执行 `openclaw config set plugins.entries.privateclaw.config.relayBaseUrl <你的 relay base URL>` 把 OpenClaw 指过去。
+如果你使用自己的 relay，而不是 `https://relay.privateclaw.us`，记得执行 `openclaw config set plugins.entries.privateclaw.config.relayBaseUrl <你的 relay base URL>` 把 OpenClaw 指过去，然后重启正在运行的 OpenClaw gateway / service。
 
 ### Docker Compose
 

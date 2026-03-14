@@ -610,7 +610,12 @@ test("group sessions can mute and unmute bot replies without stopping participan
   ]);
   const muteNotice = decryptRelayPayload(muteAppOneFrames[0]!, invite);
   assert.equal(muteNotice.kind, "system_message");
+  assert.equal(muteNotice.replyTo, "mute-bot-1");
   assert.match(muteNotice.message, /暂停机器人|pause(?:d)? bot replies/i);
+  const peerMuteNotice = decryptRelayPayload(muteAppTwoFrames[0]!, invite);
+  assert.equal(peerMuteNotice.kind, "system_message");
+  assert.equal(peerMuteNotice.replyTo, undefined);
+  assert.equal(peerMuteNotice.messageId, muteNotice.messageId);
   const muteCapabilities = decryptRelayPayload(muteAppOneFrames[1]!, invite);
   assert.equal(muteCapabilities.kind, "provider_capabilities");
   assert.equal(muteCapabilities.botMuted, true);
@@ -684,8 +689,13 @@ test("group sessions can mute and unmute bot replies without stopping participan
     unmuteAppOneFramesPromise,
     unmuteAppTwoFramesPromise,
   ]);
+  const peerUnmuteNotice = decryptRelayPayload(unmuteAppOneFrames[0]!, invite);
+  assert.equal(peerUnmuteNotice.kind, "system_message");
+  assert.equal(peerUnmuteNotice.replyTo, undefined);
   const unmuteNotice = decryptRelayPayload(unmuteAppTwoFrames[0]!, invite);
   assert.equal(unmuteNotice.kind, "system_message");
+  assert.equal(unmuteNotice.replyTo, "unmute-bot-1");
+  assert.equal(unmuteNotice.messageId, peerUnmuteNotice.messageId);
   assert.match(unmuteNotice.message, /恢复机器人|resume(?:d)? bot replies/i);
   const unmuteCapabilities = decryptRelayPayload(unmuteAppOneFrames[1]!, invite);
   assert.equal(unmuteCapabilities.kind, "provider_capabilities");

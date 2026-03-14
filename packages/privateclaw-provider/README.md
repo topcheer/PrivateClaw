@@ -51,8 +51,9 @@ https://relay.privateclaw.us
 ```bash
 openclaw plugins install @privateclaw/privateclaw@latest
 openclaw plugins enable privateclaw
-openclaw config set plugins.entries.privateclaw.config.relayBaseUrl https://relay.privateclaw.us
 ```
+
+If you are using the default public relay at `https://relay.privateclaw.us`, the `relayBaseUrl` override is optional and can be skipped. Only run `openclaw config set plugins.entries.privateclaw.config.relayBaseUrl ...` when you want to point the plugin at your own relay deployment.
 
 If npm is not updated yet but you want the newest GitHub checkout immediately, pack the workspace and install the archive:
 
@@ -60,8 +61,9 @@ If npm is not updated yet but you want the newest GitHub checkout immediately, p
 TARBALL="$(npm pack --workspace @privateclaw/privateclaw | tail -n 1)"
 openclaw plugins install "./${TARBALL}"
 openclaw plugins enable privateclaw
-openclaw config set plugins.entries.privateclaw.config.relayBaseUrl https://relay.privateclaw.us
 ```
+
+After `openclaw plugins install`, `openclaw plugins enable`, or any `openclaw config set plugins.entries.privateclaw.config...` change, restart the running OpenClaw gateway/service before testing so it reloads the extension and config. In practice, that means restarting the running `openclaw start` process or whichever service unit hosts your gateway.
 
 For local development from this repository, use a linked checkout and point it at your local relay:
 
@@ -70,6 +72,8 @@ openclaw plugins install --link ./packages/privateclaw-provider
 openclaw plugins enable privateclaw
 openclaw config set plugins.entries.privateclaw.config.relayBaseUrl ws://127.0.0.1:8787
 ```
+
+Because local development changes both the installed plugin and relay target, restart the running OpenClaw gateway/service before testing.
 
 PrivateClaw is not configured with `openclaw channels add privateclaw`. If you want `/privateclaw` to be available inside Telegram/Discord/QQ, add one of those normal OpenClaw channels separately with `openclaw channels add --channel ...`.
 

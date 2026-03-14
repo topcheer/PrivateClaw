@@ -1,0 +1,8 @@
+FROM nginx:1.27-alpine
+
+ENV PORT=8080
+
+COPY apps/privateclaw_site/ /usr/share/nginx/html/
+COPY apps/privateclaw_site/nginx/default.conf.template /etc/nginx/templates/default.conf.template
+
+EXPOSE 8080

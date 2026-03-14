@@ -21,9 +21,25 @@ interface OpenClawPluginCommandSpecLike {
   acceptsArgs?: unknown;
 }
 
+interface OpenClawSkillCommandSpecLike {
+  name?: unknown;
+  description?: unknown;
+  skillName?: unknown;
+}
+
 interface OpenClawCommandRuntime {
-  listChatCommands: () => OpenClawCommandDefinitionLike[];
-  getPluginCommandSpecs: () => OpenClawPluginCommandSpecLike[];
+  listChatCommands: (
+    params?: { skillCommands?: OpenClawSkillCommandSpecLike[] },
+  ) => OpenClawCommandDefinitionLike[];
+  listChatCommandsForConfig?: (
+    config: unknown,
+    params?: { skillCommands?: OpenClawSkillCommandSpecLike[] },
+  ) => OpenClawCommandDefinitionLike[];
+  loadConfig?: () => unknown;
+  listSkillCommandsForAgents?: (
+    config: unknown,
+  ) => OpenClawSkillCommandSpecLike[];
+  getPluginCommandSpecs: (provider?: string) => OpenClawPluginCommandSpecLike[];
 }
 
 let cachedRuntimePromise: Promise<OpenClawCommandRuntime | null> | undefined;
@@ -211,6 +227,18 @@ async function resolveHashedModulePath(params: {
   }
 }
 
+function findExportedFunction<T extends (...args: never[]) => unknown>(
+  module: Record<string, unknown>,
+  functionName: string,
+): T | null {
+  for (const exported of Object.values(module)) {
+    if (typeof exported === "function" && exported.name === functionName) {
+      return exported as T;
+    }
+  }
+  return null;
+}
+
 async function loadRuntime(): Promise<OpenClawCommandRuntime | null> {
   if (!cachedRuntimePromise) {
     cachedRuntimePromise = (async () => {
@@ -220,12 +248,11 @@ async function loadRuntime(): Promise<OpenClawCommandRuntime | null> {
       }
 
       const distDir = path.join(openClawRoot, "dist");
-      const pluginSdkDir = path.join(distDir, "plugin-sdk");
-      const [commandsRegistryPath, registryPath] = await Promise.all([
+      const [replyPath, registryPath] = await Promise.all([
         resolveHashedModulePath({
-          distDir: pluginSdkDir,
+          distDir,
           entryFile: "index.js",
-          prefix: "commands-registry-",
+          prefix: "reply-",
         }),
         resolveHashedModulePath({
           distDir,
@@ -234,28 +261,70 @@ async function loadRuntime(): Promise<OpenClawCommandRuntime | null> {
         }),
       ]);
 
-      if (!commandsRegistryPath || !registryPath) {
+      if (!replyPath || !registryPath) {
         return null;
       }
 
-      const [commandsModule, registryModule] = await Promise.all([
-        import(pathToFileURL(commandsRegistryPath).href) as Promise<Record<string, unknown>>,
+      const [replyModule, registryModule] = await Promise.all([
+        import(pathToFileURL(replyPath).href) as Promise<Record<string, unknown>>,
         import(pathToFileURL(registryPath).href) as Promise<Record<string, unknown>>,
       ]);
 
-      const listChatCommands = commandsModule.i;
-      const getPluginCommandSpecs = registryModule.w;
-      if (
-        typeof listChatCommands !== "function" ||
-        typeof getPluginCommandSpecs !== "function"
-      ) {
+      const listChatCommands = findExportedFunction<
+        (params?: {
+          skillCommands?: OpenClawSkillCommandSpecLike[];
+        }) => OpenClawCommandDefinitionLike[]
+      >(replyModule, "listChatCommands");
+      const listChatCommandsForConfig = findExportedFunction<
+        (
+          config: unknown,
+          params?: { skillCommands?: OpenClawSkillCommandSpecLike[] },
+        ) => OpenClawCommandDefinitionLike[]
+      >(replyModule, "listChatCommandsForConfig");
+      const loadConfig = findExportedFunction<() => unknown>(
+        replyModule,
+        "loadConfig",
+      );
+      const listSkillCommandsForAgents = findExportedFunction<
+        (config: unknown) => OpenClawSkillCommandSpecLike[]
+      >(replyModule, "listSkillCommandsForAgents");
+      const getPluginCommandSpecs = findExportedFunction<
+        (provider?: string) => OpenClawPluginCommandSpecLike[]
+      >(registryModule, "getPluginCommandSpecs");
+
+      if (!listChatCommands || !getPluginCommandSpecs) {
         return null;
       }
 
       return {
-        listChatCommands: () => listChatCommands() as OpenClawCommandDefinitionLike[],
-        getPluginCommandSpecs: () =>
-          getPluginCommandSpecs() as OpenClawPluginCommandSpecLike[],
+        listChatCommands: (params) =>
+          listChatCommands(params) as OpenClawCommandDefinitionLike[],
+        ...(listChatCommandsForConfig
+          ? {
+              listChatCommandsForConfig: (config: unknown, params?: {
+                skillCommands?: OpenClawSkillCommandSpecLike[];
+              }) =>
+                listChatCommandsForConfig(
+                  config,
+                  params,
+                ) as OpenClawCommandDefinitionLike[],
+            }
+          : {}),
+        ...(loadConfig
+          ? {
+              loadConfig: () => loadConfig(),
+            }
+          : {}),
+        ...(listSkillCommandsForAgents
+          ? {
+              listSkillCommandsForAgents: (config: unknown) =>
+                listSkillCommandsForAgents(
+                  config,
+                ) as OpenClawSkillCommandSpecLike[],
+            }
+          : {}),
+        getPluginCommandSpecs: (provider?: string) =>
+          getPluginCommandSpecs(provider) as OpenClawPluginCommandSpecLike[],
       };
     })();
   }
@@ -269,8 +338,39 @@ export async function loadAvailableOpenClawCommands(): Promise<PrivateClawSlashC
     return [];
   }
 
+  let config: unknown;
+  let skillCommands: OpenClawSkillCommandSpecLike[] | undefined;
+
+  if (runtime.loadConfig) {
+    try {
+      config = runtime.loadConfig();
+    } catch {
+      config = undefined;
+    }
+  }
+
+  if (config !== undefined && runtime.listSkillCommandsForAgents) {
+    try {
+      skillCommands = runtime.listSkillCommandsForAgents(config);
+    } catch {
+      skillCommands = undefined;
+    }
+  }
+
+  const listParams = skillCommands?.length ? { skillCommands } : undefined;
+  let builtInCommands: OpenClawCommandDefinitionLike[];
+  if (config !== undefined && runtime.listChatCommandsForConfig) {
+    builtInCommands = runtime.listChatCommandsForConfig(config, listParams);
+  } else {
+    builtInCommands = runtime.listChatCommands(listParams);
+  }
+
   return dedupeCommands([
-    ...mapBuiltInCommands(runtime.listChatCommands()),
+    ...mapBuiltInCommands(builtInCommands),
     ...mapPluginCommands(runtime.getPluginCommandSpecs()),
   ]);
+}
+
+export function resetOpenClawCommandDiscoveryForTests(): void {
+  cachedRuntimePromise = undefined;
 }

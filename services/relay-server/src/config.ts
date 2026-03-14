@@ -3,6 +3,7 @@ export interface RelayServerConfig {
   port: number;
   sessionTtlMs: number;
   frameCacheSize: number;
+  instanceId?: string;
   redisUrl?: string;
 }
 
@@ -40,6 +41,9 @@ export function loadRelayConfig(env: NodeJS.ProcessEnv = process.env): RelayServ
     25,
     "PRIVATECLAW_FRAME_CACHE_SIZE",
   );
+  const instanceId =
+    env.PRIVATECLAW_RELAY_INSTANCE_ID?.trim() ||
+    env.RAILWAY_REPLICA_ID?.trim();
   const redisUrl = env.PRIVATECLAW_REDIS_URL?.trim() || env.REDIS_URL?.trim();
 
   return {
@@ -47,6 +51,7 @@ export function loadRelayConfig(env: NodeJS.ProcessEnv = process.env): RelayServ
     port,
     sessionTtlMs,
     frameCacheSize,
+    ...(instanceId ? { instanceId } : {}),
     ...(redisUrl ? { redisUrl } : {}),
   };
 }

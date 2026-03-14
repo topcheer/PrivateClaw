@@ -1,4 +1,6 @@
 # Copy this over railway.toml if you want an embedded Redis cache in the same container.
+# This variant is convenient for a single relay replica, but not for multi-instance HA:
+# each container gets its own private Redis and cannot share sessions with sibling replicas.
 [build]
 builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile.multiarch.redis"

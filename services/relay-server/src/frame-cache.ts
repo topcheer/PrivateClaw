@@ -15,7 +15,7 @@ export interface EncryptedFrameCache {
   close(): Promise<void>;
 }
 
-class InMemoryEncryptedFrameCache implements EncryptedFrameCache {
+export class InMemoryEncryptedFrameCache implements EncryptedFrameCache {
   private readonly frames = new Map<string, EncryptedEnvelope[]>();
 
   constructor(private readonly maxFrames: number) {}
@@ -55,7 +55,7 @@ class InMemoryEncryptedFrameCache implements EncryptedFrameCache {
   }
 }
 
-class RedisEncryptedFrameCache implements EncryptedFrameCache {
+export class RedisEncryptedFrameCache implements EncryptedFrameCache {
   private readonly redis: Redis;
 
   constructor(redisUrl: string, private readonly maxFrames: number) {
@@ -85,8 +85,15 @@ class RedisEncryptedFrameCache implements EncryptedFrameCache {
     target: CachedRelayFrameTarget;
   }): Promise<EncryptedEnvelope[]> {
     const key = this.key(params.sessionId, params.target);
-    const values = await this.redis.lrange(key, 0, -1);
-    await this.redis.del(key);
+    const values = (await this.redis.eval(
+      `
+        local values = redis.call("lrange", KEYS[1], 0, -1)
+        redis.call("del", KEYS[1])
+        return values
+      `,
+      1,
+      key,
+    )) as string[];
     return values
       .reverse()
       .map((value: string) => JSON.parse(value) as EncryptedEnvelope);
@@ -109,4 +116,8 @@ export function createEncryptedFrameCache(params: {
     return new RedisEncryptedFrameCache(params.redisUrl, params.maxFrames);
   }
   return new InMemoryEncryptedFrameCache(params.maxFrames);
+}
+
+export function createInMemoryEncryptedFrameCache(maxFrames: number): EncryptedFrameCache {
+  return new InMemoryEncryptedFrameCache(maxFrames);
 }

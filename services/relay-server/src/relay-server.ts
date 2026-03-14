@@ -14,6 +14,18 @@ import {
   createEncryptedFrameCache,
   type EncryptedFrameCache,
 } from "./frame-cache.js";
+import {
+  createRedisRelayClusterClient,
+  RelayClaimConflictError,
+  type RelayClusterAppBinding,
+  type RelayClusterCallbacks,
+  type RelayClusterClient,
+} from "./relay-cluster.js";
+import {
+  createRelaySessionStore,
+  type RelaySessionRecord,
+  type RelaySessionStore,
+} from "./session-store.js";
 
 const HEARTBEAT_INTERVAL_MS = 15_000;
 
@@ -31,18 +43,10 @@ interface RelaySocket extends WebSocket {
   isAlive?: boolean;
 }
 
-interface SessionRecord {
-  sessionId: string;
-  expiresAt: number;
-  providerId: string;
-  groupMode: boolean;
-  providerSocket?: WebSocket;
-  appSockets: Map<string, WebSocket>;
-}
-
-interface AppSessionBinding {
+interface AppSessionBinding extends RelayClusterAppBinding {
   sessionId: string;
   appId: string;
+  groupMode: boolean;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -88,6 +92,9 @@ function toRelayProtocolError(error: unknown): RelayProtocolError {
   if (error instanceof RelayProtocolError) {
     return error;
   }
+  if (error instanceof RelayClaimConflictError) {
+    return new RelayProtocolError("session_in_use", error.message);
+  }
   if (error instanceof Error) {
     return new RelayProtocolError("internal_error", error.message);
   }
@@ -115,48 +122,162 @@ function pingServerClients(server: WebSocketServer): void {
   }
 }
 
+function isSocketActive(socket: WebSocket): boolean {
+  return (
+    socket.readyState === WebSocket.OPEN ||
+    socket.readyState === WebSocket.CONNECTING
+  );
+}
+
+interface SessionHubParams {
+  defaultTtlMs: number;
+  frameCache: EncryptedFrameCache;
+  sessionStore: RelaySessionStore;
+  now?: () => number;
+}
+
 class SessionHub {
-  private readonly sessions = new Map<string, SessionRecord>();
-  private readonly providerSessions = new Map<string, Set<string>>();
   private readonly providerSockets = new Map<string, WebSocket>();
   private readonly socketProviders = new Map<WebSocket, string>();
+  private readonly providerSessions = new Map<string, Set<string>>();
+  private readonly sessionProviders = new Map<string, string>();
+  private readonly sessionApps = new Map<string, Map<string, WebSocket>>();
   private readonly appSessions = new Map<WebSocket, AppSessionBinding>();
+  private cluster: RelayClusterClient | undefined;
 
-  constructor(
-    private readonly params: {
-      defaultTtlMs: number;
-      frameCache: EncryptedFrameCache;
-      now?: () => number;
-    },
-  ) {}
+  constructor(private readonly params: SessionHubParams) {}
+
+  setCluster(cluster: RelayClusterClient | undefined): void {
+    this.cluster = cluster;
+  }
 
   private now(): number {
     return this.params.now?.() ?? Date.now();
   }
 
-  get sessionCount(): number {
-    return this.sessions.size;
+  get usesPersistentSessions(): boolean {
+    return this.params.sessionStore.persistent;
   }
 
-  attachProvider(providerId: string, providerSocket: WebSocket): void {
+  get localSessionCount(): number {
+    return new Set<string>([
+      ...this.sessionProviders.keys(),
+      ...this.sessionApps.keys(),
+    ]).size;
+  }
+
+  async countSessions(): Promise<number> {
+    return this.params.sessionStore.countSessions(this.now());
+  }
+
+  private async rememberLocalProviderSession(
+    providerId: string,
+    sessionId: string,
+  ): Promise<void> {
+    const previousProviderId = this.sessionProviders.get(sessionId);
+    if (previousProviderId === providerId) {
+      return;
+    }
+    if (previousProviderId) {
+      await this.forgetLocalProviderSession(previousProviderId, sessionId);
+    }
+
+    const sessionIds = this.providerSessions.get(providerId) ?? new Set<string>();
+    const added = !sessionIds.has(sessionId);
+    sessionIds.add(sessionId);
+    this.providerSessions.set(providerId, sessionIds);
+    this.sessionProviders.set(sessionId, providerId);
+    if (added && this.cluster) {
+      await this.cluster.subscribeProvider(providerId, sessionId);
+    }
+  }
+
+  private async forgetLocalProviderSession(
+    providerId: string,
+    sessionId: string,
+  ): Promise<void> {
+    if (this.sessionProviders.get(sessionId) !== providerId) {
+      return;
+    }
+
+    this.sessionProviders.delete(sessionId);
+    const sessionIds = this.providerSessions.get(providerId);
+    sessionIds?.delete(sessionId);
+    if (sessionIds?.size === 0) {
+      this.providerSessions.delete(providerId);
+    }
+    if (this.cluster) {
+      await this.cluster.unsubscribeProvider(providerId, sessionId);
+    }
+  }
+
+  private async rememberLocalAppBinding(
+    binding: AppSessionBinding,
+    appSocket: WebSocket,
+  ): Promise<void> {
+    const appSockets = this.sessionApps.get(binding.sessionId) ?? new Map<string, WebSocket>();
+    appSockets.set(binding.appId, appSocket);
+    this.sessionApps.set(binding.sessionId, appSockets);
+    this.appSessions.set(appSocket, binding);
+    if (this.cluster) {
+      await this.cluster.subscribeApp(binding.sessionId, binding.appId);
+    }
+  }
+
+  private async forgetLocalAppBinding(
+    appSocket: WebSocket,
+    binding: AppSessionBinding,
+  ): Promise<boolean> {
+    const appSockets = this.sessionApps.get(binding.sessionId);
+    if (!appSockets || appSockets.get(binding.appId) !== appSocket) {
+      this.appSessions.delete(appSocket);
+      return false;
+    }
+
+    appSockets.delete(binding.appId);
+    if (appSockets.size === 0) {
+      this.sessionApps.delete(binding.sessionId);
+    }
+    this.appSessions.delete(appSocket);
+    if (this.cluster) {
+      await this.cluster.unsubscribeApp(binding.sessionId, binding.appId);
+      await this.cluster.releaseApp(binding);
+    }
+    return true;
+  }
+
+  async attachProvider(
+    providerId: string,
+    providerSocket: WebSocket,
+  ): Promise<void> {
     const previousSocket = this.providerSockets.get(providerId);
     if (
       previousSocket &&
       previousSocket !== providerSocket &&
-      (previousSocket.readyState === WebSocket.OPEN ||
-        previousSocket.readyState === WebSocket.CONNECTING)
+      isSocketActive(previousSocket)
     ) {
-      previousSocket.close(1012, "provider_reconnected");
+      await this.closeLocalProvider(providerId, "provider_reconnected");
     }
 
     this.providerSockets.set(providerId, providerSocket);
     this.socketProviders.set(providerSocket, providerId);
 
-    for (const sessionId of this.providerSessions.get(providerId) ?? []) {
-      const session = this.sessions.get(sessionId);
-      if (session) {
-        session.providerSocket = providerSocket;
+    if (this.cluster) {
+      const claim = await this.cluster.claimProvider(providerId);
+      if (claim.previousNodeId) {
+        await this.cluster.publishProviderReconnected(
+          providerId,
+          claim.previousNodeId,
+        );
       }
+    }
+
+    const sessionIds = await this.params.sessionStore.listProviderSessions(
+      providerId,
+      this.now(),
+    );
+    for (const sessionId of sessionIds) {
+      await this.rememberLocalProviderSession(providerId, sessionId);
     }
   }
 
@@ -171,33 +292,24 @@ class SessionHub {
     return providerId;
   }
 
-  createSession(
+  async createSession(
     providerSocket: WebSocket,
     params?: { ttlMs?: number; groupMode?: boolean },
-  ): SessionRecord {
+  ): Promise<RelaySessionRecord> {
     const providerId = this.requireProviderId(providerSocket);
-    const sessionId = randomUUID();
-    const expiresAt = this.now() + (params?.ttlMs ?? this.params.defaultTtlMs);
-    const session: SessionRecord = {
-      sessionId,
-      expiresAt,
+    const session: RelaySessionRecord = {
+      sessionId: randomUUID(),
+      expiresAt: this.now() + (params?.ttlMs ?? this.params.defaultTtlMs),
       providerId,
       groupMode: params?.groupMode === true,
-      providerSocket,
-      appSockets: new Map<string, WebSocket>(),
     };
-    this.sessions.set(sessionId, session);
-
-    const ownedSessions =
-      this.providerSessions.get(providerId) ?? new Set<string>();
-    ownedSessions.add(sessionId);
-    this.providerSessions.set(providerId, ownedSessions);
-
+    await this.params.sessionStore.saveSession(session);
+    await this.rememberLocalProviderSession(providerId, session.sessionId);
     return session;
   }
 
-  private getSession(sessionId: string): SessionRecord {
-    const session = this.sessions.get(sessionId);
+  private async requireSession(sessionId: string): Promise<RelaySessionRecord> {
+    const session = await this.params.sessionStore.getSession(sessionId);
     if (!session) {
       throw new RelayProtocolError(
         "unknown_session",
@@ -206,7 +318,7 @@ class SessionHub {
     }
 
     if (session.expiresAt <= this.now()) {
-      void this.closeSession(sessionId, "session_expired");
+      await this.closeSession(sessionId, "session_expired");
       throw new RelayProtocolError(
         "session_expired",
         "PrivateClaw session expired. Generate a fresh QR code.",
@@ -216,12 +328,12 @@ class SessionHub {
     return session;
   }
 
-  private assertProviderOwnsSession(
+  private async assertProviderOwnsSession(
     providerSocket: WebSocket,
     sessionId: string,
-  ): SessionRecord {
+  ): Promise<RelaySessionRecord> {
     const providerId = this.requireProviderId(providerSocket);
-    const session = this.getSession(sessionId);
+    const session = await this.requireSession(sessionId);
     if (session.providerId !== providerId) {
       throw new RelayProtocolError(
         "provider_session_mismatch",
@@ -231,54 +343,119 @@ class SessionHub {
     return session;
   }
 
-  renewSession(
+  async renewSession(
     providerSocket: WebSocket,
     sessionId: string,
     ttlMs: number,
-  ): SessionRecord {
-    const session = this.assertProviderOwnsSession(providerSocket, sessionId);
-    session.expiresAt = this.now() + ttlMs;
-    return session;
+  ): Promise<RelaySessionRecord> {
+    const session = await this.assertProviderOwnsSession(providerSocket, sessionId);
+    const renewedSession: RelaySessionRecord = {
+      ...session,
+      expiresAt: this.now() + ttlMs,
+    };
+    await this.params.sessionStore.saveSession(renewedSession);
+    return renewedSession;
   }
 
-  attachApp(
+  private listActiveLocalAppIds(sessionId: string): string[] {
+    const appSockets = this.sessionApps.get(sessionId);
+    if (!appSockets) {
+      return [];
+    }
+    return [...appSockets.entries()]
+      .filter(([, socket]) => isSocketActive(socket))
+      .map(([appId]) => appId);
+  }
+
+  async attachApp(
     sessionId: string,
     appId: string,
     appSocket: WebSocket,
-  ): SessionRecord {
-    const session = this.getSession(sessionId);
+  ): Promise<RelaySessionRecord> {
+    const session = await this.requireSession(sessionId);
     const normalizedAppId = appId.trim() || "legacy-app";
-    const activeAppIds = [...session.appSockets.entries()]
-      .filter(([, socket]) =>
-        socket.readyState === WebSocket.OPEN ||
-        socket.readyState === WebSocket.CONNECTING,
-      )
-      .map(([entryAppId]) => entryAppId);
-
-    if (
-      !session.groupMode &&
-      activeAppIds.some((entryAppId) => entryAppId !== normalizedAppId)
-    ) {
-      throw new RelayProtocolError(
-        "session_in_use",
-        "This PrivateClaw session is already attached to another app.",
-      );
-    }
-
-    const previousSocket = session.appSockets.get(normalizedAppId);
+    const previousSocket = this.sessionApps.get(sessionId)?.get(normalizedAppId);
     if (
       previousSocket &&
       previousSocket !== appSocket &&
-      (previousSocket.readyState === WebSocket.OPEN ||
-        previousSocket.readyState === WebSocket.CONNECTING)
+      isSocketActive(previousSocket)
     ) {
-      this.appSessions.delete(previousSocket);
-      previousSocket.close(1012, "app_reconnected");
+      await this.closeLocalApp(sessionId, normalizedAppId, "app_reconnected");
     }
 
-    session.appSockets.set(normalizedAppId, appSocket);
-    this.appSessions.set(appSocket, { sessionId, appId: normalizedAppId });
+    const binding: AppSessionBinding = {
+      sessionId,
+      appId: normalizedAppId,
+      groupMode: session.groupMode,
+    };
+
+    if (this.cluster) {
+      const claim = await this.cluster.claimApp(binding);
+      if (claim.previousNodeId) {
+        await this.cluster.publishAppReconnected(
+          sessionId,
+          normalizedAppId,
+          claim.previousNodeId,
+        );
+      }
+    } else if (!session.groupMode) {
+      const activeLocalAppIds = this.listActiveLocalAppIds(sessionId);
+      if (activeLocalAppIds.some((entryAppId) => entryAppId !== normalizedAppId)) {
+        throw new RelayProtocolError(
+          "session_in_use",
+          "This PrivateClaw session is already attached to another app.",
+        );
+      }
+    }
+
+    await this.rememberLocalAppBinding(binding, appSocket);
     return session;
+  }
+
+  deliverLocalToApp(
+    sessionId: string,
+    envelope: EncryptedEnvelope,
+    targetAppId?: string,
+  ): number {
+    const appSockets = this.sessionApps.get(sessionId);
+    if (!appSockets) {
+      return 0;
+    }
+
+    if (targetAppId) {
+      const socket = appSockets.get(targetAppId);
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
+        return 0;
+      }
+      sendJson(socket, { type: "relay:frame", sessionId, envelope });
+      return 1;
+    }
+
+    let delivered = 0;
+    for (const socket of appSockets.values()) {
+      if (socket.readyState !== WebSocket.OPEN) {
+        continue;
+      }
+      delivered += 1;
+      sendJson(socket, { type: "relay:frame", sessionId, envelope });
+    }
+    return delivered;
+  }
+
+  deliverLocalToProvider(
+    sessionId: string,
+    envelope: EncryptedEnvelope,
+  ): number {
+    const providerId = this.sessionProviders.get(sessionId);
+    if (!providerId) {
+      return 0;
+    }
+    const providerSocket = this.providerSockets.get(providerId);
+    if (!providerSocket || providerSocket.readyState !== WebSocket.OPEN) {
+      return 0;
+    }
+    sendJson(providerSocket, { type: "relay:frame", sessionId, envelope });
+    return 1;
   }
 
   async forwardToApp(
@@ -287,24 +464,12 @@ class SessionHub {
     envelope: EncryptedEnvelope,
     targetAppId?: string,
   ): Promise<void> {
-    const session = this.assertProviderOwnsSession(providerSocket, sessionId);
-    if (targetAppId) {
-      const targetSocket = session.appSockets.get(targetAppId);
-      if (targetSocket && targetSocket.readyState === WebSocket.OPEN) {
-        sendJson(targetSocket, { type: "relay:frame", sessionId, envelope });
-      }
-      return;
-    }
-
-    let delivered = 0;
-    for (const socket of session.appSockets.values()) {
-      if (socket.readyState !== WebSocket.OPEN) {
-        continue;
-      }
-      delivered += 1;
-      sendJson(socket, { type: "relay:frame", sessionId, envelope });
-    }
-    if (delivered > 0) {
+    await this.assertProviderOwnsSession(providerSocket, sessionId);
+    const localDelivered = this.deliverLocalToApp(sessionId, envelope, targetAppId);
+    const remoteDelivered = this.cluster
+      ? await this.cluster.publishFrameToApp(sessionId, envelope, targetAppId)
+      : 0;
+    if (targetAppId || localDelivered > 0 || remoteDelivered > 0) {
       return;
     }
 
@@ -315,16 +480,15 @@ class SessionHub {
     sessionId: string,
     envelope: EncryptedEnvelope,
   ): Promise<void> {
-    const session = this.getSession(sessionId);
-    const providerSocket =
-      this.providerSockets.get(session.providerId) ?? session.providerSocket;
-    if (providerSocket && providerSocket.readyState === WebSocket.OPEN) {
-      session.providerSocket = providerSocket;
-      sendJson(providerSocket, { type: "relay:frame", sessionId, envelope });
+    await this.requireSession(sessionId);
+    const localDelivered = this.deliverLocalToProvider(sessionId, envelope);
+    const remoteDelivered = this.cluster
+      ? await this.cluster.publishFrameToProvider(sessionId, envelope)
+      : 0;
+    if (localDelivered > 0 || remoteDelivered > 0) {
       return;
     }
 
-    delete session.providerSocket;
     await this.params.frameCache.push({
       sessionId,
       target: "provider",
@@ -347,48 +511,66 @@ class SessionHub {
     providerId: string,
     socket: WebSocket,
   ): Promise<void> {
-    for (const sessionId of this.providerSessions.get(providerId) ?? []) {
+    const sessionIds = await this.params.sessionStore.listProviderSessions(
+      providerId,
+      this.now(),
+    );
+    for (const sessionId of sessionIds) {
       await this.replayBufferedFrames(sessionId, "provider", socket);
     }
   }
 
-  async closeSession(sessionId: string, reason: string): Promise<void> {
-    const session = this.sessions.get(sessionId);
-    if (!session) {
-      return;
-    }
+  private hasLocalSession(sessionId: string): boolean {
+    return this.sessionProviders.has(sessionId) || this.sessionApps.has(sessionId);
+  }
 
-    this.sessions.delete(sessionId);
-
-    const ownedSessions = this.providerSessions.get(session.providerId);
-    ownedSessions?.delete(sessionId);
-    if (ownedSessions?.size === 0) {
-      this.providerSessions.delete(session.providerId);
-    }
-
-    for (const appSocket of new Set(session.appSockets.values())) {
-      this.appSessions.delete(appSocket);
+  async closeLocalSession(
+    sessionId: string,
+    reason: string,
+  ): Promise<void> {
+    const appSockets = [...(this.sessionApps.get(sessionId)?.entries() ?? [])];
+    for (const [appId, appSocket] of appSockets) {
+      const binding = this.appSessions.get(appSocket);
+      if (!binding || binding.appId !== appId) {
+        continue;
+      }
+      await this.forgetLocalAppBinding(appSocket, binding);
       sendJson(appSocket, {
         type: "relay:session_closed",
         sessionId,
         reason,
       });
-      if (
-        appSocket.readyState === WebSocket.OPEN ||
-        appSocket.readyState === WebSocket.CONNECTING
-      ) {
+      if (isSocketActive(appSocket)) {
         appSocket.close(1000, reason);
       }
     }
 
-    const providerSocket =
-      this.providerSockets.get(session.providerId) ?? session.providerSocket;
+    const providerId = this.sessionProviders.get(sessionId);
+    if (!providerId) {
+      return;
+    }
+
+    const providerSocket = this.providerSockets.get(providerId);
+    await this.forgetLocalProviderSession(providerId, sessionId);
     if (providerSocket) {
       sendJson(providerSocket, {
         type: "relay:session_closed",
         sessionId,
         reason,
       });
+    }
+  }
+
+  async closeSession(sessionId: string, reason: string): Promise<void> {
+    await this.params.sessionStore.deleteSession(sessionId);
+    if (!this.hasLocalSession(sessionId) && !this.cluster) {
+      await this.params.frameCache.clear(sessionId);
+      return;
+    }
+
+    await this.closeLocalSession(sessionId, reason);
+    if (this.cluster) {
+      await this.cluster.publishSessionClosed(sessionId, reason);
     }
     await this.params.frameCache.clear(sessionId);
   }
@@ -398,7 +580,7 @@ class SessionHub {
     sessionId: string,
     reason: string,
   ): Promise<void> {
-    this.assertProviderOwnsSession(providerSocket, sessionId);
+    await this.assertProviderOwnsSession(providerSocket, sessionId);
     await this.closeSession(sessionId, reason);
   }
 
@@ -409,15 +591,17 @@ class SessionHub {
     }
 
     this.socketProviders.delete(providerSocket);
-    if (this.providerSockets.get(providerId) === providerSocket) {
-      this.providerSockets.delete(providerId);
+    if (this.providerSockets.get(providerId) !== providerSocket) {
+      return;
     }
 
-    for (const sessionId of this.providerSessions.get(providerId) ?? []) {
-      const session = this.sessions.get(sessionId);
-      if (session?.providerSocket === providerSocket) {
-        delete session.providerSocket;
-      }
+    this.providerSockets.delete(providerId);
+    const sessionIds = [...(this.providerSessions.get(providerId) ?? [])];
+    for (const sessionId of sessionIds) {
+      await this.forgetLocalProviderSession(providerId, sessionId);
+    }
+    if (this.cluster) {
+      await this.cluster.releaseProvider(providerId);
     }
   }
 
@@ -426,29 +610,90 @@ class SessionHub {
     if (!binding) {
       return;
     }
+    await this.forgetLocalAppBinding(appSocket, binding);
+  }
 
-    this.appSessions.delete(appSocket);
-    const session = this.sessions.get(binding.sessionId);
-    if (!session) {
+  async closeLocalApp(
+    sessionId: string,
+    appId: string,
+    reason: string,
+  ): Promise<void> {
+    const appSocket = this.sessionApps.get(sessionId)?.get(appId);
+    if (!appSocket) {
+      return;
+    }
+    const binding = this.appSessions.get(appSocket);
+    if (!binding) {
+      return;
+    }
+    await this.forgetLocalAppBinding(appSocket, binding);
+    if (isSocketActive(appSocket)) {
+      appSocket.close(1012, reason);
+    }
+  }
+
+  async closeLocalProvider(providerId: string, reason: string): Promise<void> {
+    const providerSocket = this.providerSockets.get(providerId);
+    if (!providerSocket) {
       return;
     }
 
-    if (session.appSockets.get(binding.appId) === appSocket) {
-      session.appSockets.delete(binding.appId);
+    this.providerSockets.delete(providerId);
+    this.socketProviders.delete(providerSocket);
+    const sessionIds = [...(this.providerSessions.get(providerId) ?? [])];
+    for (const sessionId of sessionIds) {
+      await this.forgetLocalProviderSession(providerId, sessionId);
+    }
+    if (this.cluster) {
+      await this.cluster.releaseProvider(providerId);
+    }
+    if (isSocketActive(providerSocket)) {
+      providerSocket.close(1012, reason);
     }
   }
 
   async purgeExpiredSessions(): Promise<void> {
-    const expired = [...this.sessions.values()].filter(
-      (session) => session.expiresAt <= this.now(),
-    );
-    for (const session of expired) {
-      await this.closeSession(session.sessionId, "session_expired");
+    const sessionIds = new Set<string>([
+      ...this.sessionProviders.keys(),
+      ...this.sessionApps.keys(),
+    ]);
+    for (const sessionId of sessionIds) {
+      const session = await this.params.sessionStore.getSession(sessionId);
+      if (!session) {
+        await this.closeLocalSession(sessionId, "session_expired");
+        continue;
+      }
+      if (session.expiresAt <= this.now()) {
+        await this.closeSession(sessionId, "session_expired");
+      }
     }
   }
 
+  async refreshClusterPresence(): Promise<void> {
+    if (!this.cluster) {
+      return;
+    }
+
+    const providerIds = [...this.providerSockets.keys()];
+    const appBindings: AppSessionBinding[] = [];
+    for (const [appSocket, binding] of this.appSessions.entries()) {
+      const currentSocket = this.sessionApps.get(binding.sessionId)?.get(binding.appId);
+      if (currentSocket === appSocket) {
+        appBindings.push(binding);
+      }
+    }
+
+    await this.cluster.refreshPresence({
+      providerIds,
+      appBindings,
+    });
+  }
+
   async closeAll(reason: string): Promise<void> {
-    const sessionIds = [...this.sessions.keys()];
+    const sessionIds = new Set<string>([
+      ...this.sessionProviders.keys(),
+      ...this.sessionApps.keys(),
+    ]);
     for (const sessionId of sessionIds) {
       await this.closeSession(sessionId, reason);
     }
@@ -462,17 +707,70 @@ export interface RelayServerInstance {
   stop(): Promise<void>;
 }
 
+export interface RelayServerDependencies {
+  frameCache?: EncryptedFrameCache;
+  sessionStore?: RelaySessionStore;
+  cluster?: RelayClusterClient;
+  clusterFactory?: (callbacks: RelayClusterCallbacks) => RelayClusterClient;
+}
+
 export function createRelayServer(
   config: RelayServerConfig,
+  deps: RelayServerDependencies = {},
 ): RelayServerInstance {
-  const frameCache = createEncryptedFrameCache({
-    maxFrames: config.frameCacheSize,
-    ...(config.redisUrl ? { redisUrl: config.redisUrl } : {}),
-  });
+  const ownsFrameCache = !deps.frameCache;
+  const frameCache =
+    deps.frameCache ??
+    createEncryptedFrameCache({
+      maxFrames: config.frameCacheSize,
+      ...(config.redisUrl ? { redisUrl: config.redisUrl } : {}),
+    });
+
+  const ownsSessionStore = !deps.sessionStore;
+  const sessionStore =
+    deps.sessionStore ??
+    createRelaySessionStore({
+      ...(config.redisUrl ? { redisUrl: config.redisUrl } : {}),
+    });
+
   const sessionHub = new SessionHub({
     defaultTtlMs: config.sessionTtlMs,
     frameCache,
+    sessionStore,
   });
+
+  const clusterCallbacks: RelayClusterCallbacks = {
+    onRemoteAppFrame: async (sessionId, envelope, targetAppId) => {
+      sessionHub.deliverLocalToApp(sessionId, envelope, targetAppId);
+    },
+    onRemoteProviderFrame: async (sessionId, envelope) => {
+      sessionHub.deliverLocalToProvider(sessionId, envelope);
+    },
+    onRemoteSessionClosed: async (sessionId, reason) => {
+      await sessionHub.closeLocalSession(sessionId, reason);
+    },
+    onRemoteAppReconnected: async (sessionId, appId) => {
+      await sessionHub.closeLocalApp(sessionId, appId, "app_reconnected");
+    },
+    onRemoteProviderReconnected: async (providerId) => {
+      await sessionHub.closeLocalProvider(providerId, "provider_reconnected");
+    },
+  };
+
+  const clusterNodeId = config.instanceId?.trim() || randomUUID();
+  const ownsCluster =
+    !deps.cluster && !deps.clusterFactory && !!config.redisUrl;
+  const cluster =
+    deps.cluster ??
+    deps.clusterFactory?.(clusterCallbacks) ??
+    (config.redisUrl
+      ? createRedisRelayClusterClient({
+          redisUrl: config.redisUrl,
+          nodeId: clusterNodeId,
+          callbacks: clusterCallbacks,
+        })
+      : undefined);
+  sessionHub.setCluster(cluster);
 
   let startedPort = config.port;
   let startedUrl = "";
@@ -488,10 +786,23 @@ export function createRelayServer(
       request.method === "GET" &&
       (url.pathname === "/healthz" || url.pathname === "/api/health")
     ) {
-      response.writeHead(200, { "content-type": "application/json" });
-      response.end(
-        JSON.stringify({ ok: true, sessions: sessionHub.sessionCount }),
-      );
+      void sessionHub
+        .countSessions()
+        .then((sessions) => {
+          response.writeHead(200, { "content-type": "application/json" });
+          response.end(
+            JSON.stringify({ ok: true, sessions, instanceId: clusterNodeId }),
+          );
+        })
+        .catch((error) => {
+          response.writeHead(500, { "content-type": "application/json" });
+          response.end(
+            JSON.stringify({
+              ok: false,
+              error: error instanceof Error ? error.message : String(error),
+            }),
+          );
+        });
       return;
     }
 
@@ -503,11 +814,16 @@ export function createRelayServer(
   const appWss = new WebSocketServer({ noServer: true });
 
   const expiryTimer = setInterval(() => {
-    void sessionHub.purgeExpiredSessions();
+    void sessionHub.purgeExpiredSessions().catch((error) => {
+      console.error("[privateclaw-relay] failed to purge expired sessions", error);
+    });
   }, 5_000);
   const heartbeatTimer = setInterval(() => {
     pingServerClients(providerWss);
     pingServerClients(appWss);
+    void sessionHub.refreshClusterPresence().catch((error) => {
+      console.error("[privateclaw-relay] failed to refresh relay presence", error);
+    });
   }, HEARTBEAT_INTERVAL_MS);
 
   function terminateSockets(server: WebSocketServer): void {
@@ -571,15 +887,12 @@ export function createRelayServer(
             );
           }
 
-          const session = sessionHub.createSession(
-            socket,
-            {
-              ...(typeof ttlMsValue === "number" ? { ttlMs: ttlMsValue } : {}),
-              ...(typeof groupModeValue === "boolean"
-                ? { groupMode: groupModeValue }
-                : {}),
-            },
-          );
+          const session = await sessionHub.createSession(socket, {
+            ...(typeof ttlMsValue === "number" ? { ttlMs: ttlMsValue } : {}),
+            ...(typeof groupModeValue === "boolean"
+              ? { groupMode: groupModeValue }
+              : {}),
+          });
           sendJson(socket, {
             type: "relay:session_created",
             requestId: requestIdValue,
@@ -614,7 +927,7 @@ export function createRelayServer(
             );
           }
 
-          const session = sessionHub.renewSession(
+          const session = await sessionHub.renewSession(
             socket,
             message.sessionId,
             message.ttlMs,
@@ -726,17 +1039,43 @@ export function createRelayServer(
     );
     const providerId = url.searchParams.get("providerId")?.trim() || randomUUID();
 
-    sessionHub.attachProvider(providerId, socket);
-    sendJson(socket, { type: "relay:provider_ready" });
-    void sessionHub.replayBufferedFramesForProvider(providerId, socket);
+    void (async () => {
+      try {
+        await sessionHub.attachProvider(providerId, socket);
+      } catch (error) {
+        const relayError = toRelayProtocolError(error);
+        sendJson(socket, {
+          type: "relay:error",
+          code: relayError.code,
+          message: relayError.message,
+        });
+        socket.close(1011, relayError.code);
+        return;
+      }
 
-    socket.on("message", (data) => {
-      void handleProviderMessage(socket, data.toString());
-    });
+      sendJson(socket, { type: "relay:provider_ready" });
+      void sessionHub.replayBufferedFramesForProvider(providerId, socket).catch(
+        (error) => {
+          console.error(
+            "[privateclaw-relay] failed to replay buffered provider frames",
+            error,
+          );
+        },
+      );
 
-    socket.on("close", () => {
-      void sessionHub.detachProvider(socket);
-    });
+      socket.on("message", (data) => {
+        void handleProviderMessage(socket, data.toString());
+      });
+
+      socket.on("close", () => {
+        void sessionHub.detachProvider(socket).catch((error) => {
+          console.error(
+            "[privateclaw-relay] failed to detach provider socket",
+            error,
+          );
+        });
+      });
+    })();
   });
 
   appWss.on("connection", (rawSocket, request) => {
@@ -760,33 +1099,49 @@ export function createRelayServer(
       return;
     }
 
-    try {
-      const session = sessionHub.attachApp(sessionId, appId, socket);
+    void (async () => {
+      let session: RelaySessionRecord;
+      try {
+        session = await sessionHub.attachApp(sessionId, appId, socket);
+      } catch (error) {
+        const relayError = toRelayProtocolError(error);
+        sendJson(socket, {
+          type: "relay:error",
+          code: relayError.code,
+          message: relayError.message,
+          sessionId,
+        });
+        socket.close(1008, relayError.code);
+        return;
+      }
+
       sendJson(socket, {
         type: "relay:attached",
         sessionId,
         expiresAt: new Date(session.expiresAt).toISOString(),
       });
-      void sessionHub.replayBufferedFrames(sessionId, "app", socket);
-    } catch (error) {
-      const relayError = toRelayProtocolError(error);
-      sendJson(socket, {
-        type: "relay:error",
-        code: relayError.code,
-        message: relayError.message,
-        sessionId,
+      void sessionHub.replayBufferedFrames(sessionId, "app", socket).catch(
+        (error) => {
+          console.error(
+            "[privateclaw-relay] failed to replay buffered app frames",
+            error,
+          );
+        },
+      );
+
+      socket.on("message", (data) => {
+        void handleAppMessage(socket, sessionId, data.toString());
       });
-      socket.close(1008, relayError.code);
-      return;
-    }
 
-    socket.on("message", (data) => {
-      void handleAppMessage(socket, sessionId, data.toString());
-    });
-
-    socket.on("close", () => {
-      void sessionHub.detachApp(socket);
-    });
+      socket.on("close", () => {
+        void sessionHub.detachApp(socket).catch((error) => {
+          console.error(
+            "[privateclaw-relay] failed to detach app socket",
+            error,
+          );
+        });
+      });
+    })();
   });
 
   server.on("upgrade", (request, socket, head) => {
@@ -811,6 +1166,20 @@ export function createRelayServer(
 
     socket.destroy();
   });
+
+  async function closeOwnedResources(): Promise<void> {
+    const closes: Promise<void>[] = [];
+    if (ownsCluster && cluster) {
+      closes.push(cluster.close());
+    }
+    if (ownsSessionStore) {
+      closes.push(sessionStore.close());
+    }
+    if (ownsFrameCache) {
+      closes.push(frameCache.close());
+    }
+    await Promise.all(closes);
+  }
 
   return {
     get port(): number {
@@ -847,11 +1216,14 @@ export function createRelayServer(
       clearInterval(heartbeatTimer);
 
       if (!started) {
-        await frameCache.close();
+        await closeOwnedResources();
         return;
       }
 
-      await sessionHub.closeAll("relay_shutdown");
+      if (!sessionHub.usesPersistentSessions) {
+        await sessionHub.closeAll("relay_shutdown");
+      }
+
       terminateSockets(providerWss);
       terminateSockets(appWss);
       await Promise.all([
@@ -867,7 +1239,7 @@ export function createRelayServer(
           resolve();
         });
       });
-      await frameCache.close();
+      await closeOwnedResources();
       started = false;
       startedUrl = "";
     },

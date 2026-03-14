@@ -2,7 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { decryptPayload, encryptPayload, generateSessionKey } from "@privateclaw/protocol";
 import WebSocket from "ws";
+import {
+  createInMemoryRelayClusterClient,
+  createInMemoryRelayClusterSharedState,
+  type RelayClusterClient,
+  type RelayClusterCallbacks,
+} from "./relay-cluster.js";
+import { createInMemoryEncryptedFrameCache } from "./frame-cache.js";
 import { createRelayServer } from "./relay-server.js";
+import { InMemoryRelaySessionStore } from "./session-store.js";
 
 function waitForOpen(socket: WebSocket): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -449,4 +457,289 @@ test("relay group sessions allow multiple app clients and broadcast provider fra
     waitForClose(appTwo),
     waitForClose(providerSocket),
   ]);
+});
+
+test("relay cluster routes provider and app frames across relay instances", async (t) => {
+  const sharedFrameCache = createInMemoryEncryptedFrameCache(8);
+  const sharedSessionStore = new InMemoryRelaySessionStore();
+  const sharedCluster = createInMemoryRelayClusterSharedState();
+  const clusters: RelayClusterClient[] = [];
+
+  const relayOne = createRelayServer(
+    {
+      host: "127.0.0.1",
+      port: 0,
+      sessionTtlMs: 60_000,
+      frameCacheSize: 8,
+    },
+    {
+      frameCache: sharedFrameCache,
+      sessionStore: sharedSessionStore,
+      clusterFactory: (callbacks: RelayClusterCallbacks) => {
+        const cluster = createInMemoryRelayClusterClient({
+          shared: sharedCluster,
+          nodeId: "relay-one",
+          callbacks,
+        });
+        clusters.push(cluster);
+        return cluster;
+      },
+    },
+  );
+  const relayTwo = createRelayServer(
+    {
+      host: "127.0.0.1",
+      port: 0,
+      sessionTtlMs: 60_000,
+      frameCacheSize: 8,
+    },
+    {
+      frameCache: sharedFrameCache,
+      sessionStore: sharedSessionStore,
+      clusterFactory: (callbacks: RelayClusterCallbacks) => {
+        const cluster = createInMemoryRelayClusterClient({
+          shared: sharedCluster,
+          nodeId: "relay-two",
+          callbacks,
+        });
+        clusters.push(cluster);
+        return cluster;
+      },
+    },
+  );
+
+  const [{ port: portOne }, { port: portTwo }] = await Promise.all([
+    relayOne.start(),
+    relayTwo.start(),
+  ]);
+  t.after(async () => {
+    await relayOne.stop();
+    await relayTwo.stop();
+    await Promise.all(clusters.map((cluster) => cluster.close()));
+    await sharedFrameCache.close();
+    await sharedSessionStore.close();
+  });
+
+  const providerSocket = new WebSocket(
+    `ws://127.0.0.1:${portOne}/ws/provider?providerId=provider-cluster`,
+  );
+  const readyPromise = nextMessage(providerSocket);
+  await waitForOpen(providerSocket);
+  assert.equal((await readyPromise).type, "relay:provider_ready");
+
+  providerSocket.send(
+    JSON.stringify({
+      type: "provider:create_session",
+      requestId: "cluster-req-1",
+      ttlMs: 60_000,
+      groupMode: true,
+    }),
+  );
+  const created = await nextMessage(providerSocket);
+  assert.equal(created.type, "relay:session_created");
+  const sessionId = String(created.sessionId);
+
+  const appOne = new WebSocket(
+    `ws://127.0.0.1:${portOne}/ws/app?sessionId=${sessionId}&appId=app-one`,
+  );
+  const appOneAttached = nextMessage(appOne);
+  await waitForOpen(appOne);
+  assert.equal((await appOneAttached).type, "relay:attached");
+
+  const appTwo = new WebSocket(
+    `ws://127.0.0.1:${portTwo}/ws/app?sessionId=${sessionId}&appId=app-two`,
+  );
+  const appTwoAttached = nextMessage(appTwo);
+  await waitForOpen(appTwo);
+  assert.equal((await appTwoAttached).type, "relay:attached");
+
+  const sessionKey = generateSessionKey();
+  const providerEnvelope = encryptPayload({
+    sessionId,
+    sessionKey,
+    payload: {
+      kind: "assistant_message",
+      messageId: "assistant-1",
+      text: "hello from clustered relay",
+      sentAt: new Date().toISOString(),
+    },
+  });
+  providerSocket.send(
+    JSON.stringify({ type: "provider:frame", sessionId, envelope: providerEnvelope }),
+  );
+
+  const [appOneFrame, appTwoFrame] = await Promise.all([
+    nextMessage(appOne),
+    nextMessage(appTwo),
+  ]);
+  assert.equal(appOneFrame.type, "relay:frame");
+  assert.equal(appTwoFrame.type, "relay:frame");
+  assert.equal(
+    decryptPayload({
+      sessionId,
+      sessionKey,
+      envelope: appTwoFrame.envelope as Parameters<typeof decryptPayload>[0]["envelope"],
+    }).text,
+    "hello from clustered relay",
+  );
+
+  const appTwoEnvelope = encryptPayload({
+    sessionId,
+    sessionKey,
+    payload: {
+      kind: "user_message",
+      text: "hello provider from relay two",
+      clientMessageId: "client-2",
+      sentAt: new Date().toISOString(),
+    },
+  });
+  appTwo.send(JSON.stringify({ type: "app:frame", envelope: appTwoEnvelope }));
+  const forwardedUser = await nextMessage(providerSocket);
+  assert.equal(forwardedUser.type, "relay:frame");
+  assert.equal(
+    decryptPayload({
+      sessionId,
+      sessionKey,
+      envelope: forwardedUser.envelope as Parameters<typeof decryptPayload>[0]["envelope"],
+    }).text,
+    "hello provider from relay two",
+  );
+
+  appOne.close();
+  appTwo.close();
+  providerSocket.close();
+  await Promise.all([
+    waitForClose(appOne),
+    waitForClose(appTwo),
+    waitForClose(providerSocket),
+  ]);
+});
+
+test("relay keeps Redis-style shared sessions usable after a relay restart", async (t) => {
+  const sharedFrameCache = createInMemoryEncryptedFrameCache(8);
+  const sharedSessionStore = new (class extends InMemoryRelaySessionStore {
+    readonly persistent = true;
+  })();
+  const sharedCluster = createInMemoryRelayClusterSharedState();
+  const clusters: RelayClusterClient[] = [];
+
+  const buildRelay = (nodeId: string) =>
+    createRelayServer(
+      {
+        host: "127.0.0.1",
+        port: 0,
+        sessionTtlMs: 60_000,
+        frameCacheSize: 8,
+      },
+      {
+        frameCache: sharedFrameCache,
+        sessionStore: sharedSessionStore,
+        clusterFactory: (callbacks: RelayClusterCallbacks) => {
+          const cluster = createInMemoryRelayClusterClient({
+            shared: sharedCluster,
+            nodeId,
+            callbacks,
+          });
+          clusters.push(cluster);
+          return cluster;
+        },
+      },
+    );
+
+  const relayOne = buildRelay("relay-restart-one");
+  const { port: portOne } = await relayOne.start();
+
+  let providerSocket = new WebSocket(
+    `ws://127.0.0.1:${portOne}/ws/provider?providerId=provider-restart`,
+  );
+  let providerReady = nextMessage(providerSocket);
+  await waitForOpen(providerSocket);
+  assert.equal((await providerReady).type, "relay:provider_ready");
+
+  providerSocket.send(
+    JSON.stringify({
+      type: "provider:create_session",
+      requestId: "restart-req-1",
+      ttlMs: 60_000,
+    }),
+  );
+  const created = await nextMessage(providerSocket);
+  assert.equal(created.type, "relay:session_created");
+  const sessionId = String(created.sessionId);
+  const sessionKey = generateSessionKey();
+
+  await relayOne.stop();
+  await waitForClose(providerSocket);
+
+  const relayTwo = buildRelay("relay-restart-two");
+  const { port: portTwo } = await relayTwo.start();
+  t.after(async () => {
+    await relayTwo.stop();
+    await Promise.all(clusters.map((cluster) => cluster.close()));
+    await sharedFrameCache.close();
+    await sharedSessionStore.close();
+  });
+
+  const appSocket = new WebSocket(
+    `ws://127.0.0.1:${portTwo}/ws/app?sessionId=${sessionId}&appId=restarted-app`,
+  );
+  const appAttached = nextMessage(appSocket);
+  await waitForOpen(appSocket);
+  assert.equal((await appAttached).type, "relay:attached");
+
+  const bufferedEnvelope = encryptPayload({
+    sessionId,
+    sessionKey,
+    payload: {
+      kind: "user_message",
+      text: "still here after restart",
+      clientMessageId: "client-restart-1",
+      sentAt: new Date().toISOString(),
+    },
+  });
+  appSocket.send(JSON.stringify({ type: "app:frame", envelope: bufferedEnvelope }));
+
+  providerSocket = new WebSocket(
+    `ws://127.0.0.1:${portTwo}/ws/provider?providerId=provider-restart`,
+  );
+  const providerMessages = nextMessages(providerSocket, 2);
+  await waitForOpen(providerSocket);
+  const [readyAgain, replayedFrame] = await providerMessages;
+  assert.equal(readyAgain.type, "relay:provider_ready");
+  assert.equal(replayedFrame.type, "relay:frame");
+  assert.equal(
+    decryptPayload({
+      sessionId,
+      sessionKey,
+      envelope: replayedFrame.envelope as Parameters<typeof decryptPayload>[0]["envelope"],
+    }).text,
+    "still here after restart",
+  );
+
+  const providerReply = encryptPayload({
+    sessionId,
+    sessionKey,
+    payload: {
+      kind: "assistant_message",
+      text: "same QR still works",
+      sentAt: new Date().toISOString(),
+    },
+  });
+  providerSocket.send(
+    JSON.stringify({ type: "provider:frame", sessionId, envelope: providerReply }),
+  );
+  const appFrame = await nextMessage(appSocket);
+  assert.equal(appFrame.type, "relay:frame");
+  assert.equal(
+    decryptPayload({
+      sessionId,
+      sessionKey,
+      envelope: appFrame.envelope as Parameters<typeof decryptPayload>[0]["envelope"],
+    }).text,
+    "same QR still works",
+  );
+
+  appSocket.close();
+  providerSocket.close();
+  await Promise.all([waitForClose(appSocket), waitForClose(providerSocket)]);
 });

@@ -217,7 +217,7 @@ const relay = resolveRelayEndpoints("ws://127.0.0.1:8787");
 
 ## Self-hosting the relay
 
-The relay is intentionally small. It can run with only Node.js, or as a Docker container with optional Redis-backed frame caching.
+The relay is intentionally small. It can run with only Node.js, or as a Docker container with optional Redis-backed session persistence, distributed frame buffering, and multi-instance coordination.
 If you use your own relay instead of `https://relay.privateclaw.us`, point OpenClaw at it with `openclaw config set plugins.entries.privateclaw.config.relayBaseUrl <your-relay-base-url>` and then restart the running OpenClaw gateway/service.
 
 ### Docker Compose
@@ -231,6 +231,8 @@ With the optional Redis profile:
 ```bash
 PRIVATECLAW_REDIS_URL=redis://redis:6379 docker compose --profile redis up --build
 ```
+
+When `PRIVATECLAW_REDIS_URL` / `REDIS_URL` is set, the relay persists session metadata in Redis, keeps buffered encrypted frames there, and lets multiple relay instances share sessions behind a load balancer. Without Redis, relay restarts still drop the in-memory session registry.
 
 ### Railway one-click deploy
 
@@ -248,14 +250,14 @@ Standalone Railway deploy:
 2. Keep the default root `railway.toml`.
 3. Deploy.
 
-If you want external Redis on Railway, set `PRIVATECLAW_REDIS_URL` or `REDIS_URL` in the service variables.
+If you want relay restart recovery or multiple relay replicas on Railway, attach a shared Redis service and set `PRIVATECLAW_REDIS_URL` or `REDIS_URL` in the relay service variables.
 
 Embedded-Redis Railway deploy:
 
 1. Replace `railway.toml` with `railway.redis.toml`, or set Railway's Dockerfile path to `Dockerfile.multiarch.redis`.
 2. Deploy.
 
-The embedded-Redis image starts Redis on `127.0.0.1:6379` inside the relay container and wires `PRIVATECLAW_REDIS_URL` automatically.
+The embedded-Redis image starts Redis on `127.0.0.1:6379` inside the relay container and wires `PRIVATECLAW_REDIS_URL` automatically. It is convenient for a single relay replica, but it does **not** provide cross-instance HA because each container gets its own private Redis.
 
 ### GitHub-hosted container image
 
@@ -280,7 +282,8 @@ The relay reads the following variables directly from the process environment:
 | `PRIVATECLAW_RELAY_PORT` | `8787` | Relay HTTP/WebSocket port; falls back to Railway `PORT` when unset |
 | `PRIVATECLAW_SESSION_TTL_MS` | `900000` | Session lifetime in milliseconds |
 | `PRIVATECLAW_FRAME_CACHE_SIZE` | `25` | Buffered ciphertext frames per direction |
-| `PRIVATECLAW_REDIS_URL` | unset | Optional Redis URL for encrypted frame caching |
+| `PRIVATECLAW_RELAY_INSTANCE_ID` | `RAILWAY_REPLICA_ID` or auto-generated | Optional stable node ID for multi-instance relay logging and handoff coordination |
+| `PRIVATECLAW_REDIS_URL` | unset | Optional shared Redis URL for session persistence, distributed frame buffering, and multi-instance relay coordination |
 | `REDIS_URL` | unset | Fallback Redis URL alias used when `PRIVATECLAW_REDIS_URL` is unset |
 
 The relay exposes both `/healthz` and `/api/health` for container and platform health checks.

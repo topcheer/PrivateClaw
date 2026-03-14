@@ -292,8 +292,23 @@ img {
 }
 
 .store-button {
+  text-decoration: none;
+}
+
+.store-button:not(.store-button-live) {
   cursor: not-allowed;
   opacity: 0.72;
+}
+
+.store-button.store-button-live {
+  cursor: pointer;
+  opacity: 1;
+}
+
+.store-button.store-button-live:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .store-button-label {

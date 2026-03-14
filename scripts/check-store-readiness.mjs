@@ -127,6 +127,10 @@ const iosChecks = [
   envStatus("PRIVATECLAW_APPLE_ID", { optional: true }),
   envStatus("PRIVATECLAW_APPLE_TEAM_ID", { optional: true }),
   envStatus("PRIVATECLAW_ITC_TEAM_ID", { optional: true }),
+  envStatus("PRIVATECLAW_TESTFLIGHT_EXTERNAL_GROUPS", { optional: true }),
+  envStatus("PRIVATECLAW_TESTFLIGHT_NOTIFY_EXTERNAL_TESTERS", { optional: true }),
+  envStatus("PRIVATECLAW_TESTFLIGHT_CHANGELOG", { optional: true }),
+  envStatus("PRIVATECLAW_AUTOMATIC_RELEASE", { optional: true }),
 ];
 
 const androidProperties = parseProperties(androidKeyPropertiesPath);
@@ -162,7 +166,7 @@ const androidReady = playJsonCheck.ready && androidSigningReady;
 console.log("PrivateClaw store upload preflight");
 console.log("");
 
-console.log("iOS TestFlight");
+console.log("iOS TestFlight / App Store Connect");
 for (const entry of iosChecks) {
   const label = entry.optional ? `${entry.name} (optional)` : entry.name;
   console.log(formatStatus(entry.ready || entry.optional, label, entry.detail));
@@ -175,10 +179,21 @@ console.log(
   }`,
 );
 console.log(`[summary] iOS upload ${iosReady ? "can start" : "is blocked by missing required inputs"}`);
+console.log("[info] TestFlight external promote defaults to the App Store Connect group 'ext' when no override is set.");
 console.log("");
 
 console.log("Android Play Internal Track");
 console.log(formatStatus(playJsonCheck.ready, playJsonCheck.name, playJsonCheck.detail));
+for (const entry of [
+  envStatus("PRIVATECLAW_PLAY_RELEASE_STATUS", { optional: true }),
+  envStatus("PRIVATECLAW_PLAY_CLOSED_TRACK", { optional: true }),
+  envStatus("PRIVATECLAW_PLAY_PROMOTE_FROM_TRACK", { optional: true }),
+  envStatus("PRIVATECLAW_PLAY_METADATA_TRACK", { optional: true }),
+  envStatus("PRIVATECLAW_PLAY_METADATA_VERSION_CODE", { optional: true }),
+]) {
+  const label = `${entry.name} (optional)`;
+  console.log(formatStatus(entry.ready || entry.optional, label, entry.detail));
+}
 for (const entry of androidSigningChecks) {
   const ready =
     entry.label.includes("storeFile") ? entry.value.length > 0 && pathExists(entry.value) : entry.value.length > 0;

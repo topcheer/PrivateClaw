@@ -54,6 +54,24 @@ platform :ios do
     )
   end
 
+  def privateclaw_testflight_external_groups
+    groups = ENV.fetch("PRIVATECLAW_TESTFLIGHT_EXTERNAL_GROUPS", "ext")
+      .split(",")
+      .map(&:strip)
+      .reject(&:empty?)
+    UI.user_error!("Resolved TestFlight external group list is empty.") if groups.empty?
+    groups
+  end
+
+  def privateclaw_notify_external_testers
+    ENV["PRIVATECLAW_TESTFLIGHT_NOTIFY_EXTERNAL_TESTERS"] == "true"
+  end
+
+  def privateclaw_testflight_changelog
+    value = ENV["PRIVATECLAW_TESTFLIGHT_CHANGELOG"]
+    value.nil? || value.empty? ? nil : value
+  end
+
   desc "Build an App Store signed IPA for PrivateClaw"
   lane :build_release do
     privateclaw_prepare_ios_build_settings
@@ -99,10 +117,26 @@ platform :ios do
     upload_beta
   end
 
-  desc "Build and submit a production App Store release"
-  lane :release do
-    build_release
-    upload_to_app_store(
+  desc "Promote the current TestFlight build to external testing"
+  lane :promote_external do
+    options = {
+      api_key: privateclaw_app_store_api_key,
+      app_identifier: "gg.ai.privateclaw",
+      app_version: privateclaw_build_name,
+      build_number: privateclaw_build_number,
+      distribute_only: true,
+      distribute_external: true,
+      submit_beta_review: true,
+      notify_external_testers: privateclaw_notify_external_testers,
+      groups: privateclaw_testflight_external_groups
+    }
+    changelog = privateclaw_testflight_changelog
+    options[:changelog] = changelog unless changelog.nil?
+    upload_to_testflight(**options)
+  end
+
+  def privateclaw_release_upload_options
+    {
       api_key: privateclaw_app_store_api_key,
       ipa: "../builds/ios/PrivateClaw.ipa",
       metadata_path: "./fastlane/metadata",
@@ -115,6 +149,17 @@ platform :ios do
       submission_information: {
         add_id_info_uses_idfa: false
       }
-    )
+    }
+  end
+
+  desc "Upload an existing IPA and submit the App Store release for review"
+  lane :upload_release do
+    upload_to_app_store(**privateclaw_release_upload_options)
+  end
+
+  desc "Build and submit a production App Store release"
+  lane :release do
+    build_release
+    upload_release
   end
 end

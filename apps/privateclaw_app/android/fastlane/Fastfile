@@ -34,6 +34,14 @@ platform :android do
     ENV.fetch("PRIVATECLAW_PLAY_METADATA_TRACK", "internal")
   end
 
+  def privateclaw_play_closed_track
+    ENV.fetch("PRIVATECLAW_PLAY_CLOSED_TRACK", "alpha")
+  end
+
+  def privateclaw_play_promote_from_track
+    ENV.fetch("PRIVATECLAW_PLAY_PROMOTE_FROM_TRACK", "internal")
+  end
+
   def privateclaw_play_metadata_version_code
     value = ENV["PRIVATECLAW_PLAY_METADATA_VERSION_CODE"]
     value.nil? || value.empty? ? nil : value.to_i
@@ -84,6 +92,29 @@ platform :android do
   lane :internal do
     build_release
     upload_internal
+  end
+
+  desc "Promote the current Play release from internal testing to closed testing (alpha)"
+  lane :promote_closed do
+    upload_to_play_store(
+      package_name: "gg.ai.privateclaw",
+      track: privateclaw_play_promote_from_track,
+      track_promote_to: privateclaw_play_closed_track,
+      release_status: privateclaw_play_release_status("completed"),
+      track_promote_release_status: privateclaw_play_release_status("completed"),
+      skip_upload_apk: true,
+      skip_upload_aab: true,
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+      skip_upload_changelogs: true
+    )
+  end
+
+  desc "Build, upload to internal testing, then promote to closed testing (alpha)"
+  lane :closed do
+    internal
+    promote_closed
   end
 
   desc "Build and upload a production Play Store release"

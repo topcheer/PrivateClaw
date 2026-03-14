@@ -53,8 +53,12 @@ flutter build ios --simulator
 ## Store delivery
 
 - TestFlight: `cd ios && fastlane beta`
+- TestFlight external promote: `cd ios && fastlane promote_external`
 - App Store metadata only: `cd ios && fastlane metadata`
+- App Store review submission: `cd ios && fastlane release`
 - Play internal testing: `cd android && fastlane internal`
+- Play closed testing promote: `cd android && fastlane promote_closed`
+- Play internal -> closed testing pipeline: `cd android && fastlane closed`
 - Play metadata only: `cd android && fastlane metadata`
 
 You can also run the same lanes from the repository root:
@@ -65,13 +69,23 @@ You can also run the same lanes from the repository root:
 - `npm run store:check:ggai`
 - `npm run ios:testflight`
 - `npm run ios:testflight:upload`
+- `npm run ios:testflight:external`
 - `npm run ios:testflight:ggai`
 - `npm run ios:testflight:upload:ggai`
+- `npm run ios:testflight:external:ggai`
 - `npm run ios:metadata`
+- `npm run ios:release`
+- `npm run ios:release:upload`
+- `npm run ios:release:ggai`
+- `npm run ios:release:upload:ggai`
 - `npm run android:internal`
 - `npm run android:internal:upload`
+- `npm run android:closed`
+- `npm run android:closed:promote`
 - `npm run android:internal:ggai`
 - `npm run android:internal:upload:ggai`
+- `npm run android:closed:ggai`
+- `npm run android:closed:promote:ggai`
 - `npm run android:metadata`
 
 Run `npm run store:check` first to verify that the required App Store Connect / Play Console environment variables and credential file paths are available from the current shell.
@@ -79,6 +93,8 @@ Run `npm run store:check` first to verify that the required App Store Connect / 
 If you already keep the same signing material in `~/ggai/GGAiDoodle`, the `*:ggai` scripts will auto-load those local values before running the check or upload lane. Override the lookup root with `PRIVATECLAW_GGAIDOODLE_ROOT=/your/GGAiDoodle/path` when needed.
 
 Use the `*:upload` variants when you already have a fresh IPA or AAB on disk and only want to retry the store upload without rebuilding first.
+
+The TestFlight external promote step defaults to the App Store Connect external tester group `ext`. Override `PRIVATECLAW_TESTFLIGHT_EXTERNAL_GROUPS` with a comma-separated list if you need a different target group set. Set `PRIVATECLAW_TESTFLIGHT_NOTIFY_EXTERNAL_TESTERS=true` if you want the promote step to notify testers immediately.
 
 Versioning rules:
 
@@ -94,6 +110,8 @@ If Play responds with `Package not found: gg.ai.privateclaw`, complete the first
 If Play responds with `The apk has permissions that require a privacy policy set for the app`, add a public HTTPS privacy policy URL in Play Console before retrying the upload. The repository now ships a baseline policy in `PRIVACY.md`.
 
 If the Play app is still in draft state, run the Android upload with `PRIVATECLAW_PLAY_RELEASE_STATUS=draft` so Google accepts the internal release while the app is still a draft.
+
+Play closed testing uses the legacy `alpha` track name in the Google Play API by default. Override it with `PRIVATECLAW_PLAY_CLOSED_TRACK` if your closed track uses a different API name, or change the source track from `internal` with `PRIVATECLAW_PLAY_PROMOTE_FROM_TRACK`.
 
 ## Notes
 

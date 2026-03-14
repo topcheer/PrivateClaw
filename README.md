@@ -363,12 +363,22 @@ npm run store:check
 npm run store:check:ggai
 npm run ios:testflight
 npm run ios:testflight:upload
+npm run ios:testflight:external
 npm run ios:testflight:ggai
 npm run ios:testflight:upload:ggai
+npm run ios:testflight:external:ggai
+npm run ios:release
+npm run ios:release:upload
+npm run ios:release:ggai
+npm run ios:release:upload:ggai
 npm run android:internal
 npm run android:internal:upload
+npm run android:closed
+npm run android:closed:promote
 npm run android:internal:ggai
 npm run android:internal:upload:ggai
+npm run android:closed:ggai
+npm run android:closed:promote:ggai
 ```
 
 Supporting metadata-only lanes:
@@ -386,6 +396,8 @@ If you keep the same local signing material under `~/ggai/GGAiDoodle`, the `*:gg
 
 The `*:upload` variants skip the rebuild step and upload the existing `apps/privateclaw_app/builds/ios/PrivateClaw.ipa` or `apps/privateclaw_app/build/app/outputs/bundle/release/app-release.aab` directly, which is useful for retrying failed store submissions quickly.
 
+The TestFlight external promote step defaults to the external tester group `ext`. Override `PRIVATECLAW_TESTFLIGHT_EXTERNAL_GROUPS` with a comma-separated list if you need a different target group set. Set `PRIVATECLAW_TESTFLIGHT_NOTIFY_EXTERNAL_TESTERS=true` if you want the promote step to notify testers immediately, and optionally set `PRIVATECLAW_TESTFLIGHT_CHANGELOG` to attach beta release notes during the external promotion.
+
 Versioning rules:
 
 - `versionName` / iOS marketing version stays on the semantic `major.minor.patch` value in `apps/privateclaw_app/pubspec.yaml` (currently `0.1.0`).
@@ -400,6 +412,8 @@ If the Play API returns `Package not found: gg.ai.privateclaw`, finish the first
 If the Play API returns `The apk has permissions that require a privacy policy set for the app`, add a public HTTPS privacy policy URL in Play Console before retrying the upload. A project policy document is included at [`PRIVACY.md`](./PRIVACY.md).
 
 If the Play app itself is still in draft state, upload with `PRIVATECLAW_PLAY_RELEASE_STATUS=draft` so the internal release is created as a draft as well.
+
+Google Play closed testing uses the legacy `alpha` track name by default in the API. Override the target with `PRIVATECLAW_PLAY_CLOSED_TRACK` if needed, or override the source track from `internal` with `PRIVATECLAW_PLAY_PROMOTE_FROM_TRACK`.
 
 The provider publish flow is available from the repository root:
 

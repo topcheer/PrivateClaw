@@ -61,7 +61,7 @@ Promote the current TestFlight build to external testing
 [bundle exec] fastlane ios upload_release
 ```
 
-Upload an existing IPA and submit the App Store release for review
+Submit the existing App Store Connect build for App Store review
 
 ### ios release
 

@@ -108,6 +108,18 @@
       }
     }
   },
+  "sessionRenewPromptTitle": "工作階段即將到期",
+  "sessionRenewPromptBody": "這個工作階段將在 {remaining} 後到期。任何成員現在都可以點按按鈕自動送出續期指令。",
+  "@sessionRenewPromptBody": {
+    "placeholders": {
+      "remaining": {
+        "type": "String",
+        "example": "29m"
+      }
+    }
+  },
+  "sessionRenewButton": "續期工作階段",
+  "sessionRenewButtonPending": "續期中…",
   "groupChatSummary": "群聊 • {count} 位參與者",
   "groupModeLabel": "模式：群聊",
   "currentAppLabel": "目前應用程式：{label}",

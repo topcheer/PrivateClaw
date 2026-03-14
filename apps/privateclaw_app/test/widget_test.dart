@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:privateclaw_app/main.dart';
+import 'package:privateclaw_app/models/privateclaw_identity.dart';
 import 'package:privateclaw_app/models/privateclaw_invite.dart';
+import 'package:privateclaw_app/models/privateclaw_slash_command.dart';
 import 'package:privateclaw_app/services/privateclaw_session_client.dart';
 import 'package:privateclaw_app/store_screenshot_preview.dart';
 
@@ -65,4 +67,56 @@ void main() {
       expect(find.text('Copy invite link'), findsOneWidget);
     },
   );
+
+  testWidgets('expiring session preview renders a renew prompt', (
+    WidgetTester tester,
+  ) async {
+    final DateTime now = DateTime.now().toUtc();
+    final PrivateClawInvite invite = PrivateClawInvite(
+      version: 1,
+      sessionId: 'session-renew',
+      sessionKey: 'test-session-key',
+      appWsUrl: 'wss://relay.privateclaw.us/ws/app?sessionId=session-renew',
+      expiresAt: now.add(const Duration(minutes: 29)),
+      groupMode: true,
+    );
+
+    await tester.pumpWidget(
+      PrivateClawApp(
+        screenshotConfig: StoreScreenshotConfig(
+          previewData: PrivateClawPreviewData(
+            invite: invite,
+            identity: PrivateClawIdentity(
+              appId: 'app-preview',
+              createdAt: now.subtract(const Duration(days: 1)),
+              displayName: 'Preview',
+            ),
+            status: PrivateClawSessionStatus.active,
+            statusText: 'Renewal reminder: less than 30 minutes remain.',
+            isPairingPanelCollapsed: true,
+            availableCommands: const <PrivateClawSlashCommand>[
+              PrivateClawSlashCommand(
+                slash: '/renew-session',
+                description: 'Extend the current encrypted session.',
+                acceptsArgs: false,
+                source: 'provider',
+              ),
+            ],
+          ),
+          localeOverride: const Locale('en'),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('session-renew-prompt')),
+      findsOneWidget,
+    );
+    final FilledButton renewButton = tester.widget<FilledButton>(
+      find.byKey(const ValueKey<String>('session-renew-button')),
+    );
+    expect(renewButton.onPressed, isNull);
+  });
 }

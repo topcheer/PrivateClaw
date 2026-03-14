@@ -108,6 +108,18 @@
       }
     }
   },
+  "sessionRenewPromptTitle": "会话即将过期",
+  "sessionRenewPromptBody": "这个会话将在 {remaining} 后过期。任意成员现在都可以点按钮自动发送续期命令。",
+  "@sessionRenewPromptBody": {
+    "placeholders": {
+      "remaining": {
+        "type": "String",
+        "example": "29m"
+      }
+    }
+  },
+  "sessionRenewButton": "续期会话",
+  "sessionRenewButtonPending": "正在续期…",
   "groupChatSummary": "群聊 • {count} 位参与者",
   "groupModeLabel": "模式：群聊",
   "currentAppLabel": "当前应用：{label}",

@@ -156,6 +156,20 @@ class AppLocalizationsDe extends AppLocalizations {
   }
 
   @override
+  String get sessionRenewPromptTitle => 'Session expiring soon';
+
+  @override
+  String sessionRenewPromptBody(String remaining) {
+    return 'This session expires in $remaining. Any member can renew it now.';
+  }
+
+  @override
+  String get sessionRenewButton => 'Renew session';
+
+  @override
+  String get sessionRenewButtonPending => 'Renewing…';
+
+  @override
   String groupChatSummary(int count) {
     return 'Gruppenchat • $count Teilnehmende';
   }

@@ -68,6 +68,61 @@ void main() {
     expect(find.byType(Image), findsOneWidget);
   });
 
+  testWidgets('ChatMessageBubble reuses cached inline image providers', (
+    WidgetTester tester,
+  ) async {
+    const String pixelBase64 =
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7Y0v8AAAAASUVORK5CYII=';
+
+    Future<ImageProvider<Object>> pumpMessage(ChatMessage message) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: ChatMessageBubble(message: message)),
+        ),
+      );
+      await tester.pump();
+      return tester.widget<Image>(find.byType(Image).first).image;
+    }
+
+    final ImageProvider<Object> firstProvider = await pumpMessage(
+      ChatMessage(
+        id: 'assistant-image-1',
+        sender: ChatSender.assistant,
+        text: '',
+        sentAt: DateTime.utc(2026, 1, 1),
+        attachments: const <ChatAttachment>[
+          ChatAttachment(
+            id: 'attachment-cache-1',
+            name: 'pixel.png',
+            mimeType: 'image/png',
+            sizeBytes: 68,
+            dataBase64: pixelBase64,
+          ),
+        ],
+      ),
+    );
+
+    final ImageProvider<Object> secondProvider = await pumpMessage(
+      ChatMessage(
+        id: 'assistant-image-2',
+        sender: ChatSender.assistant,
+        text: '',
+        sentAt: DateTime.utc(2026, 1, 2),
+        attachments: const <ChatAttachment>[
+          ChatAttachment(
+            id: 'attachment-cache-1',
+            name: 'pixel.png',
+            mimeType: 'image/png',
+            sizeBytes: 68,
+            dataBase64: pixelBase64,
+          ),
+        ],
+      ),
+    );
+
+    expect(identical(firstProvider, secondProvider), isTrue);
+  });
+
   testWidgets('ChatMessageBubble shows participant labels for group messages', (
     WidgetTester tester,
   ) async {

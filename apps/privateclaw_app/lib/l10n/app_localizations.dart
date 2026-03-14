@@ -358,6 +358,30 @@ abstract class AppLocalizations {
   /// **'Session renewed. New expiry: {expiresAt} ({remaining} left).'**
   String sessionRenewedNotice(String expiresAt, String remaining);
 
+  /// No description provided for @sessionRenewPromptTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Session expiring soon'**
+  String get sessionRenewPromptTitle;
+
+  /// No description provided for @sessionRenewPromptBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This session expires in {remaining}. Any member can renew it now.'**
+  String sessionRenewPromptBody(String remaining);
+
+  /// No description provided for @sessionRenewButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Renew session'**
+  String get sessionRenewButton;
+
+  /// No description provided for @sessionRenewButtonPending.
+  ///
+  /// In en, this message translates to:
+  /// **'Renewing…'**
+  String get sessionRenewButtonPending;
+
   /// No description provided for @groupChatSummary.
   ///
   /// In en, this message translates to:

@@ -108,6 +108,18 @@
       }
     }
   },
+  "sessionRenewPromptTitle": "Session expiring soon",
+  "sessionRenewPromptBody": "This session expires in {remaining}. Any member can renew it now.",
+  "@sessionRenewPromptBody": {
+    "placeholders": {
+      "remaining": {
+        "type": "String",
+        "example": "29m"
+      }
+    }
+  },
+  "sessionRenewButton": "Renew session",
+  "sessionRenewButtonPending": "Renewing…",
   "groupChatSummary": "Group chat • {count} participants",
   "groupModeLabel": "Mode: group chat",
   "currentAppLabel": "This app: {label}",

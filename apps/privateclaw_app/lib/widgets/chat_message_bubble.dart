@@ -13,6 +13,8 @@ import '../models/chat_message.dart';
 import '../services/privateclaw_app_directories.dart';
 
 final Map<String, Future<Uri?>> _attachmentUriCache = <String, Future<Uri?>>{};
+final Map<String, ImageProvider<Object>?> _attachmentImageProviderCache =
+    <String, ImageProvider<Object>?>{};
 
 class ChatMessageBubble extends StatelessWidget {
   const ChatMessageBubble({required this.message, super.key});
@@ -82,8 +84,12 @@ class ChatMessageBubble extends StatelessWidget {
                     const SizedBox(height: 12),
                   ...message.attachments.map(
                     (ChatAttachment attachment) => Padding(
+                      key: ValueKey<String>('attachment-${attachment.id}'),
                       padding: const EdgeInsets.only(bottom: 8),
-                      child: _AttachmentCard(attachment: attachment),
+                      child: _AttachmentCard(
+                        key: ValueKey<String>(attachment.id),
+                        attachment: attachment,
+                      ),
                     ),
                   ),
                 ],
@@ -161,11 +167,23 @@ class _MarkdownSegment extends StatelessWidget {
       data: data,
       selectable: true,
       imageBuilder: (Uri uri, String? title, String? alt) {
+        final Uri? resolvedUri = Uri.tryParse(uri.toString());
+        final Widget image = resolvedUri != null && resolvedUri.scheme == 'file'
+            ? Image.file(
+                File(resolvedUri.toFilePath()),
+                fit: BoxFit.cover,
+                gaplessPlayback: true,
+              )
+            : Image.network(
+                uri.toString(),
+                fit: BoxFit.cover,
+                gaplessPlayback: true,
+              );
         return Padding(
           padding: const EdgeInsets.only(top: 8),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(12),
-            child: Image.network(uri.toString(), fit: BoxFit.cover),
+            child: image,
           ),
         );
       },
@@ -227,7 +245,7 @@ class _PendingBubbleIndicator extends StatelessWidget {
 }
 
 class _AttachmentCard extends StatelessWidget {
-  const _AttachmentCard({required this.attachment});
+  const _AttachmentCard({required this.attachment, super.key});
 
   final ChatAttachment attachment;
 
@@ -256,24 +274,22 @@ class _AttachmentCard extends StatelessWidget {
 }
 
 class _ImageAttachmentCard extends StatelessWidget {
-  const _ImageAttachmentCard({required this.attachment});
+  const _ImageAttachmentCard({required this.attachment, super.key});
 
   final ChatAttachment attachment;
 
   @override
   Widget build(BuildContext context) {
-    final imageBytes = attachment.decodeBytes();
-    if (imageBytes != null) {
+    final ImageProvider<Object>? imageProvider =
+        _resolveAttachmentImageProvider(attachment);
+    if (imageProvider != null) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(12),
-        child: Image.memory(imageBytes, fit: BoxFit.cover),
-      );
-    }
-
-    if (attachment.hasRemoteUri) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: Image.network(attachment.uri!, fit: BoxFit.cover),
+        child: Image(
+          image: imageProvider,
+          fit: BoxFit.cover,
+          gaplessPlayback: true,
+        ),
       );
     }
 
@@ -379,7 +395,7 @@ class _LoadingAttachmentCard extends StatelessWidget {
 }
 
 class _AudioAttachmentCard extends StatefulWidget {
-  const _AudioAttachmentCard({required this.attachment});
+  const _AudioAttachmentCard({required this.attachment, super.key});
 
   final ChatAttachment attachment;
 
@@ -387,10 +403,14 @@ class _AudioAttachmentCard extends StatefulWidget {
   State<_AudioAttachmentCard> createState() => _AudioAttachmentCardState();
 }
 
-class _AudioAttachmentCardState extends State<_AudioAttachmentCard> {
+class _AudioAttachmentCardState extends State<_AudioAttachmentCard>
+    with AutomaticKeepAliveClientMixin<_AudioAttachmentCard> {
   AudioPlayer? _player;
   Future<void>? _initialization;
   Object? _error;
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -453,6 +473,7 @@ class _AudioAttachmentCardState extends State<_AudioAttachmentCard> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final AudioPlayer? player = _player;
     if (_error != null) {
       return _GenericAttachmentCard(
@@ -571,7 +592,7 @@ class _AudioAttachmentCardState extends State<_AudioAttachmentCard> {
 }
 
 class _VideoAttachmentCard extends StatefulWidget {
-  const _VideoAttachmentCard({required this.attachment});
+  const _VideoAttachmentCard({required this.attachment, super.key});
 
   final ChatAttachment attachment;
 
@@ -579,10 +600,14 @@ class _VideoAttachmentCard extends StatefulWidget {
   State<_VideoAttachmentCard> createState() => _VideoAttachmentCardState();
 }
 
-class _VideoAttachmentCardState extends State<_VideoAttachmentCard> {
+class _VideoAttachmentCardState extends State<_VideoAttachmentCard>
+    with AutomaticKeepAliveClientMixin<_VideoAttachmentCard> {
   VideoPlayerController? _controller;
   Future<void>? _initialization;
   Object? _error;
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -643,6 +668,7 @@ class _VideoAttachmentCardState extends State<_VideoAttachmentCard> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final VideoPlayerController? controller = _controller;
     if (_error != null) {
       return _GenericAttachmentCard(
@@ -783,5 +809,27 @@ Future<Uri?> _resolveAttachmentUri(ChatAttachment attachment) {
     final File file = File('${tempDirectory.path}/${attachment.id}_$safeName');
     await file.writeAsBytes(bytes, flush: true);
     return file.uri;
+  });
+}
+
+ImageProvider<Object>? _resolveAttachmentImageProvider(
+  ChatAttachment attachment,
+) {
+  return _attachmentImageProviderCache.putIfAbsent(attachment.id, () {
+    final imageBytes = attachment.decodeBytes();
+    if (imageBytes != null) {
+      return MemoryImage(imageBytes);
+    }
+
+    if (!attachment.hasRemoteUri) {
+      return null;
+    }
+
+    final Uri? source = Uri.tryParse(attachment.uri!);
+    if (source != null && source.scheme == 'file') {
+      return FileImage(File(source.toFilePath()));
+    }
+
+    return NetworkImage(attachment.uri!);
   });
 }

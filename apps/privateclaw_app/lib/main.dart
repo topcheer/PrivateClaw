@@ -22,6 +22,8 @@ import 'widgets/invite_scanner_sheet.dart';
 import 'widgets/session_qr_sheet.dart';
 
 const int _maxInlineAttachmentBytes = 5 * 1024 * 1024;
+const Duration _sessionRenewWarningThreshold = Duration(minutes: 30);
+const String _sessionRenewCommandSlash = '/renew-session';
 
 void main() {
   final StoreScreenshotConfig screenshotConfig =
@@ -91,6 +93,8 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
   bool _hasConnectedSession = false;
   int _attachmentCounter = 0;
   PrivateClawIdentity? _identity;
+  Timer? _sessionExpiryRefreshTimer;
+  bool _isRenewingSession = false;
 
   bool get _canSend => _sessionStatus == PrivateClawSessionStatus.active;
   bool get _hasPendingReply =>
@@ -116,6 +120,48 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
       (_isPreviewMode &&
           _invite != null &&
           _sessionStatus != PrivateClawSessionStatus.idle);
+  bool get _hasLiveSessionContext =>
+      _invite != null &&
+      (_hasConnectedSession ||
+          _sessionStatus == PrivateClawSessionStatus.active ||
+          _sessionStatus == PrivateClawSessionStatus.reconnecting ||
+          _sessionStatus == PrivateClawSessionStatus.relayAttached);
+  PrivateClawSlashCommand? get _sessionRenewCommand {
+    for (final PrivateClawSlashCommand command in _availableCommands) {
+      if (command.slash == _sessionRenewCommandSlash) {
+        return command;
+      }
+    }
+    return null;
+  }
+
+  Duration? get _sessionRemainingDuration {
+    final PrivateClawInvite? invite = _invite;
+    if (invite == null) {
+      return null;
+    }
+    final Duration remaining = invite.expiresAt.difference(
+      DateTime.now().toUtc(),
+    );
+    if (remaining <= Duration.zero) {
+      return null;
+    }
+    return remaining;
+  }
+
+  bool get _showsSessionRenewPrompt {
+    final Duration? remaining = _sessionRemainingDuration;
+    return _hasLiveSessionContext &&
+        remaining != null &&
+        remaining <= _sessionRenewWarningThreshold &&
+        _sessionRenewCommand != null;
+  }
+
+  bool get _canSendSessionRenewCommand =>
+      _client != null &&
+      _sessionStatus == PrivateClawSessionStatus.active &&
+      !_isRenewingSession &&
+      _showsSessionRenewPrompt;
 
   @override
   void initState() {
@@ -123,6 +169,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
     final PrivateClawPreviewData? previewData = widget.previewData;
     if (previewData != null) {
       _applyPreview(previewData);
+      _scheduleSessionExpiryRefresh();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _scheduleScrollToBottom();
       });
@@ -144,6 +191,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
     if (oldWidget.previewData != widget.previewData &&
         widget.previewData != null) {
       _applyPreview(widget.previewData!);
+      _scheduleSessionExpiryRefresh();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _scheduleScrollToBottom();
       });
@@ -153,6 +201,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
   @override
   void dispose() {
     unawaited(_disposeClient(reason: 'widget_disposed'));
+    _sessionExpiryRefreshTimer?.cancel();
     _inviteController.dispose();
     _composerFocusNode.dispose();
     _messageController
@@ -252,7 +301,9 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
         _statusText = l10n.connectingRelay;
         _inviteController.text = trimmed;
         _isPairingPanelCollapsed = false;
+        _isRenewingSession = false;
       });
+      _scheduleSessionExpiryRefresh();
 
       await client.connect();
     } catch (error) {
@@ -293,6 +344,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
         _upsertMessage(event.message!);
       }
       if (event.renewedExpiresAt != null) {
+        _isRenewingSession = false;
         final String renewedMessage = l10n.sessionRenewedNotice(
           _formatDateTime(event.renewedExpiresAt!),
           _formatRemainingDuration(
@@ -328,6 +380,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
         if (_sessionStatus == PrivateClawSessionStatus.closed ||
             _sessionStatus == PrivateClawSessionStatus.error ||
             _sessionStatus == PrivateClawSessionStatus.idle) {
+          _isRenewingSession = false;
           if (_sessionStatus == PrivateClawSessionStatus.closed ||
               _sessionStatus == PrivateClawSessionStatus.idle) {
             _hasConnectedSession = false;
@@ -336,6 +389,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
         }
       }
     });
+    _scheduleSessionExpiryRefresh();
     _scheduleScrollToBottom();
   }
 
@@ -414,6 +468,34 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
     }
   }
 
+  void _scheduleSessionExpiryRefresh() {
+    _sessionExpiryRefreshTimer?.cancel();
+    final Duration? remaining = _sessionRemainingDuration;
+    if (!_hasLiveSessionContext || remaining == null) {
+      return;
+    }
+
+    final Duration nextRefresh;
+    if (remaining > _sessionRenewWarningThreshold) {
+      nextRefresh =
+          remaining -
+          _sessionRenewWarningThreshold +
+          const Duration(seconds: 1);
+    } else if (remaining > const Duration(minutes: 1)) {
+      nextRefresh = const Duration(minutes: 1);
+    } else {
+      nextRefresh = remaining + const Duration(seconds: 1);
+    }
+
+    _sessionExpiryRefreshTimer = Timer(nextRefresh, () {
+      if (!mounted) {
+        return;
+      }
+      setState(() {});
+      _scheduleSessionExpiryRefresh();
+    });
+  }
+
   Future<void> _openScanner() async {
     final String? scannedInvite = await showModalBottomSheet<String>(
       context: context,
@@ -450,6 +532,33 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
         return SessionQrSheet(invite: invite);
       },
     );
+  }
+
+  Future<void> _sendSessionRenewCommand() async {
+    final AppLocalizations l10n = AppLocalizations.of(context)!;
+    final PrivateClawSessionClient? client = _client;
+    final PrivateClawSlashCommand? renewCommand = _sessionRenewCommand;
+    if (client == null || renewCommand == null || _isRenewingSession) {
+      return;
+    }
+
+    setState(() {
+      _isRenewingSession = true;
+    });
+
+    try {
+      await client.sendUserMessage(renewCommand.slash);
+      _scheduleScrollToBottom();
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isRenewingSession = false;
+        _sessionStatus = PrivateClawSessionStatus.error;
+        _statusText = l10n.sendFailed(error.toString());
+      });
+    }
   }
 
   Future<void> _pickAttachments() async {
@@ -558,7 +667,9 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
       _sessionStatus = PrivateClawSessionStatus.idle;
       _statusText = l10n.sessionDisconnected;
       _isPairingPanelCollapsed = false;
+      _isRenewingSession = false;
     });
+    _sessionExpiryRefreshTimer?.cancel();
   }
 
   Future<void> _openSlashCommands() async {
@@ -614,6 +725,67 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
         (ChatAttachment attachment) => attachment.id == attachmentId,
       );
     });
+  }
+
+  Widget _buildSessionRenewPrompt(BuildContext context, AppLocalizations l10n) {
+    final Duration? remaining = _sessionRemainingDuration;
+    if (remaining == null || _sessionRenewCommand == null) {
+      return const SizedBox.shrink();
+    }
+
+    final ColorScheme colorScheme = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      key: const ValueKey<String>('session-renew-prompt'),
+      decoration: BoxDecoration(
+        color: colorScheme.secondaryContainer,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                const Icon(Icons.schedule_outlined),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    l10n.sessionRenewPromptTitle,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              l10n.sessionRenewPromptBody(_formatRemainingDuration(remaining)),
+            ),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              key: const ValueKey<String>('session-renew-button'),
+              onPressed: _canSendSessionRenewCommand
+                  ? () {
+                      unawaited(_sendSessionRenewCommand());
+                    }
+                  : null,
+              icon: _isRenewingSession
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.refresh),
+              label: Text(
+                _isRenewingSession
+                    ? l10n.sessionRenewButtonPending
+                    : l10n.sessionRenewButton,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   String _nextAttachmentId() {
@@ -769,59 +941,68 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
     if (_canCollapsePairingPanel && _isPairingPanelCollapsed) {
       return Padding(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            Expanded(
-              child: FilledButton.tonal(
-                onPressed: () {
-                  setState(() {
-                    _isPairingPanelCollapsed = false;
-                  });
-                },
-                child: Row(
-                  children: <Widget>[
-                    Icon(_statusIcon()),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          if (_invite?.groupMode == true)
-                            Text(
-                              l10n.groupChatSummary(_participants.length),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          Text(
-                            _statusText,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: FilledButton.tonal(
+                    onPressed: () {
+                      setState(() {
+                        _isPairingPanelCollapsed = false;
+                      });
+                    },
+                    child: Row(
+                      children: <Widget>[
+                        Icon(_statusIcon()),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              if (_invite?.groupMode == true)
+                                Text(
+                                  l10n.groupChatSummary(_participants.length),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              Text(
+                                _statusText,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              if (_invite != null)
+                                Text(
+                                  _invite!.sessionId,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                            ],
                           ),
-                          if (_invite != null)
-                            Text(
-                              _invite!.sessionId,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                        ],
-                      ),
+                        ),
+                        const Icon(Icons.expand_more),
+                      ],
                     ),
-                    const Icon(Icons.expand_more),
-                  ],
+                  ),
                 ),
-              ),
+                if (_canShowSessionQr)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8),
+                    child: IconButton.filledTonal(
+                      key: const ValueKey<String>('session-qr-trigger'),
+                      tooltip: l10n.showSessionQrButton,
+                      onPressed: _showSessionQrSheet,
+                      icon: const Icon(Icons.qr_code_2),
+                    ),
+                  ),
+              ],
             ),
-            if (_canShowSessionQr)
-              Padding(
-                padding: const EdgeInsets.only(left: 8),
-                child: IconButton.filledTonal(
-                  key: const ValueKey<String>('session-qr-trigger'),
-                  tooltip: l10n.showSessionQrButton,
-                  onPressed: _showSessionQrSheet,
-                  icon: const Icon(Icons.qr_code_2),
-                ),
-              ),
+            if (_showsSessionRenewPrompt) ...<Widget>[
+              const SizedBox(height: 12),
+              _buildSessionRenewPrompt(context, l10n),
+            ],
           ],
         ),
       );
@@ -953,6 +1134,10 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
                   ],
                 ),
               ),
+              if (_showsSessionRenewPrompt) ...<Widget>[
+                const SizedBox(height: 12),
+                _buildSessionRenewPrompt(context, l10n),
+              ],
             ],
           ),
         ),
@@ -982,7 +1167,10 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
       separatorBuilder: (_, __) => const SizedBox(height: 8),
       itemBuilder: (BuildContext context, int index) {
         final ChatMessage message = _messages[index];
-        return ChatMessageBubble(message: message);
+        return ChatMessageBubble(
+          key: ValueKey<String>(message.id),
+          message: message,
+        );
       },
     );
   }

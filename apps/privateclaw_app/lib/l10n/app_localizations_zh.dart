@@ -145,6 +145,20 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get sessionRenewPromptTitle => '会话即将过期';
+
+  @override
+  String sessionRenewPromptBody(String remaining) {
+    return '这个会话将在 $remaining 后过期。任意成员现在都可以点按钮自动发送续期命令。';
+  }
+
+  @override
+  String get sessionRenewButton => '续期会话';
+
+  @override
+  String get sessionRenewButtonPending => '正在续期…';
+
+  @override
   String groupChatSummary(int count) {
     return '群聊 • $count 位参与者';
   }
@@ -303,6 +317,20 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
   String sessionRenewedNotice(String expiresAt, String remaining) {
     return '工作階段已續期。新的到期時間：$expiresAt（剩餘 $remaining）。';
   }
+
+  @override
+  String get sessionRenewPromptTitle => '工作階段即將到期';
+
+  @override
+  String sessionRenewPromptBody(String remaining) {
+    return '這個工作階段將在 $remaining 後到期。任何成員現在都可以點按按鈕自動送出續期指令。';
+  }
+
+  @override
+  String get sessionRenewButton => '續期工作階段';
+
+  @override
+  String get sessionRenewButtonPending => '續期中…';
 
   @override
   String groupChatSummary(int count) {

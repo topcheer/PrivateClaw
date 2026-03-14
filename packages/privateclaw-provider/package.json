@@ -1,6 +1,6 @@
 {
   "name": "@privateclaw/privateclaw",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "PrivateClaw provider runtime and OpenClaw-compatible plugin adapter",
   "type": "module",
   "main": "./dist/index.js",
@@ -62,5 +62,14 @@
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/topcheer/PrivateClaw.git",
+    "directory": "packages/privateclaw-provider"
+  },
+  "homepage": "https://github.com/topcheer/PrivateClaw/tree/main/packages/privateclaw-provider",
+  "bugs": {
+    "url": "https://github.com/topcheer/PrivateClaw/issues"
   }
 }

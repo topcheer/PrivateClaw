@@ -47,6 +47,22 @@ Upload an existing IPA to TestFlight without rebuilding
 
 Build and upload to TestFlight
 
+### ios promote_external
+
+```sh
+[bundle exec] fastlane ios promote_external
+```
+
+Promote the current TestFlight build to external testing
+
+### ios upload_release
+
+```sh
+[bundle exec] fastlane ios upload_release
+```
+
+Upload an existing IPA and submit the App Store release for review
+
 ### ios release
 
 ```sh

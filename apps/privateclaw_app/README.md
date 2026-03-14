@@ -94,6 +94,8 @@ If you already keep the same signing material in `~/ggai/GGAiDoodle`, the `*:gga
 
 Use the `*:upload` variants when you already have a fresh IPA or AAB on disk and only want to retry the store upload without rebuilding first.
 
+For iOS specifically, `ios:release:upload*` now submits the already-uploaded App Store Connect build identified by `PRIVATECLAW_BUILD_NAME` / `PRIVATECLAW_BUILD_NUMBER` for review instead of re-uploading the IPA. Use `ios:release*` when you need to build and upload a new binary first.
+
 The TestFlight external promote step defaults to the App Store Connect external tester group `ext`. Override `PRIVATECLAW_TESTFLIGHT_EXTERNAL_GROUPS` with a comma-separated list if you need a different target group set. Set `PRIVATECLAW_TESTFLIGHT_NOTIFY_EXTERNAL_TESTERS=true` if you want the promote step to notify testers immediately.
 
 Versioning rules:

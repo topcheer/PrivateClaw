@@ -396,6 +396,8 @@ If you keep the same local signing material under `~/ggai/GGAiDoodle`, the `*:gg
 
 The `*:upload` variants skip the rebuild step and upload the existing `apps/privateclaw_app/builds/ios/PrivateClaw.ipa` or `apps/privateclaw_app/build/app/outputs/bundle/release/app-release.aab` directly, which is useful for retrying failed store submissions quickly.
 
+For iOS specifically, `ios:release:upload*` submits the already-uploaded App Store Connect build identified by `PRIVATECLAW_BUILD_NAME` / `PRIVATECLAW_BUILD_NUMBER` for review instead of re-uploading the IPA. Use `ios:release*` when you need to build and upload a fresh binary first.
+
 The TestFlight external promote step defaults to the external tester group `ext`. Override `PRIVATECLAW_TESTFLIGHT_EXTERNAL_GROUPS` with a comma-separated list if you need a different target group set. Set `PRIVATECLAW_TESTFLIGHT_NOTIFY_EXTERNAL_TESTERS=true` if you want the promote step to notify testers immediately, and optionally set `PRIVATECLAW_TESTFLIGHT_CHANGELOG` to attach beta release notes during the external promotion.
 
 Versioning rules:

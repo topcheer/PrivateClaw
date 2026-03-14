@@ -122,6 +122,7 @@ platform :ios do
     options = {
       api_key: privateclaw_app_store_api_key,
       app_identifier: "gg.ai.privateclaw",
+      app_platform: "ios",
       app_version: privateclaw_build_name,
       build_number: privateclaw_build_number,
       distribute_only: true,
@@ -135,10 +136,9 @@ platform :ios do
     upload_to_testflight(**options)
   end
 
-  def privateclaw_release_upload_options
-    {
+  def privateclaw_release_upload_options(skip_binary_upload: false)
+    options = {
       api_key: privateclaw_app_store_api_key,
-      ipa: "../builds/ios/PrivateClaw.ipa",
       metadata_path: "./fastlane/metadata",
       screenshots_path: "./fastlane/screenshots",
       skip_screenshots: false,
@@ -150,16 +150,24 @@ platform :ios do
         add_id_info_uses_idfa: false
       }
     }
+    if skip_binary_upload
+      options[:app_version] = privateclaw_build_name
+      options[:build_number] = privateclaw_build_number
+      options[:skip_binary_upload] = true
+    else
+      options[:ipa] = "../builds/ios/PrivateClaw.ipa"
+    end
+    options
   end
 
-  desc "Upload an existing IPA and submit the App Store release for review"
+  desc "Submit the existing App Store Connect build for App Store review"
   lane :upload_release do
-    upload_to_app_store(**privateclaw_release_upload_options)
+    upload_to_app_store(**privateclaw_release_upload_options(skip_binary_upload: true))
   end
 
   desc "Build and submit a production App Store release"
   lane :release do
     build_release
-    upload_release
+    upload_to_app_store(**privateclaw_release_upload_options)
   end
 end

@@ -35,6 +35,21 @@ test("parseOpenClawAgentOutput returns multi-message response for multiple paylo
   assert.deepEqual(result, { messages: [{ text: "first" }, { text: "second" }] });
 });
 
+test("parseOpenClawAgentOutput accepts alternate text-bearing payload fields", () => {
+  const result = parseOpenClawAgentOutput(
+    JSON.stringify({
+      status: "ok",
+      result: {
+        payloads: [{ message: "pong-from-message" }, { summary: "pong-from-summary" }],
+      },
+    }),
+  );
+
+  assert.deepEqual(result, {
+    messages: [{ text: "pong-from-message" }, { text: "pong-from-summary" }],
+  });
+});
+
 test("OpenClawAgentBridge invokes openclaw agent with session-aware arguments", async () => {
   let invokedFile = "";
   let invokedArgs: string[] = [];
@@ -92,6 +107,132 @@ test("OpenClawAgentBridge invokes openclaw agent with session-aware arguments", 
     "30",
   ]);
   assert.equal(result, "bridge-ok");
+});
+
+test("OpenClawAgentBridge converts side-effect-only slash commands into a friendly note", async () => {
+  const bridge = new OpenClawAgentBridge({
+    execFileImpl: (_file, _args, _options, callback) => {
+      callback(
+        null,
+        JSON.stringify({
+          status: "ok",
+          summary: "completed",
+          result: {
+            payloads: [],
+          },
+        }),
+        "",
+      );
+    },
+  });
+
+  const result = await bridge.handleUserMessage({
+    sessionId: "privateclaw-session",
+    message: "/tts hello from privateclaw",
+    history: [],
+    invite: {
+      version: 1,
+      sessionId: "privateclaw-session",
+      sessionKey: "test",
+      appWsUrl: "ws://127.0.0.1/app?sessionId=privateclaw-session",
+      expiresAt: new Date().toISOString(),
+    },
+  });
+
+  assert.equal(
+    result,
+    "OpenClaw completed /tts, but it did not return a text reply through the agent bridge. If the command generated audio, the current PrivateClaw bridge does not surface that audio back into the chat yet.",
+  );
+});
+
+test("OpenClawAgentBridge bridges TTS audio artifacts from the session log", async (t) => {
+  const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "privateclaw-openclaw-state-"));
+  const workspaceDir = path.join(stateDir, "workspace");
+  const audioDir = await fs.mkdtemp(path.join(os.tmpdir(), "privateclaw-tts-audio-"));
+  const audioPath = path.join(audioDir, "voice-output.mp3");
+  const audioBytes = Buffer.from("ID3-privateclaw-audio");
+  const sessionLogPath = path.join(
+    stateDir,
+    "agents",
+    "main",
+    "sessions",
+    "privateclaw-session.jsonl",
+  );
+  await fs.mkdir(workspaceDir, { recursive: true });
+  await fs.writeFile(audioPath, audioBytes);
+  t.after(async () => {
+    await fs.rm(stateDir, { recursive: true, force: true });
+    await fs.rm(audioDir, { recursive: true, force: true });
+  });
+
+  const bridge = new OpenClawAgentBridge({
+    stateDir,
+    workspaceDir,
+    execFileImpl: (_file, _args, _options, callback) => {
+      void (async () => {
+        await fs.mkdir(path.dirname(sessionLogPath), { recursive: true });
+        await fs.writeFile(
+          sessionLogPath,
+          `${JSON.stringify({
+            type: "message",
+            message: {
+              role: "toolResult",
+              toolName: "tts",
+              content: [{ type: "text", text: `[[audio_as_voice]]\nMEDIA:${audioPath}` }],
+              details: { audioPath },
+              isError: false,
+            },
+          })}\n`,
+          "utf8",
+        );
+        callback(
+          null,
+          JSON.stringify({
+            status: "ok",
+            summary: "completed",
+            result: {
+              payloads: [],
+            },
+          }),
+          "",
+        );
+      })().catch((error) => {
+        callback(error instanceof Error ? error : new Error(String(error)), "", "");
+      });
+    },
+  });
+
+  const result = await bridge.handleUserMessage({
+    sessionId: "privateclaw-session",
+    message: "/tts hello from privateclaw",
+    history: [],
+    invite: {
+      version: 1,
+      sessionId: "privateclaw-session",
+      sessionKey: "test",
+      appWsUrl: "ws://127.0.0.1/app?sessionId=privateclaw-session",
+      expiresAt: new Date().toISOString(),
+    },
+  });
+
+  if (typeof result === "string") {
+    assert.fail("Expected an attachment-bearing bridge response.");
+  }
+  assert.equal(result.messages.length, 1);
+  const [message] = result.messages;
+  assert.equal(typeof message, "object");
+  assert(message);
+  if (typeof message === "string") {
+    assert.fail("Expected an attachment-bearing bridge message.");
+  }
+  assert.equal(message.text, "");
+  assert.equal(message.attachments?.length, 1);
+  const [attachment] = message.attachments ?? [];
+  assert(attachment);
+  assert.equal(attachment.name, "voice-output.mp3");
+  assert.equal(attachment.mimeType, "audio/mpeg");
+  assert.equal(attachment.sizeBytes, audioBytes.length);
+  assert.equal(attachment.dataBase64, audioBytes.toString("base64"));
 });
 
 test("OpenClawAgentBridge stages image and PDF attachments with tool hints", async (t) => {

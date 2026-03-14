@@ -1,24 +1,70 @@
+require "json"
+require "shellwords"
+
 default_platform(:android)
 
 platform :android do
+  def privateclaw_app_root
+    @privateclaw_app_root ||= File.expand_path("../..", __dir__)
+  end
+
+  def privateclaw_version_script_path
+    @privateclaw_version_script_path ||= File.expand_path("../../../../scripts/resolve-mobile-version.mjs", __dir__)
+  end
+
+  def privateclaw_mobile_version
+    @privateclaw_mobile_version ||= JSON.parse(
+      sh("node #{Shellwords.escape(privateclaw_version_script_path)} --json")
+    )
+  end
+
+  def privateclaw_build_name
+    privateclaw_mobile_version.fetch("versionName")
+  end
+
+  def privateclaw_build_number
+    privateclaw_mobile_version.fetch("buildNumber").to_s
+  end
+
   def privateclaw_play_release_status(default_status = "completed")
     ENV.fetch("PRIVATECLAW_PLAY_RELEASE_STATUS", default_status)
   end
 
+  def privateclaw_play_metadata_track
+    ENV.fetch("PRIVATECLAW_PLAY_METADATA_TRACK", "internal")
+  end
+
+  def privateclaw_play_metadata_version_code
+    value = ENV["PRIVATECLAW_PLAY_METADATA_VERSION_CODE"]
+    value.nil? || value.empty? ? nil : value.to_i
+  end
+
   desc "Build a release Android App Bundle via Flutter"
   lane :build_release do
-    sh("cd .. && flutter build appbundle --release")
+    UI.message("Using PrivateClaw Android version #{privateclaw_build_name} (#{privateclaw_build_number})")
+    sh(
+      "cd #{Shellwords.escape(privateclaw_app_root)} && flutter build appbundle --release " \
+      "--build-name #{Shellwords.escape(privateclaw_build_name)} " \
+      "--build-number #{Shellwords.escape(privateclaw_build_number)}"
+    )
   end
 
   desc "Upload localized Play Store metadata only"
   lane :metadata do
-    upload_to_play_store(
+    options = {
       package_name: "gg.ai.privateclaw",
+      track: privateclaw_play_metadata_track,
+      release_status: privateclaw_play_release_status("draft"),
+      track_promote_release_status: privateclaw_play_release_status("draft"),
       skip_upload_apk: true,
       skip_upload_aab: true,
       skip_upload_images: true,
-      skip_upload_screenshots: true
-    )
+      skip_upload_screenshots: false,
+      skip_upload_changelogs: true
+    }
+    version_code = privateclaw_play_metadata_version_code
+    options[:version_code] = version_code unless version_code.nil?
+    upload_to_play_store(**options)
   end
 
   desc "Upload an existing release App Bundle to internal testing without rebuilding"
@@ -29,7 +75,7 @@ platform :android do
       track: "internal",
       release_status: privateclaw_play_release_status("completed"),
       skip_upload_images: true,
-      skip_upload_screenshots: true,
+      skip_upload_screenshots: false,
       skip_upload_apk: true
     )
   end
@@ -49,7 +95,7 @@ platform :android do
       track: "production",
       release_status: privateclaw_play_release_status("completed"),
       skip_upload_images: true,
-      skip_upload_screenshots: true,
+      skip_upload_screenshots: false,
       skip_upload_apk: true
     )
   end

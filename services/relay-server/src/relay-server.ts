@@ -35,8 +35,14 @@ interface SessionRecord {
   sessionId: string;
   expiresAt: number;
   providerId: string;
+  groupMode: boolean;
   providerSocket?: WebSocket;
-  appSocket?: WebSocket;
+  appSockets: Map<string, WebSocket>;
+}
+
+interface AppSessionBinding {
+  sessionId: string;
+  appId: string;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -114,7 +120,7 @@ class SessionHub {
   private readonly providerSessions = new Map<string, Set<string>>();
   private readonly providerSockets = new Map<string, WebSocket>();
   private readonly socketProviders = new Map<WebSocket, string>();
-  private readonly appSessions = new Map<WebSocket, string>();
+  private readonly appSessions = new Map<WebSocket, AppSessionBinding>();
 
   constructor(
     private readonly params: {
@@ -165,15 +171,20 @@ class SessionHub {
     return providerId;
   }
 
-  createSession(providerSocket: WebSocket, ttlMs?: number): SessionRecord {
+  createSession(
+    providerSocket: WebSocket,
+    params?: { ttlMs?: number; groupMode?: boolean },
+  ): SessionRecord {
     const providerId = this.requireProviderId(providerSocket);
     const sessionId = randomUUID();
-    const expiresAt = this.now() + (ttlMs ?? this.params.defaultTtlMs);
+    const expiresAt = this.now() + (params?.ttlMs ?? this.params.defaultTtlMs);
     const session: SessionRecord = {
       sessionId,
       expiresAt,
       providerId,
+      groupMode: params?.groupMode === true,
       providerSocket,
+      appSockets: new Map<string, WebSocket>(),
     };
     this.sessions.set(sessionId, session);
 
@@ -230,12 +241,23 @@ class SessionHub {
     return session;
   }
 
-  attachApp(sessionId: string, appSocket: WebSocket): SessionRecord {
+  attachApp(
+    sessionId: string,
+    appId: string,
+    appSocket: WebSocket,
+  ): SessionRecord {
     const session = this.getSession(sessionId);
+    const normalizedAppId = appId.trim() || "legacy-app";
+    const activeAppIds = [...session.appSockets.entries()]
+      .filter(([, socket]) =>
+        socket.readyState === WebSocket.OPEN ||
+        socket.readyState === WebSocket.CONNECTING,
+      )
+      .map(([entryAppId]) => entryAppId);
 
     if (
-      session.appSocket &&
-      session.appSocket.readyState === WebSocket.OPEN
+      !session.groupMode &&
+      activeAppIds.some((entryAppId) => entryAppId !== normalizedAppId)
     ) {
       throw new RelayProtocolError(
         "session_in_use",
@@ -243,8 +265,19 @@ class SessionHub {
       );
     }
 
-    session.appSocket = appSocket;
-    this.appSessions.set(appSocket, sessionId);
+    const previousSocket = session.appSockets.get(normalizedAppId);
+    if (
+      previousSocket &&
+      previousSocket !== appSocket &&
+      (previousSocket.readyState === WebSocket.OPEN ||
+        previousSocket.readyState === WebSocket.CONNECTING)
+    ) {
+      this.appSessions.delete(previousSocket);
+      previousSocket.close(1012, "app_reconnected");
+    }
+
+    session.appSockets.set(normalizedAppId, appSocket);
+    this.appSessions.set(appSocket, { sessionId, appId: normalizedAppId });
     return session;
   }
 
@@ -252,13 +285,26 @@ class SessionHub {
     providerSocket: WebSocket,
     sessionId: string,
     envelope: EncryptedEnvelope,
+    targetAppId?: string,
   ): Promise<void> {
     const session = this.assertProviderOwnsSession(providerSocket, sessionId);
-    if (
-      session.appSocket &&
-      session.appSocket.readyState === WebSocket.OPEN
-    ) {
-      sendJson(session.appSocket, { type: "relay:frame", sessionId, envelope });
+    if (targetAppId) {
+      const targetSocket = session.appSockets.get(targetAppId);
+      if (targetSocket && targetSocket.readyState === WebSocket.OPEN) {
+        sendJson(targetSocket, { type: "relay:frame", sessionId, envelope });
+      }
+      return;
+    }
+
+    let delivered = 0;
+    for (const socket of session.appSockets.values()) {
+      if (socket.readyState !== WebSocket.OPEN) {
+        continue;
+      }
+      delivered += 1;
+      sendJson(socket, { type: "relay:frame", sessionId, envelope });
+    }
+    if (delivered > 0) {
       return;
     }
 
@@ -320,18 +366,18 @@ class SessionHub {
       this.providerSessions.delete(session.providerId);
     }
 
-    if (session.appSocket) {
-      this.appSessions.delete(session.appSocket);
-      sendJson(session.appSocket, {
+    for (const appSocket of new Set(session.appSockets.values())) {
+      this.appSessions.delete(appSocket);
+      sendJson(appSocket, {
         type: "relay:session_closed",
         sessionId,
         reason,
       });
       if (
-        session.appSocket.readyState === WebSocket.OPEN ||
-        session.appSocket.readyState === WebSocket.CONNECTING
+        appSocket.readyState === WebSocket.OPEN ||
+        appSocket.readyState === WebSocket.CONNECTING
       ) {
-        session.appSocket.close(1000, reason);
+        appSocket.close(1000, reason);
       }
     }
 
@@ -376,19 +422,19 @@ class SessionHub {
   }
 
   async detachApp(appSocket: WebSocket): Promise<void> {
-    const sessionId = this.appSessions.get(appSocket);
-    if (!sessionId) {
+    const binding = this.appSessions.get(appSocket);
+    if (!binding) {
       return;
     }
 
     this.appSessions.delete(appSocket);
-    const session = this.sessions.get(sessionId);
+    const session = this.sessions.get(binding.sessionId);
     if (!session) {
       return;
     }
 
-    if (session.appSocket === appSocket) {
-      delete session.appSocket;
+    if (session.appSockets.get(binding.appId) === appSocket) {
+      session.appSockets.delete(binding.appId);
     }
   }
 
@@ -492,6 +538,7 @@ export function createRelayServer(
         case "provider:create_session": {
           const requestIdValue = message.requestId;
           const ttlMsValue = message.ttlMs;
+          const groupModeValue = message.groupMode;
 
           if (typeof requestIdValue !== "string" || requestIdValue === "") {
             throw new RelayProtocolError(
@@ -511,10 +558,24 @@ export function createRelayServer(
               "provider:create_session ttlMs must be a positive integer.",
             );
           }
+          if (
+            groupModeValue !== undefined &&
+            typeof groupModeValue !== "boolean"
+          ) {
+            throw new RelayProtocolError(
+              "invalid_group_mode",
+              "provider:create_session groupMode must be a boolean when provided.",
+            );
+          }
 
           const session = sessionHub.createSession(
             socket,
-            typeof ttlMsValue === "number" ? ttlMsValue : undefined,
+            {
+              ...(typeof ttlMsValue === "number" ? { ttlMs: ttlMsValue } : {}),
+              ...(typeof groupModeValue === "boolean"
+                ? { groupMode: groupModeValue }
+                : {}),
+            },
           );
           sendJson(socket, {
             type: "relay:session_created",
@@ -573,10 +634,20 @@ export function createRelayServer(
               "provider:frame must include a valid sessionId and encrypted envelope.",
             );
           }
+          if (
+            message.targetAppId !== undefined &&
+            typeof message.targetAppId !== "string"
+          ) {
+            throw new RelayProtocolError(
+              "invalid_target_app_id",
+              "provider:frame targetAppId must be a string when provided.",
+            );
+          }
           await sessionHub.forwardToApp(
             socket,
             message.sessionId,
             message.envelope,
+            message.targetAppId,
           );
           return;
         }
@@ -674,6 +745,7 @@ export function createRelayServer(
       `http://${request.headers.host ?? `${config.host}:${startedPort}`}`,
     );
     const sessionId = url.searchParams.get("sessionId");
+    const appId = url.searchParams.get("appId")?.trim() || "legacy-app";
 
     if (!sessionId) {
       sendJson(socket, {
@@ -686,7 +758,7 @@ export function createRelayServer(
     }
 
     try {
-      const session = sessionHub.attachApp(sessionId, socket);
+      const session = sessionHub.attachApp(sessionId, appId, socket);
       sendJson(socket, {
         type: "relay:attached",
         sessionId,

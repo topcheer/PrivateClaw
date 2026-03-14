@@ -7,6 +7,7 @@ class PrivateClawInvite {
     required this.sessionKey,
     required this.appWsUrl,
     required this.expiresAt,
+    this.groupMode = false,
     this.providerLabel,
     this.relayLabel,
   });
@@ -16,6 +17,7 @@ class PrivateClawInvite {
   final String sessionKey;
   final String appWsUrl;
   final DateTime expiresAt;
+  final bool groupMode;
   final String? providerLabel;
   final String? relayLabel;
 
@@ -41,6 +43,7 @@ class PrivateClawInvite {
       sessionKey: sessionKey,
       appWsUrl: appWsUrl,
       expiresAt: DateTime.parse(expiresAt).toUtc(),
+      groupMode: json['groupMode'] as bool? ?? false,
       providerLabel: json['providerLabel'] as String?,
       relayLabel: json['relayLabel'] as String?,
     );
@@ -50,6 +53,16 @@ class PrivateClawInvite {
     final input = rawInput.trim();
     if (input.isEmpty) {
       throw const FormatException('Invite string cannot be empty.');
+    }
+
+    final Match? embeddedInviteMatch = RegExp(
+      r'privateclaw://connect\?payload=[A-Za-z0-9_-]+',
+    ).firstMatch(input);
+    if (embeddedInviteMatch != null) {
+      final String embeddedInvite = embeddedInviteMatch.group(0)!;
+      if (embeddedInvite != input) {
+        return PrivateClawInvite.fromScan(embeddedInvite);
+      }
     }
 
     if (input.startsWith('privateclaw://connect')) {
@@ -85,6 +98,7 @@ class PrivateClawInvite {
       'sessionKey': sessionKey,
       'appWsUrl': appWsUrl,
       'expiresAt': expiresAt.toUtc().toIso8601String(),
+      if (groupMode) 'groupMode': true,
       if (providerLabel != null) 'providerLabel': providerLabel,
       if (relayLabel != null) 'relayLabel': relayLabel,
     };
@@ -96,6 +110,7 @@ class PrivateClawInvite {
     String? sessionKey,
     String? appWsUrl,
     DateTime? expiresAt,
+    bool? groupMode,
     Object? providerLabel = _noValue,
     Object? relayLabel = _noValue,
   }) {
@@ -105,6 +120,7 @@ class PrivateClawInvite {
       sessionKey: sessionKey ?? this.sessionKey,
       appWsUrl: appWsUrl ?? this.appWsUrl,
       expiresAt: expiresAt ?? this.expiresAt,
+      groupMode: groupMode ?? this.groupMode,
       providerLabel: identical(providerLabel, _noValue)
           ? this.providerLabel
           : providerLabel as String?,

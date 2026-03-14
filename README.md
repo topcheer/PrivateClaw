@@ -4,6 +4,8 @@
 
 PrivateClaw is a lightweight, end-to-end encrypted private channel for OpenClaw. It lets a user leave a public bot surface, scan a one-time QR code, and continue the conversation inside a dedicated mobile app without giving the relay access to plaintext.
 
+Sessions can stay one-to-one by default, or opt into a small group mode where multiple paired apps share the same encrypted OpenClaw conversation while keeping stable per-install display names inside the chat UI.
+
 The repository contains:
 
 - `services/relay-server`: a blind WebSocket relay for encrypted session traffic.
@@ -33,6 +35,10 @@ flowchart LR
 6. The relay only routes ciphertext plus the metadata needed to deliver it.
 7. The provider forwards user messages into OpenClaw and encrypts responses back to the app.
 
+In optional group mode, the same invite can be scanned by more than one app install. The provider assigns each participant a short stable nickname, broadcasts join/leave notices as gray system messages, keeps the shared OpenClaw conversation alive when one participant leaves, and broadcasts participant messages back to every connected app so the conversation feels like a lightweight encrypted group room.
+
+Provider-generated invite announcements, local pairing output, and built-in PrivateClaw slash-command descriptions are emitted in bilingual Chinese + English text so the same session can be operated from either language context.
+
 ### Security properties
 
 - AES-256-GCM for message envelopes.
@@ -40,6 +46,39 @@ flowchart LR
 - `sessionId` is bound as additional authenticated data.
 - Relay never receives plaintext message contents.
 - Session renewal rotates the key without creating a new public invite.
+
+### Group lifecycle and bot controls
+
+```mermaid
+sequenceDiagram
+  participant A as Participant A
+  participant P as PrivateClaw provider
+  participant B as Participant B
+  participant O as OpenClaw bridge
+
+  A->>P: client_hello
+  P-->>A: nickname + capabilities
+  B->>P: client_hello
+  P-->>A: "B joined" system notice
+  P-->>B: history + capabilities
+
+  A->>P: /mute-bot
+  P-->>A: muted notice + capabilities
+  P-->>B: muted notice + capabilities
+  B->>P: normal group message
+  P-->>A: participant broadcast
+  P-->>B: participant broadcast
+  Note over P,O: assistant bridge is skipped while muted
+
+  B->>P: /unmute-bot
+  P-->>A: unmuted notice + capabilities
+  P-->>B: unmuted notice + capabilities
+  A->>P: normal group message
+  P->>O: forward shared history + message
+  O-->>P: assistant reply
+  P-->>A: assistant message
+  P-->>B: assistant message
+```
 
 ## Repository layout
 
@@ -118,6 +157,8 @@ openclaw channels add --channel telegram --token <token>
 
 Then send `/privateclaw` from that chat surface and scan the returned QR code in the app.
 
+If you want the session to behave like an encrypted group chat, use `/privateclaw group` instead. That keeps one OpenClaw conversation state for the session while allowing multiple app clients to join with distinct participant labels. Individual participants can leave and later rejoin the same invite until the session TTL expires, and once less than 30 minutes remain the provider emits a reminder to run `/renew-session`. While the group is active, any participant can also use `/mute-bot` and `/unmute-bot` to pause or resume assistant replies without stopping participant-to-participant chat delivery.
+
 #### Path B: local pairing directly from the OpenClaw CLI
 
 If you want to start a session without another chat app, use the plugin-provided local pair command:
@@ -127,6 +168,13 @@ openclaw privateclaw pair
 ```
 
 This command creates a session immediately and renders the pairing QR code in your terminal. It keeps the provider session alive until you stop it with `Ctrl+C`.
+New sessions created this way stay valid for 8 hours by default unless you explicitly override the TTL.
+
+To start the same flow in group mode:
+
+```bash
+openclaw privateclaw pair --group
+```
 
 ### 5. Run the app
 
@@ -136,6 +184,7 @@ flutter run
 ```
 
 Then either scan the QR code returned by `/privateclaw` from your existing channel, or scan the QR code rendered by `openclaw privateclaw pair`.
+If you are pairing on a simulator or desktop, you can also paste either the raw `privateclaw://connect?...` link or the full `Invite URI: ...` / `邀请链接 / Invite URI: ...` line into the app.
 
 ## Self-hosting the relay
 
@@ -185,9 +234,10 @@ The relay also exposes `/healthz` for container and platform health checks.
 `@privateclaw/privateclaw` is the published provider/runtime package. It supports:
 
 - OpenClaw plugin registration through `api.registerCommand(...)`
-- QR invite generation for `/privateclaw`
+- QR invite generation for `/privateclaw`, `/privateclaw group`, and `openclaw privateclaw pair --group`
+- bilingual invite / CLI / command output for built-in PrivateClaw text
 - OpenClaw agent, webhook, echo, and OpenAI-compatible bridge modes
-- reconnect, heartbeat, session renewal, and dynamic slash-command sync
+- reconnect, heartbeat, session renewal, 30-minute renewal reminders, dynamic slash-command sync, valid derived bridge session IDs for nickname generation, and optional multi-app group sessions with join/leave notices plus `/mute-bot` / `/unmute-bot`
 
 See `packages/privateclaw-provider/README.md` for package-level usage examples.
 
@@ -195,10 +245,11 @@ See `packages/privateclaw-provider/README.md` for package-level usage examples.
 
 The Flutter app supports:
 
-- QR scanning and manual invite paste
+- QR scanning and manual invite paste, including full pasted `Invite URI: ...` announcement lines
 - encrypted chat over the relay
+- stable per-install app identity with provider-assigned participant nicknames
 - markdown rendering, best-effort Mermaid support, and media/file rendering
-- reconnect, session renewal, and slash-command sync
+- reconnect, session renewal, 30-minute renewal reminders, slash-command sync, localized UI chrome, and optional group chat rendering for join/leave notices plus bot mute/unmute controls
 
 See `apps/privateclaw_app/README.md` for app-specific commands.
 
@@ -240,6 +291,8 @@ flutter build ios --simulator
 Repository-level shortcuts:
 
 ```bash
+npm run store:version
+npm run store:version:shell
 npm run store:check
 npm run store:check:ggai
 npm run ios:testflight
@@ -266,6 +319,13 @@ Run `npm run store:check` first to confirm that the expected credential environm
 If you keep the same local signing material under `~/ggai/GGAiDoodle`, the `*:ggai` variants auto-load the reusable App Store Connect / Play / keystore settings from that project before running the preflight or fastlane lane. Set `PRIVATECLAW_GGAIDOODLE_ROOT` if your local `GGAiDoodle` checkout lives somewhere else.
 
 The `*:upload` variants skip the rebuild step and upload the existing `apps/privateclaw_app/builds/ios/PrivateClaw.ipa` or `apps/privateclaw_app/build/app/outputs/bundle/release/app-release.aab` directly, which is useful for retrying failed store submissions quickly.
+
+Versioning rules:
+
+- `versionName` / iOS marketing version stays on the semantic `major.minor.patch` value in `apps/privateclaw_app/pubspec.yaml` (currently `0.1.0`).
+- `buildNumber` / Android `versionCode` auto-increments for each fresh store build as the current UTC seconds offset from `2024-01-01T00:00:00Z`, clamped above the build suffix stored in `pubspec.yaml`.
+- If you want iOS and Android to share the exact same auto-generated build number in one shell session, run `eval "$(npm run -s store:version:shell)"` once before kicking off both upload commands.
+- Optional overrides: set `PRIVATECLAW_BUILD_NAME` and/or `PRIVATECLAW_BUILD_NUMBER` if you need to force a specific version for a one-off release.
 
 Important Play Console note: for a brand-new Android app, Google requires the first binary upload to be completed manually in Play Console before automated uploads to the `internal` track can take over.
 

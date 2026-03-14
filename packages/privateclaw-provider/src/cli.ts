@@ -5,7 +5,7 @@ import { OpenClawAgentBridge } from "./bridges/openclaw-agent-bridge.js";
 import { OpenAICompatibleBridge } from "./bridges/openai-compatible-bridge.js";
 import { WebhookBridge } from "./bridges/webhook-bridge.js";
 import { runPairSession } from "./pair-session.js";
-import { PrivateClawProvider } from "./provider.js";
+import { DEFAULT_SESSION_TTL_MS, PrivateClawProvider } from "./provider.js";
 import { resolveRelayEndpoints } from "./relay-endpoints.js";
 
 function parsePositiveInteger(value: string | undefined, fallback: number): number {
@@ -57,7 +57,10 @@ const openClawAgentLocal = parseBooleanFlag(process.env.PRIVATECLAW_OPENCLAW_AGE
 const openClawAgentTimeoutSeconds = process.env.PRIVATECLAW_OPENCLAW_AGENT_TIMEOUT_SECONDS
   ? parsePositiveInteger(process.env.PRIVATECLAW_OPENCLAW_AGENT_TIMEOUT_SECONDS, 600)
   : undefined;
-const ttlMs = parsePositiveInteger(process.env.PRIVATECLAW_SESSION_TTL_MS, 15 * 60 * 1000);
+const ttlMs = parsePositiveInteger(
+  process.env.PRIVATECLAW_SESSION_TTL_MS,
+  DEFAULT_SESSION_TTL_MS,
+);
 const providerLabel = process.env.PRIVATECLAW_PROVIDER_LABEL?.trim() || "PrivateClaw";
 const welcomeMessage = process.env.PRIVATECLAW_WELCOME_MESSAGE?.trim();
 

@@ -21,14 +21,24 @@ export interface PrivateClawInvite {
   sessionKey: string;
   appWsUrl: string;
   expiresAt: string;
+  groupMode?: boolean;
   providerLabel?: string;
   relayLabel?: string;
+}
+
+export interface PrivateClawParticipant {
+  appId: string;
+  displayName: string;
+  deviceLabel?: string;
+  joinedAt: string;
 }
 
 export interface ClientHelloPayload {
   kind: "client_hello";
   appVersion: string;
+  appId?: string;
   deviceLabel?: string;
+  displayName?: string;
   sentAt: string;
 }
 
@@ -59,11 +69,25 @@ export interface UserMessagePayload {
   text: string;
   clientMessageId: string;
   sentAt: string;
+  appId?: string;
+  displayName?: string;
+  attachments?: PrivateClawAttachment[];
+}
+
+export interface ParticipantMessagePayload {
+  kind: "participant_message";
+  messageId: string;
+  senderAppId: string;
+  senderDisplayName: string;
+  text: string;
+  clientMessageId: string;
+  sentAt: string;
   attachments?: PrivateClawAttachment[];
 }
 
 export interface AssistantMessagePayload {
   kind: "assistant_message";
+  messageId?: string;
   text: string;
   replyTo?: string;
   sentAt: string;
@@ -72,6 +96,7 @@ export interface AssistantMessagePayload {
 
 export interface SystemMessagePayload {
   kind: "system_message";
+  messageId?: string;
   message: string;
   severity: "info" | "error";
   sentAt: string;
@@ -82,7 +107,12 @@ export interface ProviderCapabilitiesPayload {
   kind: "provider_capabilities";
   sentAt: string;
   expiresAt: string;
+  groupMode?: boolean;
+  botMuted?: boolean;
   providerLabel?: string;
+  participants?: PrivateClawParticipant[];
+  currentAppId?: string;
+  currentDisplayName?: string;
   commands: PrivateClawSlashCommand[];
 }
 
@@ -99,12 +129,14 @@ export interface SessionClosePayload {
   kind: "session_close";
   reason: string;
   sentAt: string;
+  appId?: string;
 }
 
 export type PrivateClawPayload =
   | ClientHelloPayload
   | ServerWelcomePayload
   | UserMessagePayload
+  | ParticipantMessagePayload
   | AssistantMessagePayload
   | SystemMessagePayload
   | ProviderCapabilitiesPayload
@@ -116,12 +148,14 @@ export interface ProviderCreateSessionMessage {
   requestId: string;
   ttlMs?: number;
   label?: string;
+  groupMode?: boolean;
 }
 
 export interface ProviderFrameMessage {
   type: "provider:frame";
   sessionId: string;
   envelope: EncryptedEnvelope;
+  targetAppId?: string;
 }
 
 export interface ProviderCloseSessionMessage {

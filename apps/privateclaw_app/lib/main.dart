@@ -10,20 +10,31 @@ import 'package:intl/intl.dart';
 import 'l10n/app_localizations.dart';
 import 'models/chat_attachment.dart';
 import 'models/chat_message.dart';
+import 'models/privateclaw_identity.dart';
 import 'models/privateclaw_invite.dart';
+import 'models/privateclaw_participant.dart';
 import 'models/privateclaw_slash_command.dart';
+import 'services/privateclaw_identity_store.dart';
 import 'services/privateclaw_session_client.dart';
+import 'store_screenshot_preview.dart';
 import 'widgets/chat_message_bubble.dart';
 import 'widgets/invite_scanner_sheet.dart';
 
 const int _maxInlineAttachmentBytes = 5 * 1024 * 1024;
 
 void main() {
-  runApp(const PrivateClawApp());
+  final StoreScreenshotConfig screenshotConfig =
+      StoreScreenshotConfig.fromEnvironment();
+  runApp(PrivateClawApp(screenshotConfig: screenshotConfig));
 }
 
 class PrivateClawApp extends StatelessWidget {
-  const PrivateClawApp({super.key});
+  const PrivateClawApp({
+    super.key,
+    this.screenshotConfig = const StoreScreenshotConfig(),
+  });
+
+  final StoreScreenshotConfig screenshotConfig;
 
   @override
   Widget build(BuildContext context) {
@@ -31,6 +42,7 @@ class PrivateClawApp extends StatelessWidget {
       onGenerateTitle: (BuildContext context) =>
           AppLocalizations.of(context)!.appTitle,
       debugShowCheckedModeBanner: false,
+      locale: screenshotConfig.localeOverride,
       localizationsDelegates: const <LocalizationsDelegate<dynamic>>[
         AppLocalizations.delegate,
         GlobalMaterialLocalizations.delegate,
@@ -42,19 +54,23 @@ class PrivateClawApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF5D5FEF)),
         useMaterial3: true,
       ),
-      home: const PrivateClawHomePage(),
+      home: PrivateClawHomePage(previewData: screenshotConfig.previewData),
     );
   }
 }
 
 class PrivateClawHomePage extends StatefulWidget {
-  const PrivateClawHomePage({super.key});
+  const PrivateClawHomePage({super.key, this.previewData});
+
+  final PrivateClawPreviewData? previewData;
 
   @override
   State<PrivateClawHomePage> createState() => _PrivateClawHomePageState();
 }
 
 class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
+  final PrivateClawIdentityStore _identityStore =
+      const PrivateClawIdentityStore();
   final TextEditingController _inviteController = TextEditingController();
   final TextEditingController _messageController = TextEditingController();
   final FocusNode _composerFocusNode = FocusNode();
@@ -63,6 +79,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
   final List<ChatAttachment> _selectedAttachments = <ChatAttachment>[];
   final List<PrivateClawSlashCommand> _availableCommands =
       <PrivateClawSlashCommand>[];
+  final List<PrivateClawParticipant> _participants = <PrivateClawParticipant>[];
 
   PrivateClawInvite? _invite;
   PrivateClawSessionClient? _client;
@@ -71,17 +88,33 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
   String _statusText = '';
   bool _isPairingPanelCollapsed = false;
   int _attachmentCounter = 0;
+  PrivateClawIdentity? _identity;
 
   bool get _canSend => _sessionStatus == PrivateClawSessionStatus.active;
-  bool get _hasPendingReply => _messages.any((ChatMessage message) => message.isPending);
+  bool get _hasPendingReply =>
+      _messages.any((ChatMessage message) => message.isPending);
   bool get _hasDraftContent =>
-      _messageController.text.trim().isNotEmpty || _selectedAttachments.isNotEmpty;
+      _messageController.text.trim().isNotEmpty ||
+      _selectedAttachments.isNotEmpty;
   bool get _canCollapsePairingPanel =>
       _invite != null && _sessionStatus == PrivateClawSessionStatus.active;
+  bool get _isPreviewMode => widget.previewData != null;
+  bool get _showsDisconnectAction =>
+      _client != null ||
+      (_isPreviewMode &&
+          _invite != null &&
+          _sessionStatus != PrivateClawSessionStatus.idle);
 
   @override
   void initState() {
     super.initState();
+    final PrivateClawPreviewData? previewData = widget.previewData;
+    if (previewData != null) {
+      _applyPreview(previewData);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scheduleScrollToBottom();
+      });
+    }
     _messageController.addListener(_handleComposerChanged);
   }
 
@@ -90,6 +123,18 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
     super.didChangeDependencies();
     if (_statusText.isEmpty) {
       _statusText = AppLocalizations.of(context)!.initialStatus;
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant PrivateClawHomePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.previewData != widget.previewData &&
+        widget.previewData != null) {
+      _applyPreview(widget.previewData!);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scheduleScrollToBottom();
+      });
     }
   }
 
@@ -110,6 +155,33 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
       return;
     }
     setState(() {});
+  }
+
+  void _applyPreview(PrivateClawPreviewData previewData) {
+    _identity = previewData.identity;
+    _invite = previewData.invite;
+    _messages
+      ..clear()
+      ..addAll(previewData.messages);
+    _selectedAttachments
+      ..clear()
+      ..addAll(previewData.selectedAttachments);
+    _availableCommands
+      ..clear()
+      ..addAll(previewData.availableCommands);
+    _participants
+      ..clear()
+      ..addAll(previewData.participants);
+    _sessionStatus = previewData.status;
+    _statusText = previewData.statusText;
+    _isPairingPanelCollapsed = previewData.isPairingPanelCollapsed;
+    _inviteController.text = previewData.inviteInput;
+    _messageController.value = TextEditingValue(
+      text: previewData.composerDraftText,
+      selection: TextSelection.collapsed(
+        offset: previewData.composerDraftText.length,
+      ),
+    );
   }
 
   Future<void> _disposeClient({String reason = 'user_left'}) async {
@@ -139,17 +211,23 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
 
     try {
       final PrivateClawInvite invite = PrivateClawInvite.fromScan(trimmed);
-      final PrivateClawSessionClient client = PrivateClawSessionClient(invite);
+      final PrivateClawIdentity identity = await _ensureIdentity();
+      final PrivateClawSessionClient client = PrivateClawSessionClient(
+        invite,
+        identity: identity,
+      );
       final StreamSubscription<PrivateClawSessionEvent> subscription = client
           .events
           .listen(_handleClientEvent);
 
       setState(() {
+        _identity = identity;
         _invite = invite;
         _client = client;
         _clientSubscription = subscription;
         _messages.clear();
         _availableCommands.clear();
+        _participants.clear();
         _selectedAttachments.clear();
         _sessionStatus = PrivateClawSessionStatus.connecting;
         _statusText = l10n.connectingRelay;
@@ -178,10 +256,19 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
       if (event.updatedInvite != null) {
         _invite = event.updatedInvite;
       }
+      if (event.assignedIdentity != null) {
+        _identity = event.assignedIdentity;
+        unawaited(_identityStore.save(event.assignedIdentity!));
+      }
       if (event.commands != null) {
         _availableCommands
           ..clear()
           ..addAll(event.commands!);
+      }
+      if (event.participants != null) {
+        _participants
+          ..clear()
+          ..addAll(event.participants!);
       }
       if (event.message != null) {
         _upsertMessage(event.message!);
@@ -229,6 +316,14 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
   }
 
   void _upsertMessage(ChatMessage message) {
+    final int existingMessageIndex = _messages.indexWhere(
+      (ChatMessage item) => item.id == message.id,
+    );
+    if (existingMessageIndex >= 0) {
+      _messages[existingMessageIndex] = message;
+      return;
+    }
+
     if (message.isPending) {
       final int existingPendingIndex = _messages.indexWhere(
         (ChatMessage item) => item.id == message.id,
@@ -415,6 +510,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
     }
     setState(() {
       _invite = null;
+      _participants.clear();
       _messages.clear();
       _availableCommands.clear();
       _selectedAttachments.clear();
@@ -461,8 +557,9 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
       return;
     }
 
-    final String nextText =
-        command.acceptsArgs ? '${command.slash} ' : command.slash;
+    final String nextText = command.acceptsArgs
+        ? '${command.slash} '
+        : command.slash;
     _messageController.value = TextEditingValue(
       text: nextText,
       selection: TextSelection.collapsed(offset: nextText.length),
@@ -581,7 +678,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
       appBar: AppBar(
         title: Text(l10n.appTitle),
         actions: <Widget>[
-          if (_client != null)
+          if (_showsDisconnectAction)
             IconButton(
               tooltip: l10n.disconnectTooltip,
               onPressed: _disconnect,
@@ -610,10 +707,24 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
     );
   }
 
-  Widget _buildPairingSection(
-    BuildContext context,
-    AppLocalizations l10n,
-  ) {
+  Future<PrivateClawIdentity> _ensureIdentity() async {
+    final PrivateClawIdentity? existing = _identity;
+    if (existing != null) {
+      return existing;
+    }
+
+    final PrivateClawIdentity loaded = await _identityStore.loadOrCreate();
+    if (mounted) {
+      setState(() {
+        _identity = loaded;
+      });
+    } else {
+      _identity = loaded;
+    }
+    return loaded;
+  }
+
+  Widget _buildPairingSection(BuildContext context, AppLocalizations l10n) {
     if (_canCollapsePairingPanel && _isPairingPanelCollapsed) {
       return Padding(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
@@ -634,6 +745,12 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
+                      if (_invite?.groupMode == true)
+                        Text(
+                          l10n.groupChatSummary(_participants.length),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       Text(
                         _statusText,
                         maxLines: 1,
@@ -706,9 +823,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
                   ),
                   FilledButton.tonalIcon(
                     onPressed: () {
-                      unawaited(
-                        _connectFromInput(_inviteController.text),
-                      );
+                      unawaited(_connectFromInput(_inviteController.text));
                     },
                     icon: const Icon(Icons.login),
                     label: Text(l10n.connectSessionButton),
@@ -721,9 +836,44 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
                   '${l10n.sessionLabel}: ${_invite!.sessionId}',
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
+                if (_invite!.groupMode)
+                  Text(
+                    l10n.groupModeLabel,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
                 Text(
                   '${l10n.expiresLabel}: ${_formatDateTime(_invite!.expiresAt)}',
                   style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+              if (_identity != null) ...<Widget>[
+                const SizedBox(height: 8),
+                Text(
+                  l10n.currentAppLabel(
+                    _identity!.displayName ?? _identity!.appId,
+                  ),
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+              if (_invite?.groupMode == true &&
+                  _participants.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _participants
+                      .map(
+                        (PrivateClawParticipant participant) => Chip(
+                          avatar: Icon(
+                            participant.appId == _identity?.appId
+                                ? Icons.person
+                                : Icons.group,
+                            size: 18,
+                          ),
+                          label: Text(participant.displayName),
+                        ),
+                      )
+                      .toList(growable: false),
                 ),
               ],
               const SizedBox(height: 12),
@@ -832,8 +982,9 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
                     unawaited(_sendMessage());
                   },
                   decoration: InputDecoration(
-                    hintText:
-                        _canSend ? l10n.sendHintActive : l10n.sendHintInactive,
+                    hintText: _canSend
+                        ? l10n.sendHintActive
+                        : l10n.sendHintInactive,
                     border: const OutlineInputBorder(),
                   ),
                 ),
@@ -876,8 +1027,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
   }
 
   String _formatRemainingDuration(Duration value) {
-    final Duration safeValue =
-        value.isNegative ? Duration.zero : value;
+    final Duration safeValue = value.isNegative ? Duration.zero : value;
     final int totalMinutes = safeValue.inMinutes;
     final int hours = totalMinutes ~/ 60;
     final int minutes = totalMinutes % 60;

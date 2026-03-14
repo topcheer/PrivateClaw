@@ -102,5 +102,26 @@
         "example": "8h"
       }
     }
+  },
+  "groupChatSummary": "グループチャット • {count} 人",
+  "groupModeLabel": "モード: グループチャット",
+  "currentAppLabel": "このアプリ: {label}",
+  "preparingAudioAttachment": "音声を準備しています…",
+  "preparingVideoAttachment": "動画を準備しています…",
+  "@groupChatSummary": {
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "@currentAppLabel": {
+    "placeholders": {
+      "label": {
+        "type": "String",
+        "example": "SolarFox"
+      }
+    }
   }
 }

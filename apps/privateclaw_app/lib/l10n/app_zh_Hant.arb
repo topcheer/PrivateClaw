@@ -102,5 +102,26 @@
         "example": "8h"
       }
     }
+  },
+  "groupChatSummary": "群聊 • {count} 位參與者",
+  "groupModeLabel": "模式：群聊",
+  "currentAppLabel": "目前應用程式：{label}",
+  "preparingAudioAttachment": "正在準備音訊…",
+  "preparingVideoAttachment": "正在準備影片…",
+  "@groupChatSummary": {
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "@currentAppLabel": {
+    "placeholders": {
+      "label": {
+        "type": "String",
+        "example": "SolarFox"
+      }
+    }
   }
 }

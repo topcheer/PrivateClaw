@@ -5,11 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:intl/intl.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:video_player/video_player.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/chat_attachment.dart';
 import '../models/chat_message.dart';
+import '../services/privateclaw_app_directories.dart';
 
 final Map<String, Future<Uri?>> _attachmentUriCache = <String, Future<Uri?>>{};
 
@@ -21,13 +22,18 @@ class ChatMessageBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool isUser = message.sender == ChatSender.user;
+    final bool isOwnUserMessage = isUser && message.isOwnMessage;
+    final bool isPeerUserMessage = isUser && !message.isOwnMessage;
     final bool isSystem = message.sender == ChatSender.system;
     final Color bubbleColor;
     final Alignment alignment;
 
-    if (isUser) {
+    if (isOwnUserMessage) {
       bubbleColor = Theme.of(context).colorScheme.primaryContainer;
       alignment = Alignment.centerRight;
+    } else if (isPeerUserMessage) {
+      bubbleColor = Theme.of(context).colorScheme.tertiaryContainer;
+      alignment = Alignment.centerLeft;
     } else if (isSystem) {
       bubbleColor = Theme.of(context).colorScheme.surfaceContainerHighest;
       alignment = Alignment.center;
@@ -49,16 +55,31 @@ class ChatMessageBubble extends StatelessWidget {
             padding: const EdgeInsets.all(12),
             child: Column(
               crossAxisAlignment: isUser
-                  ? CrossAxisAlignment.end
+                  ? (isOwnUserMessage
+                        ? CrossAxisAlignment.end
+                        : CrossAxisAlignment.start)
                   : CrossAxisAlignment.start,
               children: <Widget>[
+                if (message.senderLabel != null &&
+                    message.senderLabel!.trim().isNotEmpty &&
+                    !isSystem) ...<Widget>[
+                  Text(
+                    message.senderLabel!,
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                ],
                 if (message.isPending) ...<Widget>[
                   const _PendingBubbleIndicator(),
                   const SizedBox(height: 8),
                 ],
-                if (message.text.trim().isNotEmpty) ..._buildTextContent(context),
+                if (message.text.trim().isNotEmpty)
+                  ..._buildTextContent(context),
                 if (message.attachments.isNotEmpty) ...<Widget>[
-                  if (message.text.trim().isNotEmpty) const SizedBox(height: 12),
+                  if (message.text.trim().isNotEmpty)
+                    const SizedBox(height: 12),
                   ...message.attachments.map(
                     (ChatAttachment attachment) => Padding(
                       padding: const EdgeInsets.only(bottom: 8),
@@ -169,9 +190,7 @@ class _MermaidSegment extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: Theme.of(context).colorScheme.outlineVariant,
-        ),
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
       ),
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -229,13 +248,10 @@ class _AttachmentCard extends StatelessWidget {
     final IconData icon = attachment.isAudio
         ? Icons.audiotrack
         : attachment.isVideo
-            ? Icons.videocam
-            : Icons.attach_file;
+        ? Icons.videocam
+        : Icons.attach_file;
 
-    return _GenericAttachmentCard(
-      attachment: attachment,
-      icon: icon,
-    );
+    return _GenericAttachmentCard(attachment: attachment, icon: icon);
   }
 }
 
@@ -269,10 +285,7 @@ class _ImageAttachmentCard extends StatelessWidget {
 }
 
 class _GenericAttachmentCard extends StatelessWidget {
-  const _GenericAttachmentCard({
-    required this.attachment,
-    required this.icon,
-  });
+  const _GenericAttachmentCard({required this.attachment, required this.icon});
 
   final ChatAttachment attachment;
   final IconData icon;
@@ -348,10 +361,7 @@ class _LoadingAttachmentCard extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  Text(
-                    label,
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
+                  Text(label, style: Theme.of(context).textTheme.bodySmall),
                 ],
               ),
             ),
@@ -459,7 +469,7 @@ class _AudioAttachmentCardState extends State<_AudioAttachmentCard> {
             return _LoadingAttachmentCard(
               attachment: widget.attachment,
               icon: Icons.audiotrack,
-              label: 'Preparing audio…',
+              label: AppLocalizations.of(context)!.preparingAudioAttachment,
             );
           }
 
@@ -494,13 +504,20 @@ class _AudioAttachmentCardState extends State<_AudioAttachmentCard> {
               children: <Widget>[
                 StreamBuilder<PlayerState>(
                   stream: player.playerStateStream,
-                  builder: (BuildContext context, AsyncSnapshot<PlayerState> snapshot) {
-                    final bool isPlaying = snapshot.data?.playing ?? player.playing;
-                    return IconButton(
-                      onPressed: _togglePlayback,
-                      icon: Icon(isPlaying ? Icons.pause_circle : Icons.play_circle),
-                    );
-                  },
+                  builder:
+                      (
+                        BuildContext context,
+                        AsyncSnapshot<PlayerState> snapshot,
+                      ) {
+                        final bool isPlaying =
+                            snapshot.data?.playing ?? player.playing;
+                        return IconButton(
+                          onPressed: _togglePlayback,
+                          icon: Icon(
+                            isPlaying ? Icons.pause_circle : Icons.play_circle,
+                          ),
+                        );
+                      },
                 ),
                 const SizedBox(width: 8),
                 Expanded(
@@ -642,7 +659,7 @@ class _VideoAttachmentCardState extends State<_VideoAttachmentCard> {
             return _LoadingAttachmentCard(
               attachment: widget.attachment,
               icon: Icons.videocam,
-              label: 'Preparing video…',
+              label: AppLocalizations.of(context)!.preparingVideoAttachment,
             );
           }
 
@@ -662,7 +679,10 @@ class _VideoAttachmentCardState extends State<_VideoAttachmentCard> {
     return _buildPlayerCard(context, controller);
   }
 
-  Widget _buildPlayerCard(BuildContext context, VideoPlayerController controller) {
+  Widget _buildPlayerCard(
+    BuildContext context,
+    VideoPlayerController controller,
+  ) {
     return DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),
@@ -744,26 +764,24 @@ String _formatDuration(Duration value) {
 }
 
 Future<Uri?> _resolveAttachmentUri(ChatAttachment attachment) {
-  return _attachmentUriCache.putIfAbsent(
-    attachment.id,
-    () async {
-      if (attachment.hasRemoteUri) {
-        return Uri.tryParse(attachment.uri!);
-      }
+  return _attachmentUriCache.putIfAbsent(attachment.id, () async {
+    if (attachment.hasRemoteUri) {
+      return Uri.tryParse(attachment.uri!);
+    }
 
-      final List<int>? bytes = attachment.decodeBytes();
-      if (bytes == null) {
-        return null;
-      }
+    final List<int>? bytes = attachment.decodeBytes();
+    if (bytes == null) {
+      return null;
+    }
 
-      final Directory tempDirectory = await getTemporaryDirectory();
-      final String safeName = attachment.name.replaceAll(
-        RegExp(r'[^A-Za-z0-9._-]'),
-        '_',
-      );
-      final File file = File('${tempDirectory.path}/${attachment.id}_$safeName');
-      await file.writeAsBytes(bytes, flush: true);
-      return file.uri;
-    },
-  );
+    final Directory tempDirectory = await getPrivateClawTemporaryDirectory();
+    await tempDirectory.create(recursive: true);
+    final String safeName = attachment.name.replaceAll(
+      RegExp(r'[^A-Za-z0-9._-]'),
+      '_',
+    );
+    final File file = File('${tempDirectory.path}/${attachment.id}_$safeName');
+    await file.writeAsBytes(bytes, flush: true);
+    return file.uri;
+  });
 }

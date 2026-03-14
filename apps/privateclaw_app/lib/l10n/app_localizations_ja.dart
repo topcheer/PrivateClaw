@@ -132,4 +132,23 @@ class AppLocalizationsJa extends AppLocalizations {
   String sessionRenewedNotice(String expiresAt, String remaining) {
     return 'Session renewed. New expiry: $expiresAt ($remaining left).';
   }
+
+  @override
+  String groupChatSummary(int count) {
+    return 'グループチャット • $count 人';
+  }
+
+  @override
+  String get groupModeLabel => 'モード: グループチャット';
+
+  @override
+  String currentAppLabel(String label) {
+    return 'このアプリ: $label';
+  }
+
+  @override
+  String get preparingAudioAttachment => '音声を準備しています…';
+
+  @override
+  String get preparingVideoAttachment => '動画を準備しています…';
 }

@@ -102,5 +102,26 @@
         "example": "8h"
       }
     }
+  },
+  "groupChatSummary": "Chat em grupo • {count} participantes",
+  "groupModeLabel": "Modo: chat em grupo",
+  "currentAppLabel": "Este app: {label}",
+  "preparingAudioAttachment": "Preparando áudio…",
+  "preparingVideoAttachment": "Preparando vídeo…",
+  "@groupChatSummary": {
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "@currentAppLabel": {
+    "placeholders": {
+      "label": {
+        "type": "String",
+        "example": "SolarFox"
+      }
+    }
   }
 }

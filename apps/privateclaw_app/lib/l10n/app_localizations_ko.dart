@@ -131,4 +131,23 @@ class AppLocalizationsKo extends AppLocalizations {
   String sessionRenewedNotice(String expiresAt, String remaining) {
     return 'Session renewed. New expiry: $expiresAt ($remaining left).';
   }
+
+  @override
+  String groupChatSummary(int count) {
+    return '그룹 채팅 • 참가자 $count명';
+  }
+
+  @override
+  String get groupModeLabel => '모드: 그룹 채팅';
+
+  @override
+  String currentAppLabel(String label) {
+    return '이 앱: $label';
+  }
+
+  @override
+  String get preparingAudioAttachment => '오디오 준비 중…';
+
+  @override
+  String get preparingVideoAttachment => '비디오 준비 중…';
 }

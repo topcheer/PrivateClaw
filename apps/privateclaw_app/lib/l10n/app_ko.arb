@@ -102,5 +102,26 @@
         "example": "8h"
       }
     }
+  },
+  "groupChatSummary": "그룹 채팅 • 참가자 {count}명",
+  "groupModeLabel": "모드: 그룹 채팅",
+  "currentAppLabel": "이 앱: {label}",
+  "preparingAudioAttachment": "오디오 준비 중…",
+  "preparingVideoAttachment": "비디오 준비 중…",
+  "@groupChatSummary": {
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "@currentAppLabel": {
+    "placeholders": {
+      "label": {
+        "type": "String",
+        "example": "SolarFox"
+      }
+    }
   }
 }

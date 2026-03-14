@@ -102,5 +102,26 @@
         "example": "8h"
       }
     }
+  },
+  "groupChatSummary": "Trò chuyện nhóm • {count} người tham gia",
+  "groupModeLabel": "Chế độ: trò chuyện nhóm",
+  "currentAppLabel": "Ứng dụng này: {label}",
+  "preparingAudioAttachment": "Đang chuẩn bị âm thanh…",
+  "preparingVideoAttachment": "Đang chuẩn bị video…",
+  "@groupChatSummary": {
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "@currentAppLabel": {
+    "placeholders": {
+      "label": {
+        "type": "String",
+        "example": "SolarFox"
+      }
+    }
   }
 }

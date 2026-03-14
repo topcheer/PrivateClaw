@@ -22,8 +22,20 @@ import {
   type ReplyPayloadCompat,
   privateClawConfigSchema,
 } from "./compat/openclaw.js";
-import { PrivateClawProvider } from "./provider.js";
+import { DEFAULT_SESSION_TTL_MS, PrivateClawProvider } from "./provider.js";
 import { resolveRelayEndpoints } from "./relay-endpoints.js";
+import {
+  buildPrivateClawCommandErrorMessage,
+  PRIVATECLAW_CLI_GROUP_OPTION_DESCRIPTION,
+  PRIVATECLAW_CLI_LABEL_OPTION_DESCRIPTION,
+  PRIVATECLAW_CLI_PAIR_DESCRIPTION,
+  PRIVATECLAW_CLI_PRINT_ONLY_OPTION_DESCRIPTION,
+  PRIVATECLAW_CLI_ROOT_DESCRIPTION,
+  PRIVATECLAW_CLI_TTL_OPTION_DESCRIPTION,
+  PRIVATECLAW_COMMAND_DESCRIPTION,
+  PRIVATECLAW_INVITE_URI_LABEL,
+  PRIVATECLAW_PLUGIN_DESCRIPTION,
+} from "./text.js";
 import type {
   PrivateClawAgentBridge,
   PrivateClawInviteBundle,
@@ -77,6 +89,7 @@ interface PrivateClawPairCliOptions {
   ttlMs?: string;
   label?: string;
   printOnly?: boolean;
+  group?: boolean;
 }
 
 const DEFAULT_RELAY_BASE_URL = "ws://127.0.0.1:8787";
@@ -171,7 +184,8 @@ function resolvePluginConfig(
 
   const sessionTtlMs =
     readNumber(pluginConfig?.sessionTtlMs) ??
-    readNumber(process.env.PRIVATECLAW_SESSION_TTL_MS);
+    readNumber(process.env.PRIVATECLAW_SESSION_TTL_MS) ??
+    DEFAULT_SESSION_TTL_MS;
   const welcomeMessage =
     readString(pluginConfig?.welcomeMessage) ??
     readString(process.env.PRIVATECLAW_WELCOME_MESSAGE);
@@ -283,7 +297,22 @@ function normalizePairCliOptions(raw: unknown): PrivateClawPairCliOptions {
     ...(ttlMs ? { ttlMs } : {}),
     ...(label ? { label } : {}),
     ...(typeof options.printOnly === "boolean" ? { printOnly: options.printOnly } : {}),
+    ...(typeof options.group === "boolean" ? { group: options.group } : {}),
   };
+}
+
+function parsePrivateClawCommandArgs(raw: string | undefined): {
+  groupMode?: boolean;
+} {
+  const normalizedArgs = (raw ?? "")
+    .split(/\s+/)
+    .map((token) => token.trim().toLowerCase())
+    .filter((token) => token !== "");
+  return normalizedArgs.some(
+    (token) => token === "group" || token === "--group" || token === "-g",
+  )
+    ? { groupMode: true }
+    : {};
 }
 
 function buildProviderOptions(
@@ -322,7 +351,7 @@ class PrivateClawPluginRuntime {
 
   constructor(
     private readonly providerOptions: PrivateClawProviderOptions,
-    private readonly defaultTtlMs?: number,
+    private readonly defaultTtlMs: number = DEFAULT_SESSION_TTL_MS,
   ) {}
 
   setStateDir(stateDir: string): void {
@@ -348,6 +377,7 @@ class PrivateClawPluginRuntime {
   async createInviteBundle(params?: {
     ttlMs?: number;
     label?: string;
+    groupMode?: boolean;
   }): Promise<PrivateClawInviteBundle> {
     return this.getProvider().createInviteBundle(
       {
@@ -357,12 +387,13 @@ class PrivateClawPluginRuntime {
             ? { ttlMs: this.defaultTtlMs }
             : {}),
         ...(params?.label ? { label: params.label } : {}),
+        ...(params?.groupMode === true ? { groupMode: true } : {}),
       },
     );
   }
 
   async buildCommandReply(bundle: PrivateClawInviteBundle): Promise<ReplyPayloadCompat> {
-    const text = `${bundle.announcementText}\n\nOpen invite:\n${bundle.inviteUri}`;
+    const text = `${bundle.announcementText}\n\n${PRIVATECLAW_INVITE_URI_LABEL}:\n${bundle.inviteUri}`;
     const qrPngPath = await writeInviteQrPng(bundle, this.getMediaDir());
     return {
       text,
@@ -374,13 +405,17 @@ class PrivateClawPluginRuntime {
     ttlMs?: number;
     label?: string;
     printOnly?: boolean;
+    groupMode?: boolean;
     writeLine?: (line: string) => void;
   }): Promise<PrivateClawInviteBundle> {
     return runPairSession({
       provider: this.getProvider(),
-      ...(typeof params?.ttlMs === "number" ? { ttlMs: params.ttlMs } : {}),
+      ...(typeof params?.ttlMs === "number"
+        ? { ttlMs: params.ttlMs }
+        : { ttlMs: this.defaultTtlMs }),
       ...(params?.label ? { label: params.label } : {}),
       ...(typeof params?.printOnly === "boolean" ? { printOnly: params.printOnly } : {}),
+      ...(params?.groupMode === true ? { groupMode: true } : {}),
       ...(params?.writeLine ? { writeLine: params.writeLine } : {}),
     });
   }
@@ -421,7 +456,7 @@ function createPluginDefinition(
   return {
     id: "privateclaw",
     name: "PrivateClaw",
-    description: "Ephemeral end-to-end encrypted private session plugin for OpenClaw.",
+    description: PRIVATECLAW_PLUGIN_DESCRIPTION,
     configSchema: privateClawConfigSchema,
     register(api: OpenClawPluginApiCompat) {
       const runtime = runtimeFactory(api);
@@ -438,15 +473,17 @@ function createPluginDefinition(
 
       api.registerCommand({
         name: "privateclaw",
-        description: "Create a one-time encrypted PrivateClaw session QR code.",
-        acceptsArgs: false,
+        description: PRIVATECLAW_COMMAND_DESCRIPTION,
+        acceptsArgs: true,
         requireAuth: true,
         handler: async (ctx: OpenClawPluginCommandContextCompat) => {
           try {
             api.logger.info(
               `[privateclaw] /privateclaw invoked via ${ctx.channel}${ctx.senderId ? ` by ${ctx.senderId}` : ""}`,
             );
-            const bundle = await runtime.createInviteBundle();
+            const bundle = await runtime.createInviteBundle(
+              parsePrivateClawCommandArgs(ctx.args),
+            );
             api.logger.info(
               `[privateclaw] invite created for session ${bundle.invite.sessionId} on ${ctx.channel}`,
             );
@@ -460,7 +497,7 @@ function createPluginDefinition(
               `[privateclaw] Failed to create invite bundle: ${formatCommandError(error)}`,
             );
             return {
-              text: `Failed to create a PrivateClaw session: ${formatCommandError(error)}`,
+              text: buildPrivateClawCommandErrorMessage(formatCommandError(error)),
               isError: true,
             };
           }
@@ -471,19 +508,15 @@ function createPluginDefinition(
         ({ program }) => {
           const privateclaw = program
             .command("privateclaw")
-            .description("PrivateClaw local pairing and session utilities.");
+            .description(PRIVATECLAW_CLI_ROOT_DESCRIPTION);
 
           privateclaw
             .command("pair")
-            .description(
-              "Start a local PrivateClaw session and render the pairing QR code in the terminal.",
-            )
-            .option("--ttl-ms <ms>", "Session TTL in milliseconds.")
-            .option("--label <label>", "Optional relay session label.")
-            .option(
-              "--print-only",
-              "Print the invite and QR code, then exit immediately.",
-            )
+            .description(PRIVATECLAW_CLI_PAIR_DESCRIPTION)
+            .option("--ttl-ms <ms>", PRIVATECLAW_CLI_TTL_OPTION_DESCRIPTION)
+            .option("--label <label>", PRIVATECLAW_CLI_LABEL_OPTION_DESCRIPTION)
+            .option("--group", PRIVATECLAW_CLI_GROUP_OPTION_DESCRIPTION)
+            .option("--print-only", PRIVATECLAW_CLI_PRINT_ONLY_OPTION_DESCRIPTION)
             .action(async (rawOptions: unknown) => {
               const options = normalizePairCliOptions(rawOptions);
               const ttlMs = parsePositiveIntegerFlag(options.ttlMs, "--ttl-ms");
@@ -491,6 +524,7 @@ function createPluginDefinition(
               await runtime.runPairSession({
                 ...(typeof ttlMs === "number" ? { ttlMs } : {}),
                 ...(label ? { label } : {}),
+                ...(options.group ? { groupMode: true } : {}),
                 ...(typeof options.printOnly === "boolean"
                   ? { printOnly: options.printOnly }
                   : {}),

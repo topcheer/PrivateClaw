@@ -1,10 +1,17 @@
 import type { PrivateClawProvider } from "./provider.js";
+import {
+  buildPrivateClawShutdownMessage,
+  formatBilingualInline,
+  PRIVATECLAW_INVITE_URI_LABEL,
+  PRIVATECLAW_WAITING_FOR_APP_MESSAGE,
+} from "./text.js";
 import type { PrivateClawInviteBundle } from "./types.js";
 
 export interface PairSessionOptions {
   provider: PrivateClawProvider;
   ttlMs?: number;
   label?: string;
+  groupMode?: boolean;
   printOnly?: boolean;
   writeLine?: (line: string) => void;
 }
@@ -19,7 +26,12 @@ export function parsePositiveIntegerFlag(
 
   const parsed = Number.parseInt(value, 10);
   if (!Number.isInteger(parsed) || parsed <= 0) {
-    throw new Error(`${label} must be a positive integer.`);
+    throw new Error(
+      formatBilingualInline(
+        `${label} 必须是正整数。`,
+        `${label} must be a positive integer.`,
+      ),
+    );
   }
 
   return parsed;
@@ -49,6 +61,7 @@ export async function runPairSession({
   provider,
   ttlMs,
   label,
+  groupMode = false,
   printOnly = false,
   writeLine = (line) => {
     console.log(line);
@@ -58,10 +71,11 @@ export async function runPairSession({
     const bundle = await provider.createInviteBundle({
       ...(typeof ttlMs === "number" ? { ttlMs } : {}),
       ...(label ? { label: label.trim() } : {}),
+      ...(groupMode ? { groupMode: true } : {}),
     });
 
     writeLine(bundle.announcementText);
-    writeLine(`Invite URI: ${bundle.inviteUri}`);
+    writeLine(`${PRIVATECLAW_INVITE_URI_LABEL}: ${bundle.inviteUri}`);
     writeLine(bundle.qrTerminal);
 
     if (printOnly) {
@@ -69,11 +83,11 @@ export async function runPairSession({
       return bundle;
     }
 
-    writeLine("Waiting for the PrivateClaw app to connect. Press Ctrl+C to stop.");
+    writeLine(PRIVATECLAW_WAITING_FOR_APP_MESSAGE);
     process.stdin.resume();
     try {
       const signal = await waitForShutdownSignal();
-      writeLine(`[privateclaw-provider] received ${signal}, shutting down`);
+      writeLine(buildPrivateClawShutdownMessage(signal));
       await provider.dispose();
       return bundle;
     } finally {

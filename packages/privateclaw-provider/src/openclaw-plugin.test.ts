@@ -6,6 +6,7 @@ import test from "node:test";
 import { decodeInviteString } from "@privateclaw/protocol";
 import { createRelayServer } from "../../../services/relay-server/src/relay-server.js";
 import { EchoBridge } from "./bridges/echo-bridge.js";
+import { DEFAULT_SESSION_TTL_MS } from "./provider.js";
 import type {
   OpenClawPluginCliRegistrarCompat,
   OpenClawPluginApiCompat,
@@ -144,11 +145,18 @@ test("privateclaw command writes QR media into the OpenClaw state media director
   assert.equal(reply.isError, undefined);
   assert.ok(reply.text);
   assert.ok(reply.mediaUrl);
+  assert.match(reply.text, /邀请链接 \/ Invite URI/);
+  assert.match(reply.text, /PrivateClaw 会话|PrivateClaw session/);
 
   const inviteUri = reply.text.match(/privateclaw:\/\/connect\?payload=\S+/)?.[0];
   assert.ok(inviteUri, "reply text should include a PrivateClaw invite URI");
 
   const invite = decodeInviteString(inviteUri);
+  const remainingMs = new Date(invite.expiresAt).getTime() - Date.now();
+  assert.ok(
+    remainingMs > DEFAULT_SESSION_TTL_MS - 60_000,
+    "new sessions should default to roughly 8 hours even when relay default TTL is shorter",
+  );
   const expectedMediaDir = path.join(stateDir, "media", "privateclaw");
   assert.equal(path.dirname(reply.mediaUrl), expectedMediaDir);
   assert.equal(path.basename(reply.mediaUrl), `privateclaw-${invite.sessionId}.png`);
@@ -157,7 +165,7 @@ test("privateclaw command writes QR media into the OpenClaw state media director
   assert.deepEqual(qrPng.subarray(0, PNG_SIGNATURE.length), PNG_SIGNATURE);
 });
 
-test("privateclaw plugin registers a local pair CLI command", async (t) => {
+test("privateclaw plugin local pair CLI defaults to the long session TTL", async (t) => {
   const relay = createRelayServer({
     host: "127.0.0.1",
     port: 0,
@@ -204,17 +212,33 @@ test("privateclaw plugin registers a local pair CLI command", async (t) => {
   });
 
   await pair.actionHandler({
-    ttlMs: "60000",
     label: "CLI pairing session",
     printOnly: true,
   });
 
   assert.ok(
-    printed.some((line) => line.includes("PrivateClaw session")),
+    printed.some(
+      (line) =>
+        line.includes("PrivateClaw 会话") || line.includes("PrivateClaw session"),
+    ),
     "pair command should print the invite announcement",
   );
   assert.ok(
-    printed.some((line) => line.startsWith("Invite URI: privateclaw://connect?payload=")),
+    printed.some((line) =>
+      line.startsWith("邀请链接 / Invite URI: privateclaw://connect?payload="),
+    ),
     "pair command should print the invite URI",
+  );
+  const inviteUri = printed.find((line) =>
+    line.startsWith("邀请链接 / Invite URI: privateclaw://connect?payload="),
+  );
+  assert.ok(inviteUri, "pair command should print a PrivateClaw invite URI");
+  const invite = decodeInviteString(
+    inviteUri.replace("邀请链接 / Invite URI: ", ""),
+  );
+  const remainingMs = new Date(invite.expiresAt).getTime() - Date.now();
+  assert.ok(
+    remainingMs > DEFAULT_SESSION_TTL_MS - 60_000,
+    "local pair sessions should default to roughly 8 hours even when relay default TTL is shorter",
   );
 });

@@ -137,4 +137,23 @@ class AppLocalizationsVi extends AppLocalizations {
   String sessionRenewedNotice(String expiresAt, String remaining) {
     return 'Session renewed. New expiry: $expiresAt ($remaining left).';
   }
+
+  @override
+  String groupChatSummary(int count) {
+    return 'Trò chuyện nhóm • $count người tham gia';
+  }
+
+  @override
+  String get groupModeLabel => 'Chế độ: trò chuyện nhóm';
+
+  @override
+  String currentAppLabel(String label) {
+    return 'Ứng dụng này: $label';
+  }
+
+  @override
+  String get preparingAudioAttachment => 'Đang chuẩn bị âm thanh…';
+
+  @override
+  String get preparingVideoAttachment => 'Đang chuẩn bị video…';
 }

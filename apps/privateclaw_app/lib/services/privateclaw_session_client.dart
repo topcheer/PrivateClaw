@@ -7,7 +7,9 @@ import 'package:web_socket_channel/status.dart' as status;
 
 import '../models/chat_attachment.dart';
 import '../models/chat_message.dart';
+import '../models/privateclaw_identity.dart';
 import '../models/privateclaw_invite.dart';
+import '../models/privateclaw_participant.dart';
 import '../models/privateclaw_slash_command.dart';
 import 'privateclaw_crypto.dart';
 
@@ -47,6 +49,8 @@ class PrivateClawSessionEvent {
     this.commands,
     this.renewedExpiresAt,
     this.renewedReplyTo,
+    this.participants,
+    this.assignedIdentity,
   });
 
   final ChatMessage? message;
@@ -57,12 +61,16 @@ class PrivateClawSessionEvent {
   final List<PrivateClawSlashCommand>? commands;
   final DateTime? renewedExpiresAt;
   final String? renewedReplyTo;
+  final List<PrivateClawParticipant>? participants;
+  final PrivateClawIdentity? assignedIdentity;
 }
 
 class PrivateClawSessionClient {
-  PrivateClawSessionClient(this.invite);
+  PrivateClawSessionClient(this.invite, {required PrivateClawIdentity identity})
+    : _identity = identity;
 
   PrivateClawInvite invite;
+  PrivateClawIdentity _identity;
   final StreamController<PrivateClawSessionEvent> _eventsController =
       StreamController<PrivateClawSessionEvent>.broadcast();
 
@@ -78,6 +86,8 @@ class PrivateClawSessionClient {
   int _connectionGeneration = 0;
   Duration _reconnectDelay = _initialReconnectDelay;
 
+  PrivateClawIdentity get identity => _identity;
+
   Future<void> connect() async {
     if (_disposed) {
       throw StateError('PrivateClaw session client has been disposed.');
@@ -91,7 +101,8 @@ class PrivateClawSessionClient {
     if (_disposed) {
       return;
     }
-    if (_channel != null && statusValue == PrivateClawSessionStatus.connecting) {
+    if (_channel != null &&
+        statusValue == PrivateClawSessionStatus.connecting) {
       return;
     }
 
@@ -110,7 +121,7 @@ class PrivateClawSessionClient {
     );
 
     final IOWebSocketChannel channel = IOWebSocketChannel.connect(
-      Uri.parse(invite.appWsUrl),
+      _buildSocketUri(),
       pingInterval: _pingInterval,
       connectTimeout: _connectTimeout,
     );
@@ -184,7 +195,9 @@ class PrivateClawSessionClient {
   }
 
   Future<void> _handleRawMessage(dynamic rawMessage, int generation) async {
-    if (_disposed || generation != _connectionGeneration || rawMessage is! String) {
+    if (_disposed ||
+        generation != _connectionGeneration ||
+        rawMessage is! String) {
       return;
     }
 
@@ -210,7 +223,10 @@ class PrivateClawSessionClient {
         await _sendEncrypted(<String, Object?>{
           'kind': 'client_hello',
           'appVersion': 'privateclaw_flutter/0.1.0',
-          'deviceLabel': 'Flutter App',
+          'appId': _identity.appId,
+          'deviceLabel': 'PrivateClaw',
+          if (_identity.displayName != null)
+            'displayName': _identity.displayName,
           'sentAt': DateTime.now().toUtc().toIso8601String(),
         });
         return;
@@ -273,7 +289,7 @@ class PrivateClawSessionClient {
         _emitEvent(
           PrivateClawSessionEvent(
             message: ChatMessage(
-              id: _nextLocalMessageId(),
+              id: payload['messageId'] as String? ?? _nextLocalMessageId(),
               sender: ChatSender.assistant,
               text: payload['text'] as String? ?? '',
               sentAt: _parseTimestamp(payload['sentAt'] as String?),
@@ -283,13 +299,36 @@ class PrivateClawSessionClient {
           ),
         );
         return;
-      case 'system_message':
-        final String message =
-            payload['message'] as String? ?? 'System message';
+      case 'participant_message':
+        final String senderAppId =
+            payload['senderAppId'] as String? ?? 'unknown-app';
+        final String senderDisplayName =
+            payload['senderDisplayName'] as String? ?? senderAppId;
+        final String messageId =
+            payload['messageId'] as String? ?? _nextLocalMessageId();
+        final bool isOwnMessage = senderAppId == _identity.appId;
         _emitEvent(
           PrivateClawSessionEvent(
             message: ChatMessage(
-              id: _nextLocalMessageId(),
+              id: messageId,
+              sender: ChatSender.user,
+              text: payload['text'] as String? ?? '',
+              sentAt: _parseTimestamp(payload['sentAt'] as String?),
+              replyTo: payload['clientMessageId'] as String?,
+              attachments: _parseAttachments(payload['attachments']),
+              isOwnMessage: isOwnMessage,
+              senderId: senderAppId,
+              senderLabel: senderDisplayName,
+            ),
+          ),
+        );
+        return;
+      case 'system_message':
+        final String message = payload['message'] as String? ?? '';
+        _emitEvent(
+          PrivateClawSessionEvent(
+            message: ChatMessage(
+              id: payload['messageId'] as String? ?? _nextLocalMessageId(),
               sender: ChatSender.system,
               text: message,
               sentAt: _parseTimestamp(payload['sentAt'] as String?),
@@ -301,18 +340,35 @@ class PrivateClawSessionClient {
       case 'provider_capabilities':
         invite = invite.copyWith(
           expiresAt: _parseTimestamp(payload['expiresAt'] as String?),
-          providerLabel: payload['providerLabel'] as String? ?? invite.providerLabel,
+          groupMode: payload['groupMode'] as bool? ?? invite.groupMode,
+          providerLabel:
+              payload['providerLabel'] as String? ?? invite.providerLabel,
         );
+        PrivateClawIdentity? assignedIdentity;
+        final String? currentAppId = payload['currentAppId'] as String?;
+        final String? currentDisplayName =
+            payload['currentDisplayName'] as String?;
+        if (currentAppId == _identity.appId &&
+            currentDisplayName != null &&
+            currentDisplayName.isNotEmpty &&
+            currentDisplayName != _identity.displayName) {
+          _identity = _identity.copyWith(displayName: currentDisplayName);
+          assignedIdentity = _identity;
+        }
         _emitEvent(
           PrivateClawSessionEvent(
             connectionStatus: PrivateClawSessionStatus.active,
             updatedInvite: invite,
             commands: _parseCommands(payload['commands']),
+            participants: _parseParticipants(payload['participants']),
+            assignedIdentity: assignedIdentity,
           ),
         );
         return;
       case 'session_renewed':
-        final DateTime expiresAt = _parseTimestamp(payload['expiresAt'] as String?);
+        final DateTime expiresAt = _parseTimestamp(
+          payload['expiresAt'] as String?,
+        );
         final String newSessionKey = payload['newSessionKey'] as String? ?? '';
         if (newSessionKey.isEmpty) {
           throw const FormatException(
@@ -335,7 +391,10 @@ class PrivateClawSessionClient {
         await _sendEncrypted(<String, Object?>{
           'kind': 'client_hello',
           'appVersion': 'privateclaw_flutter/0.1.0',
-          'deviceLabel': 'Flutter App',
+          'appId': _identity.appId,
+          'deviceLabel': 'PrivateClaw',
+          if (_identity.displayName != null)
+            'displayName': _identity.displayName,
           'sentAt': DateTime.now().toUtc().toIso8601String(),
         });
         return;
@@ -366,6 +425,8 @@ class PrivateClawSessionClient {
       'text': trimmed,
       'clientMessageId': clientMessageId,
       'sentAt': sentAt.toIso8601String(),
+      'appId': _identity.appId,
+      if (_identity.displayName != null) 'displayName': _identity.displayName,
       if (attachments.isNotEmpty)
         'attachments': attachments
             .map((ChatAttachment attachment) => attachment.toPayload())
@@ -384,6 +445,9 @@ class PrivateClawSessionClient {
           text: trimmed,
           sentAt: sentAt,
           attachments: attachments,
+          isOwnMessage: true,
+          senderId: _identity.appId,
+          senderLabel: _identity.displayName,
         ),
       ),
     );
@@ -421,6 +485,15 @@ class PrivateClawSessionClient {
     );
   }
 
+  Uri _buildSocketUri() {
+    final Uri baseUri = Uri.parse(invite.appWsUrl);
+    final Map<String, String> queryParameters = <String, String>{
+      ...baseUri.queryParameters,
+      'appId': _identity.appId,
+    };
+    return baseUri.replace(queryParameters: queryParameters);
+  }
+
   void _emitEvent(PrivateClawSessionEvent event) {
     if (_eventsController.isClosed) {
       return;
@@ -445,6 +518,7 @@ class PrivateClawSessionClient {
         await _sendEncrypted(<String, Object?>{
           'kind': 'session_close',
           'reason': reason,
+          'appId': _identity.appId,
           'sentAt': DateTime.now().toUtc().toIso8601String(),
         });
       } catch (_) {
@@ -490,6 +564,26 @@ class PrivateClawSessionClient {
       }
     }
     return commands;
+  }
+
+  List<PrivateClawParticipant> _parseParticipants(Object? value) {
+    if (value is! List<Object?>) {
+      return const <PrivateClawParticipant>[];
+    }
+
+    final List<PrivateClawParticipant> participants =
+        <PrivateClawParticipant>[];
+    for (final Object? item in value) {
+      if (item is! Map<String, dynamic>) {
+        continue;
+      }
+      try {
+        participants.add(PrivateClawParticipant.fromJson(item));
+      } catch (_) {
+        continue;
+      }
+    }
+    return participants;
   }
 
   DateTime _parseTimestamp(String? value) {

@@ -263,6 +263,7 @@ export class RelayProviderClient {
   async createSession(
     ttlMs?: number,
     label?: string,
+    groupMode?: boolean,
   ): Promise<{ sessionId: string; expiresAt: string }> {
     await this.connect();
 
@@ -274,6 +275,7 @@ export class RelayProviderClient {
         requestId,
         ...(ttlMs ? { ttlMs } : {}),
         ...(label ? { label } : {}),
+        ...(typeof groupMode === "boolean" ? { groupMode } : {}),
       });
     });
   }
@@ -296,9 +298,18 @@ export class RelayProviderClient {
     });
   }
 
-  async sendFrame(sessionId: string, envelope: EncryptedEnvelope): Promise<void> {
+  async sendFrame(
+    sessionId: string,
+    envelope: EncryptedEnvelope,
+    targetAppId?: string,
+  ): Promise<void> {
     await this.connect();
-    this.send({ type: "provider:frame", sessionId, envelope });
+    this.send({
+      type: "provider:frame",
+      sessionId,
+      envelope,
+      ...(targetAppId ? { targetAppId } : {}),
+    });
   }
 
   async closeSession(sessionId: string, reason?: string): Promise<void> {

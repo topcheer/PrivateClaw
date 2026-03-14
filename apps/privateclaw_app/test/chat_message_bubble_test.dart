@@ -67,4 +67,28 @@ void main() {
     expect(find.text('Bold reply'), findsOneWidget);
     expect(find.byType(Image), findsOneWidget);
   });
+
+  testWidgets('ChatMessageBubble shows participant labels for group messages', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ChatMessageBubble(
+            message: ChatMessage(
+              id: 'participant-1',
+              sender: ChatSender.user,
+              text: 'Hello team',
+              sentAt: DateTime.utc(2026, 1, 1),
+              senderId: 'app-2',
+              senderLabel: '流萤狐',
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('流萤狐'), findsOneWidget);
+    expect(find.text('Hello team'), findsOneWidget);
+  });
 }

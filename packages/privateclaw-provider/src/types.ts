@@ -1,13 +1,19 @@
 import type {
   PrivateClawAttachment,
   PrivateClawInvite,
+  PrivateClawParticipant,
   PrivateClawSlashCommand,
 } from "@privateclaw/protocol";
 
 export interface PrivateClawConversationTurn {
+  messageId: string;
   role: "user" | "assistant" | "system";
   text: string;
   sentAt: string;
+  appId?: string;
+  participantLabel?: string;
+  replyTo?: string;
+  severity?: "info" | "error";
   attachments?: PrivateClawAttachment[];
 }
 
@@ -41,6 +47,10 @@ export interface PrivateClawProviderOptions {
   onLog?: (message: string) => void;
 }
 
+export interface ProviderParticipantState extends PrivateClawParticipant {
+  lastSeenAt: string;
+}
+
 export interface PrivateClawInviteBundle {
   invite: PrivateClawInvite;
   inviteUri: string;
@@ -52,9 +62,14 @@ export interface PrivateClawInviteBundle {
 export interface ProviderSessionState {
   invite: PrivateClawInvite;
   history: PrivateClawConversationTurn[];
+  groupMode: boolean;
+  botMuted: boolean;
+  participants: Map<string, ProviderParticipantState>;
   state: "awaiting_hello" | "active";
   pendingRenewal?: {
     expiresAt: string;
     sentAt: string;
   };
+  renewalReminderSentAt?: string;
+  renewalReminderTimer?: ReturnType<typeof setTimeout>;
 }

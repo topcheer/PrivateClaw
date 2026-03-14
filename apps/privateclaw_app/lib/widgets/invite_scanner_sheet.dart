@@ -75,7 +75,7 @@ class _InviteScannerSheetState extends State<InviteScannerSheet> {
                       ),
                     );
                   },
-                  onDetect: (BarcodeCapture capture) {
+                  onDetect: (BarcodeCapture capture) async {
                     if (_handled) {
                       return;
                     }
@@ -91,6 +91,10 @@ class _InviteScannerSheetState extends State<InviteScannerSheet> {
                       return;
                     }
                     _handled = true;
+                    await _controller.stop();
+                    if (!mounted) {
+                      return;
+                    }
                     widget.onDetected(value);
                   },
                 ),

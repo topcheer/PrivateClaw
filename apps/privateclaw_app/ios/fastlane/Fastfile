@@ -1,8 +1,31 @@
+require "json"
 require "shellwords"
 
 default_platform(:ios)
 
 platform :ios do
+  def privateclaw_app_root
+    @privateclaw_app_root ||= File.expand_path("../..", __dir__)
+  end
+
+  def privateclaw_version_script_path
+    @privateclaw_version_script_path ||= File.expand_path("../../../../scripts/resolve-mobile-version.mjs", __dir__)
+  end
+
+  def privateclaw_mobile_version
+    @privateclaw_mobile_version ||= JSON.parse(
+      sh("node #{Shellwords.escape(privateclaw_version_script_path)} --json")
+    )
+  end
+
+  def privateclaw_build_name
+    privateclaw_mobile_version.fetch("versionName")
+  end
+
+  def privateclaw_build_number
+    privateclaw_mobile_version.fetch("buildNumber").to_s
+  end
+
   def privateclaw_app_store_api_key
     app_store_connect_api_key(
       key_id: ENV.fetch("PRIVATECLAW_APP_STORE_CONNECT_KEY_ID"),
@@ -22,8 +45,18 @@ platform :ios do
     ].join(" ")
   end
 
+  def privateclaw_prepare_ios_build_settings
+    UI.message("Using PrivateClaw iOS version #{privateclaw_build_name} (#{privateclaw_build_number})")
+    sh(
+      "cd #{Shellwords.escape(privateclaw_app_root)} && flutter build ios --config-only --release " \
+      "--build-name #{Shellwords.escape(privateclaw_build_name)} " \
+      "--build-number #{Shellwords.escape(privateclaw_build_number)}"
+    )
+  end
+
   desc "Build an App Store signed IPA for PrivateClaw"
   lane :build_release do
+    privateclaw_prepare_ios_build_settings
     build_app(
       workspace: "Runner.xcworkspace",
       scheme: "Runner",
@@ -43,8 +76,9 @@ platform :ios do
     upload_to_app_store(
       api_key: privateclaw_app_store_api_key,
       skip_binary_upload: true,
-      skip_screenshots: true,
+      skip_screenshots: false,
       metadata_path: "./fastlane/metadata",
+      screenshots_path: "./fastlane/screenshots",
       force: true
     )
   end
@@ -71,7 +105,8 @@ platform :ios do
       api_key: privateclaw_app_store_api_key,
       ipa: "../builds/ios/PrivateClaw.ipa",
       metadata_path: "./fastlane/metadata",
-      skip_screenshots: true,
+      screenshots_path: "./fastlane/screenshots",
+      skip_screenshots: false,
       submit_for_review: true,
       automatic_release: ENV["PRIVATECLAW_AUTOMATIC_RELEASE"] == "true",
       force: true,

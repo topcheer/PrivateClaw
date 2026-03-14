@@ -102,5 +102,26 @@
         "example": "8h"
       }
     }
+  },
+  "groupChatSummary": "Obrolan grup • {count} peserta",
+  "groupModeLabel": "Mode: obrolan grup",
+  "currentAppLabel": "Aplikasi ini: {label}",
+  "preparingAudioAttachment": "Menyiapkan audio…",
+  "preparingVideoAttachment": "Menyiapkan video…",
+  "@groupChatSummary": {
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "@currentAppLabel": {
+    "placeholders": {
+      "label": {
+        "type": "String",
+        "example": "SolarFox"
+      }
+    }
   }
 }

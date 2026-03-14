@@ -5,10 +5,34 @@
 It is responsible for:
 
 - creating one-time relay sessions,
+- optionally turning those sessions into small encrypted group rooms with join/leave presence notices,
+- exposing `/renew-session`, `/mute-bot`, and `/unmute-bot` as dynamic built-in PrivateClaw commands when appropriate,
+- emitting bilingual Chinese + English invite / CLI / command text for the built-in PrivateClaw surfaces,
 - generating encrypted invite QR payloads,
 - terminating app-side ciphertext,
 - forwarding user messages into an upstream bridge,
 - and sending assistant replies back through the relay.
+
+## Provider control flow
+
+```mermaid
+sequenceDiagram
+  participant Public as Telegram / Discord / QQ
+  participant Plugin as OpenClaw plugin
+  participant Provider as PrivateClawProvider
+  participant Relay as Relay
+  participant App as PrivateClaw App
+
+  Public->>Plugin: /privateclaw or /privateclaw group
+  Plugin->>Provider: createInviteBundle(...)
+  Provider->>Relay: create session
+  Relay-->>Provider: sessionId + expiresAt
+  Provider-->>Plugin: bilingual announcement + invite URI + QR
+  Plugin-->>Public: reply payload
+  App->>Relay: connect with sessionId
+  Relay-->>Provider: encrypted frame
+  Provider-->>App: welcome + capabilities
+```
 
 ## Install
 
@@ -76,7 +100,9 @@ The package now ships a real OpenClaw extension entrypoint:
 - the plugin registers a real `/privateclaw` plugin command via `api.registerCommand(...)`
 - the command returns both the invite URI and a PNG QR code through `ReplyPayload`
 
-That means the installed extension can surface `/privateclaw` in native command menus such as Telegram instead of relying on the old local shim.
+That means the installed extension can surface `/privateclaw` and `/privateclaw group` in native command menus such as Telegram instead of relying on the old local shim.
+
+For group sessions, capabilities also advertise `/mute-bot` or `/unmute-bot` depending on the current session state, and `/renew-session` remains available to any participant.
 
 ## Demo CLI
 
@@ -93,6 +119,15 @@ openclaw privateclaw pair
 ```
 
 This starts a local PrivateClaw session and renders the pairing QR code directly in the terminal, without requiring another chat app to trigger `/privateclaw`.
+Fresh sessions created by the provider default to an 8-hour lifetime unless you override `sessionTtlMs`, and the provider emits a reminder once less than 30 minutes remain so any participant can run `/renew-session`.
+
+For a multi-app group session, use:
+
+```bash
+openclaw privateclaw pair --group
+```
+
+When the provider needs to ask the upstream bridge for a first-time participant nickname, it now uses a deterministic derived bridge session ID that remains UUID-shaped, which avoids leaking malformed `sessionId:participant:...` values into stricter bridge backends.
 
 ## Relay deployment
 

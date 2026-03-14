@@ -9,7 +9,7 @@ import {
 import WebSocket from "ws";
 import { createRelayServer } from "../../../services/relay-server/src/relay-server.js";
 import { EchoBridge } from "./bridges/echo-bridge.js";
-import { PrivateClawProvider } from "./provider.js";
+import { DEFAULT_SESSION_TTL_MS, PrivateClawProvider } from "./provider.js";
 
 function waitForOpen(socket: WebSocket): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -64,6 +64,34 @@ function waitForClose(socket: WebSocket): Promise<void> {
   });
 }
 
+function waitForNoMessage(socket: WebSocket, delayMs = 60): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, delayMs);
+
+    const handleMessage = (data: WebSocket.RawData) => {
+      cleanup();
+      reject(new Error(`unexpected message: ${data.toString()}`));
+    };
+
+    const handleError = (error: Error) => {
+      cleanup();
+      reject(error);
+    };
+
+    const cleanup = () => {
+      clearTimeout(timer);
+      socket.off("message", handleMessage);
+      socket.off("error", handleError);
+    };
+
+    socket.on("message", handleMessage);
+    socket.on("error", handleError);
+  });
+}
+
 async function nextRelayFrame(socket: WebSocket): Promise<Record<string, unknown>> {
   while (true) {
     const message = await nextMessage(socket);
@@ -96,6 +124,23 @@ function decryptRelayPayload(
   });
 }
 
+class GroupBridge {
+  readonly nicknameSessionIds: string[] = [];
+  readonly conversationMessages: string[] = [];
+
+  async handleUserMessage(params: {
+    sessionId: string;
+    message: string;
+  }): Promise<string> {
+    if (params.message.includes("Generate one playful nickname")) {
+      this.nicknameSessionIds.push(params.sessionId);
+      return "流萤狐";
+    }
+    this.conversationMessages.push(params.message);
+    return `OpenClaw bridge: ${params.message}`;
+  }
+}
+
 test("provider creates one-time invites and replies through the encrypted relay", async (t) => {
   const relay = createRelayServer({
     host: "127.0.0.1",
@@ -112,6 +157,7 @@ test("provider creates one-time invites and replies through the encrypted relay"
     providerWsUrl: `ws://127.0.0.1:${port}/ws/provider`,
     appWsUrl: `ws://127.0.0.1:${port}/ws/app`,
     bridge: new EchoBridge("OpenClaw bridge"),
+    defaultTtlMs: DEFAULT_SESSION_TTL_MS,
     welcomeMessage: "欢迎来到 PrivateClaw",
   });
   await provider.connect();
@@ -199,6 +245,7 @@ test("provider renews the session key and keeps the chat usable after re-handsha
     providerWsUrl: `ws://127.0.0.1:${port}/ws/provider`,
     appWsUrl: `ws://127.0.0.1:${port}/ws/app`,
     bridge: new EchoBridge("OpenClaw bridge"),
+    defaultTtlMs: DEFAULT_SESSION_TTL_MS,
   });
   await provider.connect();
   t.after(async () => {
@@ -305,6 +352,662 @@ test("provider renews the session key and keeps the chat usable after re-handsha
   const assistant = await nextRelayPayload(appSocket, invite);
   assert.equal(assistant.kind, "assistant_message");
   assert.match(assistant.text, /still there\?/);
+
+  appSocket.close();
+  await waitForClose(appSocket);
+});
+
+test("provider group sessions broadcast participant messages and assign stable participant labels", async (t) => {
+  const relay = createRelayServer({
+    host: "127.0.0.1",
+    port: 0,
+    sessionTtlMs: 60_000,
+    frameCacheSize: 8,
+  });
+  const { port } = await relay.start();
+  t.after(async () => {
+    await relay.stop();
+  });
+
+  const bridge = new GroupBridge();
+  const provider = new PrivateClawProvider({
+    providerWsUrl: `ws://127.0.0.1:${port}/ws/provider`,
+    appWsUrl: `ws://127.0.0.1:${port}/ws/app`,
+    bridge,
+    defaultTtlMs: DEFAULT_SESSION_TTL_MS,
+  });
+  await provider.connect();
+  t.after(async () => {
+    await provider.dispose();
+  });
+
+  const inviteBundle = await provider.createInviteBundle({ groupMode: true });
+  const invite = decodeInviteString(inviteBundle.inviteUri);
+
+  const appOneUrl = new URL(invite.appWsUrl);
+  appOneUrl.searchParams.set("appId", "app-one");
+  const appOne = new WebSocket(appOneUrl.toString());
+  const appOneAttached = nextMessage(appOne);
+  await waitForOpen(appOne);
+  assert.equal((await appOneAttached).type, "relay:attached");
+  const firstFramesPromise = nextMessages(appOne, 3);
+  appOne.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "client_hello",
+          appId: "app-one",
+          appVersion: "flutter-test",
+          deviceLabel: "Tester One",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+
+  const firstFrames = await firstFramesPromise;
+  const firstCapabilities = decryptRelayPayload(firstFrames[1]!, invite);
+  assert.equal(firstCapabilities.kind, "provider_capabilities");
+  assert.equal(firstCapabilities.groupMode, true);
+  assert.equal(firstCapabilities.currentDisplayName, "流萤狐");
+  assert.equal(bridge.nicknameSessionIds.length, 1);
+  assert.match(
+    bridge.nicknameSessionIds[0]!,
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+  );
+  assert.doesNotMatch(bridge.nicknameSessionIds[0]!, /:participant:/);
+  assert.notEqual(bridge.nicknameSessionIds[0], invite.sessionId);
+
+  const appTwoUrl = new URL(invite.appWsUrl);
+  appTwoUrl.searchParams.set("appId", "app-two");
+  const appTwo = new WebSocket(appTwoUrl.toString());
+  const appTwoAttached = nextMessage(appTwo);
+  await waitForOpen(appTwo);
+  assert.equal((await appTwoAttached).type, "relay:attached");
+  const appTwoFramesPromise = nextMessages(appTwo, 3);
+  const appOneJoinFramesPromise = nextMessages(appOne, 2);
+  appTwo.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "client_hello",
+          appId: "app-two",
+          appVersion: "flutter-test",
+          deviceLabel: "Tester Two",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+
+  const [appTwoFrames, appOneJoinFrames] = await Promise.all([
+    appTwoFramesPromise,
+    appOneJoinFramesPromise,
+  ]);
+  const appOneJoinNotice = decryptRelayPayload(appOneJoinFrames[0]!, invite);
+  assert.equal(appOneJoinNotice.kind, "system_message");
+  assert.match(appOneJoinNotice.message, /joined the group chat/i);
+
+  const appTwoCapabilities = decryptRelayPayload(appTwoFrames[1]!, invite);
+  assert.equal(appTwoCapabilities.kind, "provider_capabilities");
+  assert.equal(appTwoCapabilities.groupMode, true);
+
+  const appOnePayloadFramesPromise = nextMessages(appOne, 2);
+  const appTwoPayloadFramesPromise = nextMessages(appTwo, 2);
+  appOne.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "user_message",
+          appId: "app-one",
+          text: "hello team",
+          clientMessageId: "group-message-1",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+
+  const [appOnePayloadFrames, appTwoPayloadFrames] = await Promise.all([
+    appOnePayloadFramesPromise,
+    appTwoPayloadFramesPromise,
+  ]);
+  const appOneParticipantFrame = decryptRelayPayload(
+    appOnePayloadFrames[0]!,
+    invite,
+  );
+  const appTwoParticipantFrame = decryptRelayPayload(
+    appTwoPayloadFrames[0]!,
+    invite,
+  );
+  assert.equal(appOneParticipantFrame.kind, "participant_message");
+  assert.equal(appTwoParticipantFrame.kind, "participant_message");
+  assert.equal(appTwoParticipantFrame.senderDisplayName, "流萤狐");
+  assert.equal(appTwoParticipantFrame.text, "hello team");
+
+  const appOneAssistant = decryptRelayPayload(appOnePayloadFrames[1]!, invite);
+  const appTwoAssistant = decryptRelayPayload(appTwoPayloadFrames[1]!, invite);
+  assert.equal(appOneAssistant.kind, "assistant_message");
+  assert.equal(appTwoAssistant.kind, "assistant_message");
+  assert.match(appTwoAssistant.text, /流萤狐: hello team/);
+
+  appOne.close();
+  appTwo.close();
+  await Promise.all([waitForClose(appOne), waitForClose(appTwo)]);
+});
+
+test("group sessions can mute and unmute bot replies without stopping participant chat", async (t) => {
+  const relay = createRelayServer({
+    host: "127.0.0.1",
+    port: 0,
+    sessionTtlMs: 60_000,
+    frameCacheSize: 8,
+  });
+  const { port } = await relay.start();
+  t.after(async () => {
+    await relay.stop();
+  });
+
+  const bridge = new GroupBridge();
+  const provider = new PrivateClawProvider({
+    providerWsUrl: `ws://127.0.0.1:${port}/ws/provider`,
+    appWsUrl: `ws://127.0.0.1:${port}/ws/app`,
+    bridge,
+    defaultTtlMs: DEFAULT_SESSION_TTL_MS,
+  });
+  await provider.connect();
+  t.after(async () => {
+    await provider.dispose();
+  });
+
+  const inviteBundle = await provider.createInviteBundle({ groupMode: true });
+  const invite = decodeInviteString(inviteBundle.inviteUri);
+
+  const appOneUrl = new URL(invite.appWsUrl);
+  appOneUrl.searchParams.set("appId", "app-one");
+  const appOne = new WebSocket(appOneUrl.toString());
+  const appOneAttached = nextMessage(appOne);
+  await waitForOpen(appOne);
+  assert.equal((await appOneAttached).type, "relay:attached");
+  const appOneInitialFrames = nextMessages(appOne, 3);
+  appOne.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "client_hello",
+          appId: "app-one",
+          displayName: "SolarFox",
+          appVersion: "flutter-test",
+          deviceLabel: "Tester One",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+  await appOneInitialFrames;
+
+  const appTwoUrl = new URL(invite.appWsUrl);
+  appTwoUrl.searchParams.set("appId", "app-two");
+  const appTwo = new WebSocket(appTwoUrl.toString());
+  const appTwoAttached = nextMessage(appTwo);
+  await waitForOpen(appTwo);
+  assert.equal((await appTwoAttached).type, "relay:attached");
+  const appTwoInitialFrames = nextMessages(appTwo, 3);
+  const appOneJoinFrames = nextMessages(appOne, 2);
+  appTwo.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "client_hello",
+          appId: "app-two",
+          displayName: "RiverCat",
+          appVersion: "flutter-test",
+          deviceLabel: "Tester Two",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+  await Promise.all([appTwoInitialFrames, appOneJoinFrames]);
+
+  const muteAppOneFramesPromise = nextMessages(appOne, 2);
+  const muteAppTwoFramesPromise = nextMessages(appTwo, 2);
+  appOne.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "user_message",
+          appId: "app-one",
+          text: "/mute-bot",
+          clientMessageId: "mute-bot-1",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+
+  const [muteAppOneFrames, muteAppTwoFrames] = await Promise.all([
+    muteAppOneFramesPromise,
+    muteAppTwoFramesPromise,
+  ]);
+  const muteNotice = decryptRelayPayload(muteAppOneFrames[0]!, invite);
+  assert.equal(muteNotice.kind, "system_message");
+  assert.match(muteNotice.message, /暂停机器人|pause(?:d)? bot replies/i);
+  const muteCapabilities = decryptRelayPayload(muteAppOneFrames[1]!, invite);
+  assert.equal(muteCapabilities.kind, "provider_capabilities");
+  assert.equal(muteCapabilities.botMuted, true);
+  assert.ok(
+    muteCapabilities.commands.some((command) => command.slash === "/unmute-bot"),
+  );
+  assert.ok(
+    muteCapabilities.commands.every((command) => command.slash !== "/mute-bot"),
+  );
+  const peerMuteCapabilities = decryptRelayPayload(muteAppTwoFrames[1]!, invite);
+  assert.equal(peerMuteCapabilities.kind, "provider_capabilities");
+  assert.equal(peerMuteCapabilities.botMuted, true);
+
+  const bridgeCallsBeforeMutedMessage = bridge.conversationMessages.length;
+  const mutedAppOneFramesPromise = nextMessages(appOne, 1);
+  const mutedAppTwoFramesPromise = nextMessages(appTwo, 1);
+  appTwo.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "user_message",
+          appId: "app-two",
+          text: "please stay quiet",
+          clientMessageId: "muted-message-1",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+
+  const [mutedAppOneFrames, mutedAppTwoFrames] = await Promise.all([
+    mutedAppOneFramesPromise,
+    mutedAppTwoFramesPromise,
+  ]);
+  const mutedParticipantForAppOne = decryptRelayPayload(
+    mutedAppOneFrames[0]!,
+    invite,
+  );
+  const mutedParticipantForAppTwo = decryptRelayPayload(
+    mutedAppTwoFrames[0]!,
+    invite,
+  );
+  assert.equal(mutedParticipantForAppOne.kind, "participant_message");
+  assert.equal(mutedParticipantForAppTwo.kind, "participant_message");
+  assert.equal(bridge.conversationMessages.length, bridgeCallsBeforeMutedMessage);
+  await Promise.all([waitForNoMessage(appOne), waitForNoMessage(appTwo)]);
+
+  const unmuteAppOneFramesPromise = nextMessages(appOne, 2);
+  const unmuteAppTwoFramesPromise = nextMessages(appTwo, 2);
+  appTwo.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "user_message",
+          appId: "app-two",
+          text: "/unmute-bot",
+          clientMessageId: "unmute-bot-1",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+
+  const [unmuteAppOneFrames, unmuteAppTwoFrames] = await Promise.all([
+    unmuteAppOneFramesPromise,
+    unmuteAppTwoFramesPromise,
+  ]);
+  const unmuteNotice = decryptRelayPayload(unmuteAppTwoFrames[0]!, invite);
+  assert.equal(unmuteNotice.kind, "system_message");
+  assert.match(unmuteNotice.message, /恢复机器人|resume(?:d)? bot replies/i);
+  const unmuteCapabilities = decryptRelayPayload(unmuteAppOneFrames[1]!, invite);
+  assert.equal(unmuteCapabilities.kind, "provider_capabilities");
+  assert.equal(unmuteCapabilities.botMuted, false);
+  assert.ok(
+    unmuteCapabilities.commands.some((command) => command.slash === "/mute-bot"),
+  );
+  assert.ok(
+    unmuteCapabilities.commands.every((command) => command.slash !== "/unmute-bot"),
+  );
+
+  const bridgeCallsBeforeResumedMessage = bridge.conversationMessages.length;
+  const resumedAppOneFramesPromise = nextMessages(appOne, 2);
+  const resumedAppTwoFramesPromise = nextMessages(appTwo, 2);
+  appOne.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "user_message",
+          appId: "app-one",
+          text: "bot come back",
+          clientMessageId: "resumed-message-1",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+
+  const [resumedAppOneFrames, resumedAppTwoFrames] = await Promise.all([
+    resumedAppOneFramesPromise,
+    resumedAppTwoFramesPromise,
+  ]);
+  const resumedAssistantForAppOne = decryptRelayPayload(
+    resumedAppOneFrames[1]!,
+    invite,
+  );
+  const resumedAssistantForAppTwo = decryptRelayPayload(
+    resumedAppTwoFrames[1]!,
+    invite,
+  );
+  assert.equal(resumedAssistantForAppOne.kind, "assistant_message");
+  assert.equal(resumedAssistantForAppTwo.kind, "assistant_message");
+  assert.match(resumedAssistantForAppTwo.text, /SolarFox: bot come back/);
+  assert.equal(
+    bridge.conversationMessages.length,
+    bridgeCallsBeforeResumedMessage + 1,
+  );
+
+  appOne.close();
+  appTwo.close();
+  await Promise.all([waitForClose(appOne), waitForClose(appTwo)]);
+});
+
+test("group sessions keep running when one participant leaves and later rejoins", async (t) => {
+  const relay = createRelayServer({
+    host: "127.0.0.1",
+    port: 0,
+    sessionTtlMs: 60_000,
+    frameCacheSize: 8,
+  });
+  const { port } = await relay.start();
+  t.after(async () => {
+    await relay.stop();
+  });
+
+  const provider = new PrivateClawProvider({
+    providerWsUrl: `ws://127.0.0.1:${port}/ws/provider`,
+    appWsUrl: `ws://127.0.0.1:${port}/ws/app`,
+    bridge: new GroupBridge(),
+    defaultTtlMs: DEFAULT_SESSION_TTL_MS,
+  });
+  await provider.connect();
+  t.after(async () => {
+    await provider.dispose();
+  });
+
+  const inviteBundle = await provider.createInviteBundle({ groupMode: true });
+  const invite = decodeInviteString(inviteBundle.inviteUri);
+
+  const appOneUrl = new URL(invite.appWsUrl);
+  appOneUrl.searchParams.set("appId", "app-one");
+  const appOne = new WebSocket(appOneUrl.toString());
+  const appOneAttached = nextMessage(appOne);
+  await waitForOpen(appOne);
+  assert.equal((await appOneAttached).type, "relay:attached");
+  const appOneInitialFrames = nextMessages(appOne, 3);
+  appOne.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "client_hello",
+          appId: "app-one",
+          displayName: "SolarFox",
+          appVersion: "flutter-test",
+          deviceLabel: "Tester One",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+  await appOneInitialFrames;
+
+  const appTwoUrl = new URL(invite.appWsUrl);
+  appTwoUrl.searchParams.set("appId", "app-two");
+  const appTwo = new WebSocket(appTwoUrl.toString());
+  const appTwoAttached = nextMessage(appTwo);
+  await waitForOpen(appTwo);
+  assert.equal((await appTwoAttached).type, "relay:attached");
+  const appTwoInitialFrames = nextMessages(appTwo, 3);
+  const appOneJoinFrames = nextMessages(appOne, 2);
+  appTwo.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "client_hello",
+          appId: "app-two",
+          displayName: "RiverCat",
+          appVersion: "flutter-test",
+          deviceLabel: "Tester Two",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+  await appTwoInitialFrames;
+  const initialJoinNotice = decryptRelayPayload((await appOneJoinFrames)[0]!, invite);
+  assert.equal(initialJoinNotice.kind, "system_message");
+  assert.match(initialJoinNotice.message, /RiverCat joined the group chat/i);
+
+  const appOneLeaveFramesPromise = nextMessages(appOne, 2);
+  appTwo.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "session_close",
+          reason: "user_disconnect",
+          appId: "app-two",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+
+  const appOneLeaveFrames = await appOneLeaveFramesPromise;
+  const leaveNotice = decryptRelayPayload(appOneLeaveFrames[0]!, invite);
+  assert.equal(leaveNotice.kind, "system_message");
+  assert.match(leaveNotice.message, /RiverCat left the group chat/i);
+  const leaveCapabilities = decryptRelayPayload(appOneLeaveFrames[1]!, invite);
+  assert.equal(leaveCapabilities.kind, "provider_capabilities");
+  assert.deepEqual(
+    leaveCapabilities.participants?.map((participant) => participant.displayName),
+    ["SolarFox"],
+  );
+
+  appTwo.close();
+  await waitForClose(appTwo);
+
+  const appTwoReconnect = new WebSocket(appTwoUrl.toString());
+  const appTwoReconnectAttached = nextMessage(appTwoReconnect);
+  await waitForOpen(appTwoReconnect);
+  assert.equal((await appTwoReconnectAttached).type, "relay:attached");
+  const appTwoReconnectFramesPromise = nextMessages(appTwoReconnect, 5);
+  const appOneRejoinFramesPromise = nextMessages(appOne, 2);
+  appTwoReconnect.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "client_hello",
+          appId: "app-two",
+          displayName: "RiverCat",
+          appVersion: "flutter-test",
+          deviceLabel: "Tester Two",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+
+  const [appTwoReconnectFrames, appOneRejoinFrames] = await Promise.all([
+    appTwoReconnectFramesPromise,
+    appOneRejoinFramesPromise,
+  ]);
+  const rejoinNotice = decryptRelayPayload(appOneRejoinFrames[0]!, invite);
+  assert.equal(rejoinNotice.kind, "system_message");
+  assert.match(rejoinNotice.message, /RiverCat joined the group chat/i);
+
+  const reconnectPayloads = appTwoReconnectFrames.map((frame) =>
+    decryptRelayPayload(frame, invite),
+  );
+  const reconnectCapabilities = reconnectPayloads.find(
+    (payload) =>
+      payload.kind === "provider_capabilities" &&
+      payload.currentAppId === "app-two",
+  );
+  assert.ok(reconnectCapabilities);
+  assert.equal(reconnectCapabilities.kind, "provider_capabilities");
+  assert.equal(reconnectCapabilities.currentDisplayName, "RiverCat");
+
+  const appOnePayloadFramesPromise = nextMessages(appOne, 2);
+  const appTwoPayloadFramesPromise = nextMessages(appTwoReconnect, 2);
+  appTwoReconnect.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "user_message",
+          appId: "app-two",
+          text: "back again",
+          clientMessageId: "group-rejoin-message",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+
+  const [appOnePayloadFrames, appTwoPayloadFrames] = await Promise.all([
+    appOnePayloadFramesPromise,
+    appTwoPayloadFramesPromise,
+  ]);
+  const appOneParticipantFrame = decryptRelayPayload(
+    appOnePayloadFrames[0]!,
+    invite,
+  );
+  const appTwoParticipantFrame = decryptRelayPayload(
+    appTwoPayloadFrames[0]!,
+    invite,
+  );
+  assert.equal(appOneParticipantFrame.kind, "participant_message");
+  assert.equal(appTwoParticipantFrame.kind, "participant_message");
+  assert.equal(appOneParticipantFrame.senderDisplayName, "RiverCat");
+  assert.equal(appTwoParticipantFrame.senderDisplayName, "RiverCat");
+
+  const appOneAssistant = decryptRelayPayload(appOnePayloadFrames[1]!, invite);
+  const appTwoAssistant = decryptRelayPayload(appTwoPayloadFrames[1]!, invite);
+  assert.equal(appOneAssistant.kind, "assistant_message");
+  assert.equal(appTwoAssistant.kind, "assistant_message");
+  assert.match(appOneAssistant.text, /RiverCat: back again/);
+
+  appOne.close();
+  appTwoReconnect.close();
+  await Promise.all([waitForClose(appOne), waitForClose(appTwoReconnect)]);
+});
+
+test("provider reminds users to renew when a session has less than 30 minutes left", async (t) => {
+  const relay = createRelayServer({
+    host: "127.0.0.1",
+    port: 0,
+    sessionTtlMs: 60_000,
+    frameCacheSize: 8,
+  });
+  const { port } = await relay.start();
+  t.after(async () => {
+    await relay.stop();
+  });
+
+  const provider = new PrivateClawProvider({
+    providerWsUrl: `ws://127.0.0.1:${port}/ws/provider`,
+    appWsUrl: `ws://127.0.0.1:${port}/ws/app`,
+    bridge: new EchoBridge("OpenClaw bridge"),
+    defaultTtlMs: 10 * 60 * 1000,
+  });
+  await provider.connect();
+  t.after(async () => {
+    await provider.dispose();
+  });
+
+  const inviteBundle = await provider.createInviteBundle();
+  const invite = decodeInviteString(inviteBundle.inviteUri);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  const appSocket = new WebSocket(invite.appWsUrl);
+  const incomingPromise = nextMessages(appSocket, 4);
+  await waitForOpen(appSocket);
+  appSocket.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "client_hello",
+          appVersion: "flutter-test",
+          deviceLabel: "Simulator",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+
+  const incoming = await incomingPromise;
+  assert.equal(incoming[0]?.type, "relay:attached");
+  const framePayloads = incoming
+    .slice(1)
+    .map((frame) => decryptRelayPayload(frame, invite));
+  assert.ok(
+    framePayloads.some(
+      (payload) =>
+        payload.kind === "system_message" &&
+        /less than 30 minutes/i.test(payload.message) &&
+        /renew-session/i.test(payload.message),
+    ),
+  );
+  assert.ok(
+    framePayloads.some((payload) => payload.kind === "provider_capabilities"),
+  );
 
   appSocket.close();
   await waitForClose(appSocket);

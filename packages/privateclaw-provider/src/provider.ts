@@ -1,3 +1,4 @@
+import { createHash, randomUUID } from "node:crypto";
 import {
   decodeInviteString,
   decryptPayload,
@@ -6,6 +7,7 @@ import {
   generateSessionKey,
   type PrivateClawAttachment,
   type PrivateClawInvite,
+  type PrivateClawParticipant,
   type PrivateClawSlashCommand,
 } from "@privateclaw/protocol";
 import QRCode from "qrcode";
@@ -15,16 +17,48 @@ import {
   PRIVATECLAW_QR_TERMINAL_MARGIN,
 } from "./qr-options.js";
 import { RelayProviderClient } from "./relay-provider-client.js";
+import {
+  buildInviteAnnouncementText,
+  formatBilingualInline,
+  formatBilingualText,
+  PRIVATECLAW_MUTE_BOT_DESCRIPTION,
+  PRIVATECLAW_RENEW_SESSION_DESCRIPTION,
+  PRIVATECLAW_UNMUTE_BOT_DESCRIPTION,
+} from "./text.js";
 import type {
   BridgeMessage,
   BridgeResponse,
   PrivateClawConversationTurn,
   PrivateClawInviteBundle,
   PrivateClawProviderOptions,
+  ProviderParticipantState,
   ProviderSessionState,
 } from "./types.js";
 
-const RENEW_SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+export const DEFAULT_SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+const RENEW_SESSION_TTL_MS = DEFAULT_SESSION_TTL_MS;
+const SESSION_RENEWAL_REMINDER_WINDOW_MS = 30 * 60 * 1000;
+const PARTICIPANT_LABEL_MAX_CHARS = 12;
+const PARTICIPANT_FALLBACK_PREFIXES = [
+  "流萤",
+  "星河",
+  "青柠",
+  "雾岚",
+  "松果",
+  "电光",
+  "夜航",
+  "珊瑚",
+] as const;
+const PARTICIPANT_FALLBACK_SUFFIXES = [
+  "狐",
+  "猫",
+  "鲸",
+  "鹿",
+  "狸",
+  "鹭",
+  "狼",
+  "鸮",
+] as const;
 
 function normalizeBridgeMessages(
   response: BridgeResponse,
@@ -42,6 +76,273 @@ function normalizeBridgeMessages(
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+function buildMessageId(prefix: string): string {
+  return `${prefix}-${randomUUID()}`;
+}
+
+function sanitizeParticipantLabel(raw: string | undefined): string | undefined {
+  if (!raw) {
+    return undefined;
+  }
+
+  const normalized = raw
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^["'`]+|["'`]+$/g, "");
+  if (normalized === "") {
+    return undefined;
+  }
+
+  const cleaned = normalized
+    .replace(/[^\p{Letter}\p{Number}\s_-]/gu, "")
+    .trim();
+  if (cleaned === "") {
+    return undefined;
+  }
+
+  return [...cleaned].slice(0, PARTICIPANT_LABEL_MAX_CHARS).join("");
+}
+
+function deterministicHash(input: string): number {
+  let hash = 0;
+  for (const char of input) {
+    hash = (hash * 31 + char.codePointAt(0)!) >>> 0;
+  }
+  return hash;
+}
+
+function buildFallbackParticipantLabel(appId: string): string {
+  const prefix =
+    PARTICIPANT_FALLBACK_PREFIXES[
+      deterministicHash(`prefix:${appId}`) % PARTICIPANT_FALLBACK_PREFIXES.length
+    ];
+  const suffix =
+    PARTICIPANT_FALLBACK_SUFFIXES[
+      deterministicHash(`suffix:${appId}`) % PARTICIPANT_FALLBACK_SUFFIXES.length
+    ];
+  return `${prefix}${suffix}`;
+}
+
+function buildDerivedBridgeSessionId(
+  sessionId: string,
+  scope: string,
+): string {
+  const hex = createHash("sha256")
+    .update(`${sessionId}:${scope}`)
+    .digest("hex")
+    .slice(0, 32)
+    .split("");
+
+  hex[12] = "5";
+  const variant = Number.parseInt(hex[16]!, 16);
+  hex[16] = ((variant & 0x3) | 0x8).toString(16);
+
+  return `${hex.slice(0, 8).join("")}-${hex.slice(8, 12).join("")}-${hex.slice(12, 16).join("")}-${hex.slice(16, 20).join("")}-${hex.slice(20, 32).join("")}`;
+}
+
+function buildRenewalReminderMessage(session: ProviderSessionState): string {
+  const command = "/renew-session";
+  if (session.groupMode) {
+    return formatBilingualText(
+      `这个 PrivateClaw 群聊会话将在 30 分钟内过期（${session.invite.expiresAt}）。任意参与者都可以发送 ${command} 将它延长 8 小时。`,
+      `This PrivateClaw group session will expire in less than 30 minutes (at ${session.invite.expiresAt}). Any participant can send ${command} to extend it by 8 hours.`,
+    );
+  }
+  return formatBilingualText(
+    `这个 PrivateClaw 会话将在 30 分钟内过期（${session.invite.expiresAt}）。发送 ${command} 可将它延长 8 小时。`,
+    `This PrivateClaw session will expire in less than 30 minutes (at ${session.invite.expiresAt}). Send ${command} to extend it by 8 hours.`,
+  );
+}
+
+function normalizeBridgeText(response: BridgeResponse): string {
+  if (typeof response === "string") {
+    return response;
+  }
+
+  return response.messages
+    .map((message: BridgeMessage) =>
+      typeof message === "string" ? message : message.text,
+    )
+    .find((message) => message.trim() !== "") ?? "";
+}
+
+function formatBridgeHistoryTurn(
+  turn: PrivateClawConversationTurn,
+): PrivateClawConversationTurn {
+  if (turn.role !== "user" || !turn.participantLabel) {
+    return turn;
+  }
+
+  return {
+    ...turn,
+    text: `${turn.participantLabel}: ${turn.text}`,
+  };
+}
+
+function toParticipantSnapshot(
+  participant: ProviderParticipantState,
+): PrivateClawParticipant {
+  return {
+    appId: participant.appId,
+    displayName: participant.displayName,
+    ...(participant.deviceLabel ? { deviceLabel: participant.deviceLabel } : {}),
+    joinedAt: participant.joinedAt,
+  };
+}
+
+function buildParticipantNamingPrompt(deviceLabel?: string): string {
+  return [
+    "Generate one playful nickname for a PrivateClaw group participant.",
+    "Rules:",
+    "- return the nickname only",
+    "- no quotes, emoji, punctuation, or explanation",
+    "- maximum 6 Chinese characters or 12 ASCII characters",
+    "- make it short, memorable, and cute",
+    ...(deviceLabel
+      ? [`The participant's device label is: ${deviceLabel}`]
+      : []),
+  ].join("\n");
+}
+
+function buildWelcomeMessage(): string {
+  return formatBilingualText(
+    "PrivateClaw 已连接。从现在起，消息都会通过这个一次性的端到端加密会话进行保护。",
+    "PrivateClaw connected. Messages from now on are protected by this one-time end-to-end encrypted session.",
+  );
+}
+
+function buildCommandDoesNotAcceptAttachmentsMessage(command: string): string {
+  return formatBilingualInline(
+    `${command} 命令不接受附件。`,
+    `The ${command} command does not accept attachments.`,
+  );
+}
+
+function buildCommandDoesNotAcceptArgumentsMessage(command: string): string {
+  return formatBilingualInline(
+    `${command} 命令不接受参数。`,
+    `The ${command} command does not accept arguments.`,
+  );
+}
+
+function buildRenewalAlreadyInProgressMessage(): string {
+  return formatBilingualInline(
+    "会话续期已经在进行中。请等待重新握手完成后再重试。",
+    "A session renewal is already in progress. Wait for the reconnect handshake to finish and try again.",
+  );
+}
+
+function buildRenewalPayloadMessage(): string {
+  return formatBilingualInline("会话已续期。", "Session renewed.");
+}
+
+function buildRenewalInitiatedMessage(expiresAt: string): string {
+  return formatBilingualInline(
+    `PrivateClaw 会话续期已开始，新过期时间为 ${expiresAt}。`,
+    `PrivateClaw session renewal initiated until ${expiresAt}.`,
+  );
+}
+
+function buildSessionKeyRotationCompletedMessage(
+  participantLabel: string,
+): string {
+  return formatBilingualInline(
+    `${participantLabel} 已完成会话密钥轮换。`,
+    `${participantLabel} completed session key rotation.`,
+  );
+}
+
+function buildSingleSessionConnectedMessage(participantLabel: string): string {
+  return formatBilingualInline(
+    `${participantLabel} 已连接。`,
+    `${participantLabel} connected.`,
+  );
+}
+
+function buildParticipantJoinedMessage(participantLabel: string): string {
+  return formatBilingualInline(
+    `${participantLabel} 加入了群聊。`,
+    `${participantLabel} joined the group chat.`,
+  );
+}
+
+function buildParticipantLeftMessage(participantLabel: string): string {
+  return formatBilingualInline(
+    `${participantLabel} 离开了群聊。`,
+    `${participantLabel} left the group chat.`,
+  );
+}
+
+function buildHandshakeIncompleteMessage(): string {
+  return formatBilingualInline(
+    "PrivateClaw 握手尚未完成。请重新扫码或重试连接。",
+    "The PrivateClaw handshake is not complete yet. Scan the QR code again or retry the connection.",
+  );
+}
+
+function buildMissingParticipantIdentityMessage(): string {
+  return formatBilingualInline(
+    "当前群成员缺少稳定的应用身份。请从 PrivateClaw App 重新加入会话。",
+    "This group participant is missing a stable app identity. Rejoin the session from the PrivateClaw app.",
+  );
+}
+
+function buildRenewSessionFailureMessage(details: string): string {
+  return formatBilingualInline(
+    `PrivateClaw 会话续期失败：${details}`,
+    `Failed to renew the PrivateClaw session: ${details}`,
+  );
+}
+
+function buildBridgeErrorMessage(details: string): string {
+  return formatBilingualInline(
+    `OpenClaw bridge 错误：${details}`,
+    `OpenClaw bridge error: ${details}`,
+  );
+}
+
+function buildUnsupportedPayloadMessage(kind: string): string {
+  return formatBilingualInline(
+    `不支持的 PrivateClaw 负载类型：${kind}`,
+    `Unsupported PrivateClaw payload: ${kind}`,
+  );
+}
+
+function buildGroupOnlyCommandMessage(command: string): string {
+  return formatBilingualInline(
+    `${command} 只能在群聊会话中使用。`,
+    `${command} is only available in group sessions.`,
+  );
+}
+
+function buildBotMutedMessage(participantLabel: string): string {
+  return formatBilingualInline(
+    `${participantLabel} 已暂停机器人参与群聊。`,
+    `${participantLabel} paused bot replies for this group chat.`,
+  );
+}
+
+function buildBotUnmutedMessage(participantLabel: string): string {
+  return formatBilingualInline(
+    `${participantLabel} 已恢复机器人参与群聊。`,
+    `${participantLabel} resumed bot replies for this group chat.`,
+  );
+}
+
+function buildBotAlreadyMutedMessage(): string {
+  return formatBilingualInline(
+    "机器人目前已经处于静默状态。",
+    "Bot replies are already muted.",
+  );
+}
+
+function buildBotAlreadyUnmutedMessage(): string {
+  return formatBilingualInline(
+    "机器人目前已经处于可回复状态。",
+    "Bot replies are already enabled.",
+  );
 }
 
 function dedupeCommands(
@@ -67,7 +368,7 @@ export class PrivateClawProvider {
         await this.handleRelayFrame(sessionId, envelope);
       },
       onSessionClosed: async (sessionId, reason) => {
-        this.sessions.delete(sessionId);
+        this.deleteSession(sessionId);
         this.options.onLog?.(`Session ${sessionId} closed by relay: ${reason}`);
       },
       onError: (message) => {
@@ -87,11 +388,12 @@ export class PrivateClawProvider {
         await this.relayClient.closeSession(sessionId, "provider_shutdown");
       } catch (error) {
         this.options.onLog?.(
-          `[provider] failed to close session ${sessionId} during shutdown: ${error instanceof Error ? error.message : String(error)}`,
-        );
+            `[provider] failed to close session ${sessionId} during shutdown: ${error instanceof Error ? error.message : String(error)}`,
+          );
+      } finally {
+        this.deleteSession(sessionId);
       }
     }
-    this.sessions.clear();
     await this.relayClient.dispose();
   }
 
@@ -113,10 +415,170 @@ export class PrivateClawProvider {
     return session;
   }
 
+  private deleteSession(sessionId: string): ProviderSessionState | undefined {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return undefined;
+    }
+    if (session.renewalReminderTimer) {
+      clearTimeout(session.renewalReminderTimer);
+      delete session.renewalReminderTimer;
+    }
+    this.sessions.delete(sessionId);
+    return session;
+  }
+
+  private buildBridgeHistory(
+    session: ProviderSessionState,
+  ): PrivateClawConversationTurn[] {
+    return session.history.map(formatBridgeHistoryTurn);
+  }
+
+  private listParticipants(
+    session: ProviderSessionState,
+  ): PrivateClawParticipant[] {
+    return [...session.participants.values()]
+      .sort((left, right) => left.joinedAt.localeCompare(right.joinedAt))
+      .map(toParticipantSnapshot);
+  }
+
+  private scheduleRenewalReminder(sessionId: string): void {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return;
+    }
+
+    if (session.renewalReminderTimer) {
+      clearTimeout(session.renewalReminderTimer);
+    }
+    delete session.renewalReminderTimer;
+    delete session.renewalReminderSentAt;
+
+    const renewAtMs =
+      new Date(session.invite.expiresAt).getTime() -
+      SESSION_RENEWAL_REMINDER_WINDOW_MS;
+    const delayMs = Math.max(0, renewAtMs - Date.now());
+
+    session.renewalReminderTimer = setTimeout(() => {
+      void this.sendRenewalReminder(sessionId).catch((error) => {
+        this.options.onLog?.(
+          `[provider] failed to send renewal reminder for ${sessionId}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
+    }, delayMs);
+  }
+
+  private async sendRenewalReminder(sessionId: string): Promise<void> {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return;
+    }
+
+    delete session.renewalReminderTimer;
+
+    if (session.pendingRenewal || session.renewalReminderSentAt) {
+      return;
+    }
+
+    const remainingMs = new Date(session.invite.expiresAt).getTime() - Date.now();
+    if (remainingMs > SESSION_RENEWAL_REMINDER_WINDOW_MS) {
+      this.scheduleRenewalReminder(sessionId);
+      return;
+    }
+
+    const sentAt = nowIso();
+    session.renewalReminderSentAt = sentAt;
+    await this.sendSystemMessage(
+      sessionId,
+      buildRenewalReminderMessage(session),
+      "info",
+      undefined,
+      { sentAt },
+    );
+  }
+
+  private async generateParticipantLabel(
+    sessionId: string,
+    appId: string,
+    deviceLabel?: string,
+  ): Promise<string> {
+    const session = this.requireSession(sessionId);
+    const bridgeSessionId = buildDerivedBridgeSessionId(
+      sessionId,
+      `participant:${appId}`,
+    );
+    try {
+      const bridgeResponse = await this.options.bridge.handleUserMessage({
+        sessionId: bridgeSessionId,
+        invite: {
+          ...session.invite,
+          sessionId: bridgeSessionId,
+        },
+        message: buildParticipantNamingPrompt(deviceLabel),
+        history: [],
+      });
+      const generated = sanitizeParticipantLabel(
+        normalizeBridgeText(bridgeResponse),
+      );
+      if (generated) {
+        return generated;
+      }
+      throw new Error("nickname generation returned an empty label");
+    } catch (error) {
+      this.options.onLog?.(
+        `[provider] participant nickname fallback for ${appId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return buildFallbackParticipantLabel(appId);
+    }
+  }
+
+  private async upsertParticipant(
+    sessionId: string,
+    params: {
+      appId?: string;
+      deviceLabel?: string;
+      displayName?: string;
+      sentAt: string;
+    },
+  ): Promise<{ participant: ProviderParticipantState; isNew: boolean }> {
+    const session = this.requireSession(sessionId);
+    const normalizedAppId = params.appId?.trim() || "legacy-app";
+    const existing = session.participants.get(normalizedAppId);
+    const requestedDisplayName = sanitizeParticipantLabel(params.displayName);
+
+    if (existing) {
+      const participant: ProviderParticipantState = {
+        ...existing,
+        ...(params.deviceLabel ? { deviceLabel: params.deviceLabel } : {}),
+        ...(requestedDisplayName ? { displayName: requestedDisplayName } : {}),
+        lastSeenAt: params.sentAt,
+      };
+      session.participants.set(normalizedAppId, participant);
+      return { participant, isNew: false };
+    }
+
+    const participant: ProviderParticipantState = {
+      appId: normalizedAppId,
+      displayName:
+        requestedDisplayName ??
+        (await this.generateParticipantLabel(
+          sessionId,
+          normalizedAppId,
+          params.deviceLabel,
+        )),
+      ...(params.deviceLabel ? { deviceLabel: params.deviceLabel } : {}),
+      joinedAt: params.sentAt,
+      lastSeenAt: params.sentAt,
+    };
+    session.participants.set(normalizedAppId, participant);
+    return { participant, isNew: true };
+  }
+
   private async sendPayloadWithSessionKey(
     sessionId: string,
     sessionKey: string,
     payload: Parameters<typeof encryptPayload>[0]["payload"],
+    targetAppId?: string,
   ): Promise<void> {
     await this.relayClient.sendFrame(
       sessionId,
@@ -125,18 +587,21 @@ export class PrivateClawProvider {
         sessionKey,
         payload,
       }),
+      targetAppId,
     );
   }
 
   private async sendPayload(
     sessionId: string,
     payload: Parameters<typeof encryptPayload>[0]["payload"],
+    targetAppId?: string,
   ): Promise<void> {
     const session = this.requireSession(sessionId);
     await this.sendPayloadWithSessionKey(
       sessionId,
       session.invite.sessionKey,
       payload,
+      targetAppId,
     );
   }
 
@@ -146,23 +611,33 @@ export class PrivateClawProvider {
       text: string;
       replyTo?: string;
       attachments?: PrivateClawAttachment[];
+      messageId?: string;
+      sentAt?: string;
+      targetAppId?: string;
+      storeHistory?: boolean;
     },
   ): Promise<void> {
-    const sentAt = nowIso();
+    const sentAt = params.sentAt ?? nowIso();
+    const messageId = params.messageId ?? buildMessageId("assistant");
     const session = this.requireSession(sessionId);
-    session.history.push({
-      role: "assistant",
-      text: params.text,
-      sentAt,
-      ...(params.attachments ? { attachments: params.attachments } : {}),
-    });
+    if (params.storeHistory !== false) {
+      session.history.push({
+        messageId,
+        role: "assistant",
+        text: params.text,
+        sentAt,
+        ...(params.replyTo ? { replyTo: params.replyTo } : {}),
+        ...(params.attachments ? { attachments: params.attachments } : {}),
+      });
+    }
     await this.sendPayload(sessionId, {
       kind: "assistant_message",
+      messageId,
       text: params.text,
       sentAt,
       ...(params.replyTo ? { replyTo: params.replyTo } : {}),
       ...(params.attachments ? { attachments: params.attachments } : {}),
-    });
+    }, params.targetAppId);
   }
 
   async sendSystemMessage(
@@ -170,56 +645,243 @@ export class PrivateClawProvider {
     message: string,
     severity: "info" | "error" = "info",
     replyTo?: string,
+    params?: {
+      messageId?: string;
+      sentAt?: string;
+      targetAppId?: string;
+      storeHistory?: boolean;
+    },
   ): Promise<void> {
-    const sentAt = nowIso();
+    const sentAt = params?.sentAt ?? nowIso();
+    const messageId = params?.messageId ?? buildMessageId("system");
     const session = this.requireSession(sessionId);
-    session.history.push({ role: "system", text: message, sentAt });
+    if (params?.storeHistory !== false) {
+      session.history.push({
+        messageId,
+        role: "system",
+        text: message,
+        sentAt,
+        ...(replyTo ? { replyTo } : {}),
+        severity,
+      });
+    }
     await this.sendPayload(sessionId, {
       kind: "system_message",
+      messageId,
       message,
       severity,
       sentAt,
       ...(replyTo ? { replyTo } : {}),
-    });
+    }, params?.targetAppId);
   }
 
-  private async sendWelcomeMessage(sessionId: string): Promise<void> {
+  private async sendSystemMessageToGroupParticipants(
+    sessionId: string,
+    message: string,
+    params?: {
+      excludeAppId?: string;
+      severity?: "info" | "error";
+      sentAt?: string;
+    },
+  ): Promise<void> {
+    const session = this.requireSession(sessionId);
+    const sentAt = params?.sentAt ?? nowIso();
+    const severity = params?.severity ?? "info";
+    const messageId = buildMessageId("system");
+    const targetAppIds = [...session.participants.keys()].filter(
+      (appId) => appId !== params?.excludeAppId,
+    );
+
+    if (targetAppIds.length === 0) {
+      return;
+    }
+
+    session.history.push({
+      messageId,
+      role: "system",
+      text: message,
+      sentAt,
+      severity,
+    });
+
+    await Promise.all(
+      targetAppIds.map((targetAppId) =>
+        this.sendPayload(
+          sessionId,
+          {
+            kind: "system_message",
+            messageId,
+            message,
+            severity,
+            sentAt,
+          },
+          targetAppId,
+        ),
+      ),
+    );
+  }
+
+  private async sendParticipantMessage(
+    sessionId: string,
+    params: {
+      text: string;
+      senderAppId: string;
+      senderDisplayName: string;
+      clientMessageId: string;
+      sentAt?: string;
+      attachments?: PrivateClawAttachment[];
+      targetAppId?: string;
+      storeHistory?: boolean;
+    },
+  ): Promise<void> {
+    const sentAt = params.sentAt ?? nowIso();
+    const session = this.requireSession(sessionId);
+    if (params.storeHistory !== false) {
+      session.history.push({
+        messageId: params.clientMessageId,
+        role: "user",
+        text: params.text,
+        sentAt,
+        appId: params.senderAppId,
+        participantLabel: params.senderDisplayName,
+        ...(params.attachments ? { attachments: params.attachments } : {}),
+      });
+    }
+    await this.sendPayload(sessionId, {
+      kind: "participant_message",
+      messageId: params.clientMessageId,
+      senderAppId: params.senderAppId,
+      senderDisplayName: params.senderDisplayName,
+      text: params.text,
+      clientMessageId: params.clientMessageId,
+      sentAt,
+      ...(params.attachments ? { attachments: params.attachments } : {}),
+    }, params.targetAppId);
+  }
+
+  private async sendWelcomeMessage(
+    sessionId: string,
+    targetAppId?: string,
+  ): Promise<void> {
     const sentAt = nowIso();
-    const message =
-      this.options.welcomeMessage ??
-      "PrivateClaw connected. Messages from now on are protected by this one-time end-to-end encrypted session.";
+    const message = this.options.welcomeMessage ?? buildWelcomeMessage();
     await this.sendPayload(sessionId, {
       kind: "server_welcome",
       message,
       sentAt,
-    });
+    }, targetAppId);
   }
 
-  private async listAvailableCommands(): Promise<PrivateClawSlashCommand[]> {
+  private async listAvailableCommands(
+    session: ProviderSessionState,
+  ): Promise<PrivateClawSlashCommand[]> {
     const discovered = (await this.options.commandsProvider?.()) ?? [];
-    return dedupeCommands([
+    const commands: PrivateClawSlashCommand[] = [
       ...discovered,
       {
         slash: "/renew-session",
-        description:
-          "Rotate the current PrivateClaw session key and extend this session by 8 hours.",
+        description: PRIVATECLAW_RENEW_SESSION_DESCRIPTION,
         acceptsArgs: false,
         source: "privateclaw",
       },
-    ]);
+    ];
+
+    if (session.groupMode) {
+      commands.push({
+        slash: session.botMuted ? "/unmute-bot" : "/mute-bot",
+        description: session.botMuted
+          ? PRIVATECLAW_UNMUTE_BOT_DESCRIPTION
+          : PRIVATECLAW_MUTE_BOT_DESCRIPTION,
+        acceptsArgs: false,
+        source: "privateclaw",
+      });
+    }
+
+    return dedupeCommands(commands);
   }
 
-  private async sendCapabilities(sessionId: string): Promise<void> {
+  private async sendCapabilities(
+    sessionId: string,
+    params?: {
+      targetAppId?: string;
+      includeCurrentIdentity?: boolean;
+    },
+  ): Promise<void> {
     const session = this.requireSession(sessionId);
+    const currentParticipant = params?.targetAppId
+      ? session.participants.get(params.targetAppId)
+      : undefined;
     await this.sendPayload(sessionId, {
       kind: "provider_capabilities",
       sentAt: nowIso(),
       expiresAt: session.invite.expiresAt,
-      commands: await this.listAvailableCommands(),
+      ...(session.groupMode ? { groupMode: true } : {}),
+      ...(session.groupMode ? { botMuted: session.botMuted } : {}),
+      commands: await this.listAvailableCommands(session),
+      ...(session.groupMode
+        ? { participants: this.listParticipants(session) }
+        : {}),
       ...(session.invite.providerLabel
         ? { providerLabel: session.invite.providerLabel }
         : {}),
-    });
+      ...(params?.includeCurrentIdentity && currentParticipant
+        ? {
+            currentAppId: currentParticipant.appId,
+            currentDisplayName: currentParticipant.displayName,
+          }
+        : {}),
+    }, params?.targetAppId);
+  }
+
+  private async sendHistorySnapshot(
+    sessionId: string,
+    targetAppId: string,
+  ): Promise<void> {
+    const session = this.requireSession(sessionId);
+    for (const turn of session.history) {
+      switch (turn.role) {
+        case "assistant":
+          await this.sendAssistantMessage(sessionId, {
+            messageId: turn.messageId,
+            text: turn.text,
+            sentAt: turn.sentAt,
+            targetAppId,
+            storeHistory: false,
+            ...(turn.replyTo ? { replyTo: turn.replyTo } : {}),
+            ...(turn.attachments ? { attachments: turn.attachments } : {}),
+          });
+          break;
+        case "system":
+          await this.sendSystemMessage(
+            sessionId,
+            turn.text,
+            turn.severity ?? "info",
+            turn.replyTo,
+            {
+              messageId: turn.messageId,
+              sentAt: turn.sentAt,
+              targetAppId,
+              storeHistory: false,
+            },
+          );
+          break;
+        case "user":
+          if (!session.groupMode || !turn.appId || !turn.participantLabel) {
+            break;
+          }
+          await this.sendParticipantMessage(sessionId, {
+            text: turn.text,
+            senderAppId: turn.appId,
+            senderDisplayName: turn.participantLabel,
+            clientMessageId: turn.messageId,
+            sentAt: turn.sentAt,
+            targetAppId,
+            storeHistory: false,
+            ...(turn.attachments ? { attachments: turn.attachments } : {}),
+          });
+          break;
+      }
+    }
   }
 
   private async renewSession(sessionId: string, replyTo?: string): Promise<void> {
@@ -227,7 +889,7 @@ export class PrivateClawProvider {
     if (session.pendingRenewal) {
       await this.sendSystemMessage(
         sessionId,
-        "A session renewal is already in progress. Wait for the reconnect handshake to finish and try again.",
+        buildRenewalAlreadyInProgressMessage(),
         "error",
         replyTo,
       );
@@ -244,7 +906,7 @@ export class PrivateClawProvider {
 
     await this.sendPayloadWithSessionKey(sessionId, previousSessionKey, {
       kind: "session_renewed",
-      message: "Session renewed.",
+      message: buildRenewalPayloadMessage(),
       newSessionKey: nextSessionKey,
       expiresAt,
       sentAt,
@@ -257,11 +919,14 @@ export class PrivateClawProvider {
       expiresAt,
     };
     session.pendingRenewal = { expiresAt, sentAt };
+    this.scheduleRenewalReminder(sessionId);
     session.state = "awaiting_hello";
     session.history.push({
+      messageId: buildMessageId("system"),
       role: "system",
-      text: `PrivateClaw session renewal initiated until ${expiresAt}`,
+      text: buildRenewalInitiatedMessage(expiresAt),
       sentAt,
+      severity: "info",
     });
   }
 
@@ -278,54 +943,108 @@ export class PrivateClawProvider {
 
     switch (payload.kind) {
       case "client_hello": {
+        const participantState = await this.upsertParticipant(sessionId, {
+          sentAt: payload.sentAt,
+          ...(payload.appId ? { appId: payload.appId } : {}),
+          ...(payload.deviceLabel
+            ? { deviceLabel: payload.deviceLabel }
+            : {}),
+          ...(payload.displayName
+            ? { displayName: payload.displayName }
+            : {}),
+        });
+        const participant = participantState.participant;
         const wasAwaitingHello = session.state !== "active";
         const wasRenewing = Boolean(session.pendingRenewal);
         session.state = "active";
         if (wasRenewing) {
           session.history.push({
+            messageId: buildMessageId("system"),
             role: "system",
-            text: `${payload.deviceLabel ?? "PrivateClaw app"} completed session key rotation`,
+            text: buildSessionKeyRotationCompletedMessage(
+              participant.displayName,
+            ),
             sentAt: payload.sentAt,
+            severity: "info",
           });
           delete session.pendingRenewal;
-        } else if (wasAwaitingHello) {
+        } else if (!session.groupMode && wasAwaitingHello) {
           session.history.push({
+            messageId: buildMessageId("system"),
             role: "system",
-            text: `${payload.deviceLabel ?? "PrivateClaw app"} connected`,
+            text: buildSingleSessionConnectedMessage(participant.displayName),
             sentAt: payload.sentAt,
+            severity: "info",
           });
+        }
+
+        if (session.groupMode) {
+          await this.sendHistorySnapshot(sessionId, participant.appId);
+          await this.sendWelcomeMessage(sessionId, participant.appId);
+          await this.sendCapabilities(sessionId, {
+            targetAppId: participant.appId,
+            includeCurrentIdentity: true,
+          });
+          if (participantState.isNew && session.participants.size > 1) {
+            await this.sendSystemMessageToGroupParticipants(
+              sessionId,
+              buildParticipantJoinedMessage(participant.displayName),
+              {
+                excludeAppId: participant.appId,
+                sentAt: payload.sentAt,
+              },
+            );
+          }
+          await this.sendCapabilities(sessionId);
+          return;
+        }
+
+        if (wasAwaitingHello && !wasRenewing) {
           await this.sendWelcomeMessage(sessionId);
         }
-        await this.sendCapabilities(sessionId);
+        await this.sendCapabilities(sessionId, {
+          targetAppId: participant.appId,
+          includeCurrentIdentity: true,
+        });
         return;
       }
       case "user_message": {
         if (session.state !== "active") {
           await this.sendSystemMessage(
             sessionId,
-            "The PrivateClaw handshake is not complete yet. Scan the QR code again or retry the connection.",
+            buildHandshakeIncompleteMessage(),
             "error",
             payload.clientMessageId,
           );
           return;
         }
 
-        session.history.push({
-          role: "user",
-          text: payload.text,
-          sentAt: payload.sentAt,
-          ...(payload.attachments ? { attachments: payload.attachments } : {}),
-        });
         this.options.onLog?.(
           `[provider] user_message session=${sessionId} textChars=${payload.text.length} attachments=${payload.attachments?.length ?? 0}`,
         );
 
+        const participant =
+          (payload.appId ? session.participants.get(payload.appId) : undefined) ??
+          (session.participants.size === 1
+            ? [...session.participants.values()][0]
+            : undefined);
+
         const normalizedCommand = payload.text.trim().toLowerCase();
-        if (normalizedCommand === "/renew-session") {
+        const isRenewCommand =
+          normalizedCommand === "/renew-session" ||
+          normalizedCommand === "/session_renew";
+        const hasRenewCommandArgs =
+          normalizedCommand.startsWith("/renew-session ") ||
+          normalizedCommand.startsWith("/session_renew ");
+        const isMuteBotCommand = normalizedCommand === "/mute-bot";
+        const hasMuteBotArgs = normalizedCommand.startsWith("/mute-bot ");
+        const isUnmuteBotCommand = normalizedCommand === "/unmute-bot";
+        const hasUnmuteBotArgs = normalizedCommand.startsWith("/unmute-bot ");
+        if (isRenewCommand) {
           if ((payload.attachments?.length ?? 0) > 0) {
             await this.sendSystemMessage(
               sessionId,
-              "The /renew-session command does not accept attachments.",
+              buildCommandDoesNotAcceptAttachmentsMessage("/renew-session"),
               "error",
               payload.clientMessageId,
             );
@@ -336,30 +1055,134 @@ export class PrivateClawProvider {
           } catch (error) {
             await this.sendSystemMessage(
               sessionId,
-              `Failed to renew the PrivateClaw session: ${error instanceof Error ? error.message : String(error)}`,
+              buildRenewSessionFailureMessage(
+                error instanceof Error ? error.message : String(error),
+              ),
               "error",
               payload.clientMessageId,
             );
           }
           return;
         }
-        if (normalizedCommand.startsWith("/renew-session ")) {
+        if (hasRenewCommandArgs) {
           await this.sendSystemMessage(
             sessionId,
-            "The /renew-session command does not accept arguments.",
+            buildCommandDoesNotAcceptArgumentsMessage("/renew-session"),
             "error",
             payload.clientMessageId,
           );
           return;
         }
 
+        if (isMuteBotCommand || isUnmuteBotCommand) {
+          const command = isMuteBotCommand ? "/mute-bot" : "/unmute-bot";
+          if ((payload.attachments?.length ?? 0) > 0) {
+            await this.sendSystemMessage(
+              sessionId,
+              buildCommandDoesNotAcceptAttachmentsMessage(command),
+              "error",
+              payload.clientMessageId,
+            );
+            return;
+          }
+          if (!session.groupMode) {
+            await this.sendSystemMessage(
+              sessionId,
+              buildGroupOnlyCommandMessage(command),
+              "error",
+              payload.clientMessageId,
+            );
+            return;
+          }
+          if (!participant) {
+            await this.sendSystemMessage(
+              sessionId,
+              buildMissingParticipantIdentityMessage(),
+              "error",
+              payload.clientMessageId,
+            );
+            return;
+          }
+
+          const shouldMute = isMuteBotCommand;
+          if (session.botMuted === shouldMute) {
+            await this.sendSystemMessage(
+              sessionId,
+              shouldMute
+                ? buildBotAlreadyMutedMessage()
+                : buildBotAlreadyUnmutedMessage(),
+              "info",
+              payload.clientMessageId,
+            );
+            return;
+          }
+
+          session.botMuted = shouldMute;
+          await this.sendSystemMessageToGroupParticipants(
+            sessionId,
+            shouldMute
+              ? buildBotMutedMessage(participant.displayName)
+              : buildBotUnmutedMessage(participant.displayName),
+            { sentAt: payload.sentAt },
+          );
+          await this.sendCapabilities(sessionId);
+          return;
+        }
+
+        if (hasMuteBotArgs || hasUnmuteBotArgs) {
+          const command = hasMuteBotArgs ? "/mute-bot" : "/unmute-bot";
+          await this.sendSystemMessage(
+            sessionId,
+            buildCommandDoesNotAcceptArgumentsMessage(command),
+            "error",
+            payload.clientMessageId,
+          );
+          return;
+        }
+
+        if (session.groupMode) {
+          if (!participant) {
+            await this.sendSystemMessage(
+              sessionId,
+              buildMissingParticipantIdentityMessage(),
+              "error",
+              payload.clientMessageId,
+            );
+            return;
+          }
+          await this.sendParticipantMessage(sessionId, {
+            text: payload.text,
+            senderAppId: participant.appId,
+            senderDisplayName: participant.displayName,
+            clientMessageId: payload.clientMessageId,
+            sentAt: payload.sentAt,
+            ...(payload.attachments ? { attachments: payload.attachments } : {}),
+          });
+        } else {
+          session.history.push({
+            messageId: payload.clientMessageId,
+            role: "user",
+            text: payload.text,
+            sentAt: payload.sentAt,
+            ...(payload.attachments ? { attachments: payload.attachments } : {}),
+          });
+        }
+
+        if (session.groupMode && session.botMuted) {
+          return;
+        }
+
         try {
+          const bridgeMessage =
+            session.groupMode && participant
+              ? `${participant.displayName}: ${payload.text}`
+              : payload.text;
           const bridgeResponse = await this.options.bridge.handleUserMessage({
             sessionId,
             invite: session.invite,
-            message: payload.text,
+            message: bridgeMessage,
             ...(payload.attachments ? { attachments: payload.attachments } : {}),
-            history: [...session.history],
+            history: this.buildBridgeHistory(session),
           });
 
           for (const message of normalizeBridgeMessages(bridgeResponse)) {
@@ -372,18 +1195,47 @@ export class PrivateClawProvider {
         } catch (error) {
           await this.sendSystemMessage(
             sessionId,
-            `OpenClaw bridge error: ${error instanceof Error ? error.message : String(error)}`,
+            buildBridgeErrorMessage(
+              error instanceof Error ? error.message : String(error),
+            ),
             "error",
             payload.clientMessageId,
           );
         }
         return;
       }
-      case "session_close":
-        this.sessions.delete(sessionId);
-        await this.relayClient.closeSession(sessionId, payload.reason);
+      case "session_close": {
+        if (!session.groupMode) {
+          this.deleteSession(sessionId);
+          await this.relayClient.closeSession(sessionId, payload.reason);
+          return;
+        }
+
+        const participantAppId =
+          payload.appId?.trim() ||
+          (session.participants.size === 1
+            ? [...session.participants.keys()][0]
+            : undefined);
+        if (!participantAppId) {
+          return;
+        }
+
+        const participant = session.participants.get(participantAppId);
+        session.participants.delete(participantAppId);
+        if (participant && session.participants.size > 0) {
+          await this.sendSystemMessageToGroupParticipants(
+            sessionId,
+            buildParticipantLeftMessage(participant.displayName),
+            { sentAt: payload.sentAt },
+          );
+        }
+        if (session.participants.size > 0) {
+          await this.sendCapabilities(sessionId);
+        }
         return;
+      }
       case "assistant_message":
+      case "participant_message":
       case "server_welcome":
       case "provider_capabilities":
       case "session_renewed":
@@ -392,18 +1244,26 @@ export class PrivateClawProvider {
       default:
         await this.sendSystemMessage(
           sessionId,
-          `Unsupported PrivateClaw payload: ${(payload as { kind?: string }).kind ?? "unknown"}`,
+          buildUnsupportedPayloadMessage(
+            (payload as { kind?: string }).kind ?? "unknown",
+          ),
           "error",
         );
     }
   }
 
-  async createInviteBundle(params?: { ttlMs?: number; label?: string }): Promise<PrivateClawInviteBundle> {
+  async createInviteBundle(params?: {
+    ttlMs?: number;
+    label?: string;
+    groupMode?: boolean;
+  }): Promise<PrivateClawInviteBundle> {
     await this.connect();
 
+    const groupMode = params?.groupMode === true;
     const { sessionId, expiresAt } = await this.relayClient.createSession(
       params?.ttlMs ?? this.options.defaultTtlMs,
       params?.label,
+      groupMode,
     );
 
     const invite: PrivateClawInvite = {
@@ -412,14 +1272,19 @@ export class PrivateClawProvider {
       sessionKey: generateSessionKey(),
       appWsUrl: this.buildSessionAppUrl(sessionId),
       expiresAt,
+      ...(groupMode ? { groupMode: true } : {}),
       ...(this.options.providerLabel ? { providerLabel: this.options.providerLabel } : {}),
     };
 
     this.sessions.set(sessionId, {
       invite,
       history: [],
+      groupMode,
+      botMuted: false,
+      participants: new Map<string, ProviderParticipantState>(),
       state: "awaiting_hello",
     });
+    this.scheduleRenewalReminder(sessionId);
 
     const inviteUri = encodeInviteToUri(invite);
     const qrSvg = await QRCode.toString(inviteUri, {
@@ -438,9 +1303,11 @@ export class PrivateClawProvider {
       inviteUri,
       qrSvg,
       qrTerminal,
-      announcementText:
-        `PrivateClaw session ${sessionId} is ready until ${expiresAt}. ` +
-        "Scan the QR code or paste the invite link into the PrivateClaw app to connect.",
+      announcementText: buildInviteAnnouncementText({
+        sessionId,
+        expiresAt,
+        groupMode,
+      }),
     };
   }
 

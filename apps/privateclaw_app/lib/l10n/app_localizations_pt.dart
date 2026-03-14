@@ -137,6 +137,25 @@ class AppLocalizationsPt extends AppLocalizations {
   String sessionRenewedNotice(String expiresAt, String remaining) {
     return 'Session renewed. New expiry: $expiresAt ($remaining left).';
   }
+
+  @override
+  String groupChatSummary(int count) {
+    return 'Chat em grupo • $count participantes';
+  }
+
+  @override
+  String get groupModeLabel => 'Modo: chat em grupo';
+
+  @override
+  String currentAppLabel(String label) {
+    return 'Este app: $label';
+  }
+
+  @override
+  String get preparingAudioAttachment => 'Preparando áudio…';
+
+  @override
+  String get preparingVideoAttachment => 'Preparando vídeo…';
 }
 
 /// The translations for Portuguese, as used in Brazil (`pt_BR`).
@@ -272,4 +291,23 @@ class AppLocalizationsPtBr extends AppLocalizationsPt {
   String sessionRenewedNotice(String expiresAt, String remaining) {
     return 'Session renewed. New expiry: $expiresAt ($remaining left).';
   }
+
+  @override
+  String groupChatSummary(int count) {
+    return 'Chat em grupo • $count participantes';
+  }
+
+  @override
+  String get groupModeLabel => 'Modo: chat em grupo';
+
+  @override
+  String currentAppLabel(String label) {
+    return 'Este app: $label';
+  }
+
+  @override
+  String get preparingAudioAttachment => 'Preparando áudio…';
+
+  @override
+  String get preparingVideoAttachment => 'Preparando vídeo…';
 }

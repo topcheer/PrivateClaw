@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { unzipSync } from "fflate";
 import type { BridgeResponse, PrivateClawAgentBridge } from "../types.js";
 
@@ -22,6 +23,8 @@ type OpenClawAgentExecFile = (
 
 interface OpenClawAgentPayload {
   text?: string | null;
+  message?: string | null;
+  summary?: string | null;
 }
 
 interface OpenClawAgentJsonResult {
@@ -30,6 +33,38 @@ interface OpenClawAgentJsonResult {
   result?: {
     payloads?: OpenClawAgentPayload[];
   };
+}
+
+interface OpenClawSessionLogCursor {
+  readonly path?: string;
+  readonly sizeBytes: number;
+}
+
+interface OpenClawSessionLogEntry {
+  type?: string;
+  message?: {
+    role?: string;
+    toolName?: string;
+    content?: Array<{
+      type?: string;
+      text?: string | null;
+    }>;
+    details?: {
+      audioPath?: string | null;
+    };
+    isError?: boolean;
+  };
+}
+
+interface NormalizedBridgeMessage {
+  readonly text: string;
+  readonly attachments?: PrivateClawAttachment[];
+}
+
+class OpenClawAgentNoDisplayPayloadError extends Error {
+  constructor(readonly parsed: OpenClawAgentJsonResult) {
+    super("OpenClaw agent bridge returned no displayable payloads.");
+  }
 }
 
 interface StagedAttachment {
@@ -51,6 +86,7 @@ export interface OpenClawAgentBridgeOptions {
   local?: boolean;
   thinking?: OpenClawThinkingLevel;
   timeoutSeconds?: number;
+  stateDir?: string;
   workspaceDir?: string;
   execFileImpl?: OpenClawAgentExecFile;
 }
@@ -77,11 +113,20 @@ const TEXT_LIKE_MIME_TYPES = new Set<string>([
 ]);
 
 export function parseOpenClawAgentOutput(stdout: string): BridgeResponse {
-  const parsed = JSON.parse(stdout) as OpenClawAgentJsonResult;
+  const parsed = parseOpenClawAgentJson(stdout);
   return parseOpenClawAgentResult(parsed);
 }
 
+function parseOpenClawAgentJson(stdout: string): OpenClawAgentJsonResult {
+  return JSON.parse(stdout) as OpenClawAgentJsonResult;
+}
+
 function parseOpenClawAgentResult(parsed: OpenClawAgentJsonResult): BridgeResponse {
+  const messages = extractDisplayMessages(parsed);
+  return toBridgeResponse(messages);
+}
+
+function extractDisplayMessages(parsed: OpenClawAgentJsonResult): NormalizedBridgeMessage[] {
   if (parsed.status !== "ok") {
     throw new Error(
       `OpenClaw agent bridge returned status ${parsed.status ?? "unknown"}${parsed.summary ? ` (${parsed.summary})` : ""}.`,
@@ -91,35 +136,31 @@ function parseOpenClawAgentResult(parsed: OpenClawAgentJsonResult): BridgeRespon
   const messages =
     parsed.result?.payloads
       ?.flatMap((payload) =>
-        typeof payload.text === "string" && payload.text.trim() !== ""
-          ? [{ text: payload.text }]
-          : [],
+        [payload.text, payload.message, payload.summary].flatMap((candidate) =>
+          typeof candidate === "string" && candidate.trim() !== ""
+            ? [{ text: candidate }]
+            : [],
+        ),
       ) ?? [];
 
   if (messages.length === 0) {
-    throw new Error("OpenClaw agent bridge returned no text payloads.");
+    throw new OpenClawAgentNoDisplayPayloadError(parsed);
   }
 
-  if (messages.length === 1) {
-    const [message] = messages;
-    if (!message) {
-      throw new Error("OpenClaw agent bridge returned no text payloads.");
-    }
-    return message.text;
-  }
-
-  return { messages };
+  return messages;
 }
 
 export class OpenClawAgentBridge implements PrivateClawAgentBridge {
   private readonly executable: string;
   private readonly execFileImpl: OpenClawAgentExecFile;
+  private readonly stateDir: string;
   private readonly workspaceDir: string;
 
   constructor(private readonly options: OpenClawAgentBridgeOptions = {}) {
     this.executable = options.executable ?? "openclaw";
     this.execFileImpl = options.execFileImpl ?? execFile;
-    this.workspaceDir = options.workspaceDir ?? DEFAULT_WORKSPACE_DIR;
+    this.stateDir = options.stateDir ?? DEFAULT_STATE_DIR;
+    this.workspaceDir = options.workspaceDir ?? path.join(this.stateDir, "workspace");
   }
 
   async handleUserMessage(params: {
@@ -133,8 +174,112 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
       params.attachments,
     );
     const args = this.buildArgs(params.sessionId, promptMessage);
+    const sessionLogCursor = await this.captureSessionLogCursor(params.sessionId);
     const stdout = await this.execOpenClaw(args);
-    return parseOpenClawAgentOutput(stdout);
+    const parsed = parseOpenClawAgentJson(stdout);
+    const artifactMessages = await this.collectArtifactMessages(
+      params.sessionId,
+      sessionLogCursor,
+    );
+    try {
+      const response = parseOpenClawAgentResult(parsed);
+      return mergeBridgeResponses(response, artifactMessages);
+    } catch (error) {
+      if (error instanceof OpenClawAgentNoDisplayPayloadError) {
+        if (artifactMessages.length > 0) {
+          return toBridgeResponse(artifactMessages);
+        }
+        return buildNoDisplayPayloadNotice(params.message, error.parsed);
+      }
+      throw error;
+    }
+  }
+
+  private async captureSessionLogCursor(sessionId: string): Promise<OpenClawSessionLogCursor> {
+    const sessionLogPath = await this.resolveSessionLogPath(sessionId);
+    if (!sessionLogPath) {
+      return { sizeBytes: 0 };
+    }
+
+    const stat = await fs.stat(sessionLogPath);
+    return {
+      path: sessionLogPath,
+      sizeBytes: stat.size,
+    };
+  }
+
+  private async collectArtifactMessages(
+    sessionId: string,
+    cursor: OpenClawSessionLogCursor,
+  ): Promise<NormalizedBridgeMessage[]> {
+    const sessionLogPath = cursor.path ?? (await this.resolveSessionLogPath(sessionId));
+    if (!sessionLogPath) {
+      return [];
+    }
+
+    const sessionLogBuffer = await fs.readFile(sessionLogPath);
+    const deltaBuffer =
+      cursor.path === sessionLogPath
+        ? sessionLogBuffer.subarray(Math.min(cursor.sizeBytes, sessionLogBuffer.length))
+        : sessionLogBuffer;
+    if (deltaBuffer.length === 0) {
+      return [];
+    }
+
+    const entries = deltaBuffer
+      .toString("utf8")
+      .split(/\r?\n/gu)
+      .map((line) => line.trim())
+      .filter((line) => line !== "")
+      .map((line) => JSON.parse(line) as OpenClawSessionLogEntry);
+
+    const seenPaths = new Set<string>();
+    const attachments: PrivateClawAttachment[] = [];
+    for (const entry of entries) {
+      for (const mediaPath of extractMediaPaths(entry)) {
+        const normalizedPath = normalizeMediaPath(mediaPath);
+        if (seenPaths.has(normalizedPath)) {
+          continue;
+        }
+        attachments.push(await buildAttachmentFromMediaPath(normalizedPath));
+        seenPaths.add(normalizedPath);
+      }
+    }
+
+    if (attachments.length === 0) {
+      return [];
+    }
+
+    return [{ text: "", attachments }];
+  }
+
+  private async resolveSessionLogPath(sessionId: string): Promise<string | undefined> {
+    const agentsDir = path.join(this.stateDir, "agents");
+    try {
+      const agentEntries = await fs.readdir(agentsDir, { withFileTypes: true });
+      for (const entry of agentEntries) {
+        if (!entry.isDirectory()) {
+          continue;
+        }
+        const candidate = path.join(agentsDir, entry.name, "sessions", `${sessionId}.jsonl`);
+        try {
+          await fs.access(candidate);
+          return candidate;
+        } catch (error) {
+          if (isNodeError(error) && error.code === "ENOENT") {
+            continue;
+          }
+          throw error;
+        }
+      }
+    } catch (error) {
+      if (isNodeError(error) && error.code === "ENOENT") {
+        return undefined;
+      }
+      throw error;
+    }
+
+    return undefined;
   }
 
   private async buildPromptMessage(
@@ -277,6 +422,128 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
   }
 }
 
+function buildNoDisplayPayloadNotice(
+  message: string,
+  parsed: OpenClawAgentJsonResult,
+): string {
+  const command = message.trim().match(/^\/[A-Za-z0-9_-]+/u)?.[0];
+  const summary = parsed.summary?.trim();
+  const extraSummary =
+    summary && summary !== "" && !/^(completed|ok)$/iu.test(summary)
+      ? ` Summary: ${summary}.`
+      : "";
+
+  if (command === "/tts") {
+    return `OpenClaw completed ${command}, but it did not return a text reply through the agent bridge. If the command generated audio, the current PrivateClaw bridge does not surface that audio back into the chat yet.${extraSummary}`;
+  }
+
+  if (command) {
+    return `OpenClaw completed ${command}, but it did not return a text reply through the agent bridge.${extraSummary}`;
+  }
+
+  return `OpenClaw completed the request, but it did not return a text reply through the agent bridge.${extraSummary}`;
+}
+
+function mergeBridgeResponses(
+  primary: BridgeResponse,
+  supplemental: NormalizedBridgeMessage[],
+): BridgeResponse {
+  if (supplemental.length === 0) {
+    return primary;
+  }
+
+  return toBridgeResponse([
+    ...normalizeBridgeResponse(primary),
+    ...supplemental,
+  ]);
+}
+
+function normalizeBridgeResponse(response: BridgeResponse): NormalizedBridgeMessage[] {
+  if (typeof response === "string") {
+    return [{ text: response }];
+  }
+
+  return response.messages.map((message) =>
+    typeof message === "string"
+      ? { text: message }
+      : {
+          text: message.text,
+          ...(message.attachments ? { attachments: message.attachments } : {}),
+        },
+  );
+}
+
+function toBridgeResponse(messages: NormalizedBridgeMessage[]): BridgeResponse {
+  if (messages.length === 1) {
+    const [message] = messages;
+    if (!message) {
+      throw new Error("Bridge response did not contain any messages.");
+    }
+    if (!message.attachments || message.attachments.length === 0) {
+      return message.text;
+    }
+  }
+
+  return {
+    messages: messages.map((message) =>
+      message.attachments && message.attachments.length > 0
+        ? message
+        : { text: message.text },
+    ),
+  };
+}
+
+function extractMediaPaths(entry: OpenClawSessionLogEntry): string[] {
+  if (entry.type !== "message" || entry.message?.role !== "toolResult" || entry.message.isError) {
+    return [];
+  }
+
+  const mediaPaths = new Set<string>();
+  const detailsAudioPath = entry.message.details?.audioPath?.trim();
+  if (detailsAudioPath) {
+    mediaPaths.add(detailsAudioPath);
+  }
+
+  for (const contentItem of entry.message.content ?? []) {
+    if (contentItem.type !== "text" || typeof contentItem.text !== "string") {
+      continue;
+    }
+    for (const match of contentItem.text.matchAll(/^MEDIA:(.+)$/gmu)) {
+      const mediaPath = match[1]?.trim();
+      if (mediaPath) {
+        mediaPaths.add(mediaPath);
+      }
+    }
+  }
+
+  return [...mediaPaths];
+}
+
+async function buildAttachmentFromMediaPath(mediaPath: string): Promise<PrivateClawAttachment> {
+  const filePath = normalizeMediaPath(mediaPath);
+  const fileBytes = await fs.readFile(filePath);
+  const fileName = path.basename(filePath) || `media-${randomUUID()}`;
+  return {
+    id: `bridge-attachment-${randomUUID()}`,
+    name: fileName,
+    mimeType: inferMimeTypeFromFileName(fileName) ?? GENERIC_BINARY_MIME,
+    sizeBytes: fileBytes.byteLength,
+    dataBase64: fileBytes.toString("base64"),
+  };
+}
+
+function normalizeMediaPath(mediaPath: string): string {
+  const trimmed = mediaPath.trim();
+  if (trimmed.startsWith("file://")) {
+    return fileURLToPath(trimmed);
+  }
+  return path.isAbsolute(trimmed) ? trimmed : path.resolve(trimmed);
+}
+
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error;
+}
+
 function buildAttachmentInstruction(params: {
   kind: StagedAttachment["kind"];
   workspacePath: string;
@@ -341,6 +608,25 @@ function inferMimeTypeFromFileName(fileName: string): string | undefined {
       return "image/webp";
     case "svg":
       return "image/svg+xml";
+    case "mp3":
+      return "audio/mpeg";
+    case "wav":
+      return "audio/wav";
+    case "m4a":
+      return "audio/mp4";
+    case "aac":
+      return "audio/aac";
+    case "ogg":
+    case "opus":
+      return "audio/ogg";
+    case "caf":
+      return "audio/x-caf";
+    case "mp4":
+      return "video/mp4";
+    case "mov":
+      return "video/quicktime";
+    case "webm":
+      return "video/webm";
     case "pdf":
       return "application/pdf";
     case "doc":

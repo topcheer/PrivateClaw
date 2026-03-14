@@ -128,6 +128,25 @@ class AppLocalizationsZh extends AppLocalizations {
   String sessionRenewedNotice(String expiresAt, String remaining) {
     return '会话已续期。新的过期时间：$expiresAt（剩余 $remaining）。';
   }
+
+  @override
+  String groupChatSummary(int count) {
+    return '群聊 • $count 位参与者';
+  }
+
+  @override
+  String get groupModeLabel => '模式：群聊';
+
+  @override
+  String currentAppLabel(String label) {
+    return '当前应用：$label';
+  }
+
+  @override
+  String get preparingAudioAttachment => '正在准备音频…';
+
+  @override
+  String get preparingVideoAttachment => '正在准备视频…';
 }
 
 /// The translations for Chinese, using the Han script (`zh_Hant`).
@@ -254,4 +273,23 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
   String sessionRenewedNotice(String expiresAt, String remaining) {
     return '工作階段已續期。新的到期時間：$expiresAt（剩餘 $remaining）。';
   }
+
+  @override
+  String groupChatSummary(int count) {
+    return '群聊 • $count 位參與者';
+  }
+
+  @override
+  String get groupModeLabel => '模式：群聊';
+
+  @override
+  String currentAppLabel(String label) {
+    return '目前應用程式：$label';
+  }
+
+  @override
+  String get preparingAudioAttachment => '正在準備音訊…';
+
+  @override
+  String get preparingVideoAttachment => '正在準備影片…';
 }

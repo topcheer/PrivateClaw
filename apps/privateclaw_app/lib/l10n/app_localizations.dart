@@ -327,6 +327,36 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Session renewed. New expiry: {expiresAt} ({remaining} left).'**
   String sessionRenewedNotice(String expiresAt, String remaining);
+
+  /// No description provided for @groupChatSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'Group chat • {count} participants'**
+  String groupChatSummary(int count);
+
+  /// No description provided for @groupModeLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Mode: group chat'**
+  String get groupModeLabel;
+
+  /// No description provided for @currentAppLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'This app: {label}'**
+  String currentAppLabel(String label);
+
+  /// No description provided for @preparingAudioAttachment.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing audio…'**
+  String get preparingAudioAttachment;
+
+  /// No description provided for @preparingVideoAttachment.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing video…'**
+  String get preparingVideoAttachment;
 }
 
 class _AppLocalizationsDelegate

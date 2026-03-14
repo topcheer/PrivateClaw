@@ -329,3 +329,94 @@ test("relay renews the session expiry for the owning provider", async (t) => {
   providerSocket.close();
   await Promise.all([waitForClose(appSocket), waitForClose(providerSocket)]);
 });
+
+test("relay group sessions allow multiple app clients and broadcast provider frames", async (t) => {
+  const relay = createRelayServer({
+    host: "127.0.0.1",
+    port: 0,
+    sessionTtlMs: 60_000,
+    frameCacheSize: 8,
+  });
+  const { port } = await relay.start();
+  t.after(async () => {
+    await relay.stop();
+  });
+
+  const providerSocket = new WebSocket(`ws://127.0.0.1:${port}/ws/provider`);
+  const readyPromise = nextMessage(providerSocket);
+  await waitForOpen(providerSocket);
+  const ready = await readyPromise;
+  assert.equal(ready.type, "relay:provider_ready");
+
+  providerSocket.send(
+    JSON.stringify({
+      type: "provider:create_session",
+      requestId: "group-req-1",
+      ttlMs: 60_000,
+      groupMode: true,
+    }),
+  );
+  const created = await nextMessage(providerSocket);
+  assert.equal(created.type, "relay:session_created");
+  const sessionId = String(created.sessionId);
+
+  const appOne = new WebSocket(
+    `ws://127.0.0.1:${port}/ws/app?sessionId=${sessionId}&appId=app-one`,
+  );
+  const appOneAttached = nextMessage(appOne);
+  await waitForOpen(appOne);
+  assert.equal((await appOneAttached).type, "relay:attached");
+
+  const appTwo = new WebSocket(
+    `ws://127.0.0.1:${port}/ws/app?sessionId=${sessionId}&appId=app-two`,
+  );
+  const appTwoAttached = nextMessage(appTwo);
+  await waitForOpen(appTwo);
+  assert.equal((await appTwoAttached).type, "relay:attached");
+
+  const sessionKey = generateSessionKey();
+  const envelope = encryptPayload({
+    sessionId,
+    sessionKey,
+    payload: {
+      kind: "assistant_message",
+      messageId: "assistant-1",
+      text: "hello group",
+      sentAt: new Date().toISOString(),
+    },
+  });
+  providerSocket.send(
+    JSON.stringify({ type: "provider:frame", sessionId, envelope }),
+  );
+
+  const [frameOne, frameTwo] = await Promise.all([
+    nextMessage(appOne),
+    nextMessage(appTwo),
+  ]);
+  assert.equal(frameOne.type, "relay:frame");
+  assert.equal(frameTwo.type, "relay:frame");
+
+  const payloadOne = decryptPayload({
+    sessionId,
+    sessionKey,
+    envelope: frameOne.envelope as Parameters<typeof decryptPayload>[0]["envelope"],
+  });
+  const payloadTwo = decryptPayload({
+    sessionId,
+    sessionKey,
+    envelope: frameTwo.envelope as Parameters<typeof decryptPayload>[0]["envelope"],
+  });
+  assert.equal(payloadOne.kind, "assistant_message");
+  assert.equal(payloadTwo.kind, "assistant_message");
+  assert.equal(payloadOne.text, "hello group");
+  assert.equal(payloadTwo.text, "hello group");
+
+  appOne.close();
+  appTwo.close();
+  providerSocket.close();
+  await Promise.all([
+    waitForClose(appOne),
+    waitForClose(appTwo),
+    waitForClose(providerSocket),
+  ]);
+});

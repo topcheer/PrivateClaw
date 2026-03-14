@@ -138,4 +138,23 @@ class AppLocalizationsEs extends AppLocalizations {
   String sessionRenewedNotice(String expiresAt, String remaining) {
     return 'Session renewed. New expiry: $expiresAt ($remaining left).';
   }
+
+  @override
+  String groupChatSummary(int count) {
+    return 'Chat grupal • $count participantes';
+  }
+
+  @override
+  String get groupModeLabel => 'Modo: chat grupal';
+
+  @override
+  String currentAppLabel(String label) {
+    return 'Esta app: $label';
+  }
+
+  @override
+  String get preparingAudioAttachment => 'Preparando audio…';
+
+  @override
+  String get preparingVideoAttachment => 'Preparando video…';
 }

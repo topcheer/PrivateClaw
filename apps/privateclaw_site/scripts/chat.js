@@ -8,6 +8,7 @@ import {
 import { PrivateClawWebSessionClient } from "./session-client.js";
 
 const MAX_INLINE_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+const QR_SCAN_MAX_DIMENSION = 1440;
 const IDENTITY_STORAGE_KEY = "privateclaw.web.identity";
 
 const elements = {
@@ -74,6 +75,7 @@ const state = {
 };
 
 let qrDetectorPromise = null;
+let jsQrDecoderPromise = null;
 
 bindLocaleSelect(elements.localeSelect);
 
@@ -148,6 +150,28 @@ async function getQrDetector() {
   return qrDetectorPromise;
 }
 
+async function getJsQrDecoder() {
+  if (typeof globalThis.jsQR === "function") {
+    return globalThis.jsQR;
+  }
+
+  if (!jsQrDecoderPromise) {
+    jsQrDecoderPromise = import("./vendor/jsQR.js")
+      .then(() => {
+        if (typeof globalThis.jsQR !== "function") {
+          throw new Error("jsQR decoder did not initialize.");
+        }
+        return globalThis.jsQR;
+      })
+      .catch((error) => {
+        jsQrDecoderPromise = null;
+        throw error;
+      });
+  }
+
+  return jsQrDecoderPromise;
+}
+
 function updateScannerStatus(message) {
   elements.scannerStatus.textContent = message;
 }
@@ -181,6 +205,50 @@ async function closeScannerSheet() {
   updateScannerStatus(t("chat.scannerStatusStarting"));
 }
 
+function createScratchContext(width, height) {
+  if (typeof OffscreenCanvas === "function") {
+    const canvas = new OffscreenCanvas(width, height);
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    return context || null;
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  return canvas.getContext("2d", { willReadFrequently: true });
+}
+
+function getImageSourceDimensions(source) {
+  if (typeof source.videoWidth === "number" && source.videoWidth > 0 && typeof source.videoHeight === "number" && source.videoHeight > 0) {
+    return { width: source.videoWidth, height: source.videoHeight };
+  }
+  if (typeof source.naturalWidth === "number" && source.naturalWidth > 0 && typeof source.naturalHeight === "number" && source.naturalHeight > 0) {
+    return { width: source.naturalWidth, height: source.naturalHeight };
+  }
+  if (typeof source.width === "number" && source.width > 0 && typeof source.height === "number" && source.height > 0) {
+    return { width: source.width, height: source.height };
+  }
+  return null;
+}
+
+function getImageDataForQrSource(source, maxDimension = QR_SCAN_MAX_DIMENSION) {
+  const dimensions = getImageSourceDimensions(source);
+  if (!dimensions) {
+    return null;
+  }
+
+  const scale = Math.min(1, maxDimension / Math.max(dimensions.width, dimensions.height));
+  const canvasWidth = Math.max(1, Math.round(dimensions.width * scale));
+  const canvasHeight = Math.max(1, Math.round(dimensions.height * scale));
+  const context = createScratchContext(canvasWidth, canvasHeight);
+  if (!context) {
+    return null;
+  }
+
+  context.drawImage(source, 0, 0, canvasWidth, canvasHeight);
+  return context.getImageData(0, 0, canvasWidth, canvasHeight);
+}
+
 function extractDetectedInvite(detections) {
   if (!Array.isArray(detections)) {
     return null;
@@ -201,27 +269,85 @@ async function completeScannedInvite(rawValue) {
   await connectWithInvite(rawValue);
 }
 
-async function scanFromImageFile(file) {
+async function loadQrImageSource(file) {
+  if (typeof createImageBitmap === "function") {
+    const bitmap = await createImageBitmap(file);
+    return {
+      source: bitmap,
+      dispose() {
+        if (typeof bitmap.close === "function") {
+          bitmap.close();
+        }
+      },
+    };
+  }
+
+  const objectUrl = URL.createObjectURL(file);
+  const image = new Image();
+  image.decoding = "async";
+
+  try {
+    await new Promise((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = () => reject(new Error("Image failed to load."));
+      image.src = objectUrl;
+    });
+  } catch (error) {
+    URL.revokeObjectURL(objectUrl);
+    throw error;
+  }
+
+  return {
+    source: image,
+    dispose() {
+      URL.revokeObjectURL(objectUrl);
+    },
+  };
+}
+
+async function detectQrValue(source, { maxDimension = QR_SCAN_MAX_DIMENSION } = {}) {
   const detector = await getQrDetector();
-  if (!detector) {
-    showToast(t("chat.scanUnsupported"), { error: true });
-    return;
+  if (detector) {
+    try {
+      const detections = await detector.detect(source);
+      const rawValue = extractDetectedInvite(detections);
+      if (rawValue) {
+        return rawValue;
+      }
+    } catch (error) {
+      console.warn("PrivateClaw native QR detection failed; falling back to jsQR.", error);
+    }
+  }
+
+  const imageData = getImageDataForQrSource(source, maxDimension);
+  if (!imageData) {
+    return null;
   }
 
   try {
-    const bitmap = await createImageBitmap(file);
+    const jsQr = await getJsQrDecoder();
+    const result = jsQr(imageData.data, imageData.width, imageData.height, {
+      inversionAttempts: "attemptBoth",
+    });
+    return typeof result?.data === "string" ? result.data.trim() : null;
+  } catch (error) {
+    console.warn("PrivateClaw fallback QR detection failed.", error);
+    return null;
+  }
+}
+
+async function scanFromImageFile(file) {
+  try {
+    const image = await loadQrImageSource(file);
     try {
-      const detections = await detector.detect(bitmap);
-      const rawValue = extractDetectedInvite(detections);
+      const rawValue = await detectQrValue(image.source);
       if (!rawValue) {
         showToast(t("chat.scanNoCodeFound"), { error: true });
         return;
       }
       await completeScannedInvite(rawValue);
     } finally {
-      if (typeof bitmap.close === "function") {
-        bitmap.close();
-      }
+      image.dispose();
     }
   } catch (error) {
     console.warn("PrivateClaw could not read a QR image.", error);
@@ -229,29 +355,28 @@ async function scanFromImageFile(file) {
   }
 }
 
-async function scanVideoFrame(detector) {
+async function scanVideoFrame() {
   if (!state.scanner.active) {
     return;
   }
 
   if (state.scanner.detecting) {
     state.scanner.frameHandle = requestAnimationFrame(() => {
-      void scanVideoFrame(detector);
+      void scanVideoFrame();
     });
     return;
   }
 
   if (elements.scannerVideo.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
     state.scanner.frameHandle = requestAnimationFrame(() => {
-      void scanVideoFrame(detector);
+      void scanVideoFrame();
     });
     return;
   }
 
   state.scanner.detecting = true;
   try {
-    const detections = await detector.detect(elements.scannerVideo);
-    const rawValue = extractDetectedInvite(detections);
+    const rawValue = await detectQrValue(elements.scannerVideo, { maxDimension: 960 });
     if (rawValue) {
       await completeScannedInvite(rawValue);
       return;
@@ -264,19 +389,24 @@ async function scanVideoFrame(detector) {
 
   if (state.scanner.active) {
     state.scanner.frameHandle = requestAnimationFrame(() => {
-      void scanVideoFrame(detector);
+      void scanVideoFrame();
     });
   }
 }
 
-async function startScanner() {
-  if (typeof globalThis.BarcodeDetector !== "function") {
-    showToast(t("chat.scanUnsupported"), { error: true });
-    return;
+function openScanImagePicker({ preferCamera = false } = {}) {
+  if (preferCamera) {
+    elements.inviteScanInput.setAttribute("capture", "environment");
+  } else {
+    elements.inviteScanInput.removeAttribute("capture");
   }
+  elements.inviteScanInput.click();
+}
 
+async function startScanner() {
   if (!navigator.mediaDevices?.getUserMedia) {
-    showToast(t("chat.scanCameraUnsupported"), { error: true });
+    openScanImagePicker({ preferCamera: isMobileDevice() });
+    showToast(t("chat.scanPickerFallback"));
     return;
   }
 
@@ -287,14 +417,6 @@ async function startScanner() {
       },
       audio: false,
     });
-    const detector = await getQrDetector();
-    if (!detector) {
-      for (const track of stream.getTracks()) {
-        track.stop();
-      }
-      showToast(t("chat.scanUnsupported"), { error: true });
-      return;
-    }
     await stopScanner();
     state.scanner.stream = stream;
     openScannerSheet();
@@ -303,7 +425,7 @@ async function startScanner() {
     await elements.scannerVideo.play();
     state.scanner.active = true;
     updateScannerStatus(t("chat.scannerStatusScanning"));
-    void scanVideoFrame(detector);
+    void scanVideoFrame();
   } catch (error) {
     console.warn("PrivateClaw could not start camera scanning.", error);
     await closeScannerSheet();
@@ -1026,14 +1148,6 @@ async function handleFiles(files) {
     state.selectedAttachments = [...state.selectedAttachments, ...nextAttachments];
     renderPage();
   }
-}
-
-async function openScanImagePicker() {
-  if (typeof globalThis.BarcodeDetector !== "function") {
-    showToast(t("chat.scanUnsupported"), { error: true });
-    return;
-  }
-  elements.inviteScanInput.click();
 }
 
 elements.connectForm.addEventListener("submit", async (event) => {

@@ -239,6 +239,8 @@ const BUNDLES = {
         "Camera scanning is not available here. Try choosing a QR image or pasting the invite.",
       scanPermissionDenied:
         "Camera access was blocked. Allow camera permission or choose a QR image instead.",
+      scanPickerFallback:
+        "Live camera scanning is not available here, so PrivateClaw opened your camera or photo library instead.",
       scanNoCodeFound: "No QR code was found in that image.",
       scanReadFailed: "Could not read that QR image.",
       fileTooLarge: "{name} is larger than 5 MB and was skipped.",
@@ -495,6 +497,7 @@ const BUNDLES = {
       scanUnsupported: "当前浏览器暂时不支持识别二维码。请直接粘贴邀请，或换一个更新的浏览器。",
       scanCameraUnsupported: "当前环境无法直接调用相机扫码。你可以选择二维码图片，或直接粘贴邀请。",
       scanPermissionDenied: "相机权限被拒绝了。请允许相机访问，或改用二维码图片。",
+      scanPickerFallback: "当前环境不支持实时相机扫码，PrivateClaw 已改为打开相机或相册供你选择二维码图片。",
       scanNoCodeFound: "这张图片里没有识别到二维码。",
       scanReadFailed: "读取这张二维码图片失败。",
       fileTooLarge: "{name} 超过 5 MB，已跳过。",
@@ -751,6 +754,7 @@ const BUNDLES = {
       scanUnsupported: "目前瀏覽器暫時不支援辨識 QR 碼。請直接貼上邀請，或換用更新的瀏覽器。",
       scanCameraUnsupported: "目前環境無法直接呼叫相機掃碼。你可以選擇 QR 圖片，或直接貼上邀請。",
       scanPermissionDenied: "相機權限被拒絕了。請允許相機存取，或改用 QR 圖片。",
+      scanPickerFallback: "目前環境不支援即時鏡頭掃碼，PrivateClaw 已改為開啟鏡頭或相簿供你選擇 QR 圖片。",
       scanNoCodeFound: "這張圖片裡沒有辨識到 QR 碼。",
       scanReadFailed: "讀取這張 QR 圖片失敗。",
       fileTooLarge: "{name} 超過 5 MB，已跳過。",

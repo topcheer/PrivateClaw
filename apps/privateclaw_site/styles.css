@@ -283,10 +283,12 @@ img {
   padding: 0;
 }
 
-.icon-link-svg {
+.icon-link-svg,
+.icon-link-image {
   width: 20px;
   height: 20px;
   flex-shrink: 0;
+  display: block;
 }
 
 .store-button {

@@ -287,3 +287,16 @@ docker compose build relay
 ## 文档说明
 
 仓库根目录下的 `OPENCLAW_*` 文档保留了早期调研和集成过程，适合追溯设计背景；当前以 `README.md`、本文件、`packages/privateclaw-provider/README.md`、`apps/privateclaw_app/README.md` 以及最新源码为准。
+
+## 已发布产物
+
+- npm provider 包：`@privateclaw/privateclaw`
+- npm protocol 包：`@privateclaw/protocol`
+- relay 容器镜像：`ghcr.io/topcheer/privateclaw-relay`
+
+维护说明：`@privateclaw/privateclaw` 在插件安装阶段会继续拉取 `@privateclaw/protocol`，所以发布时必须先发 protocol，再发 provider：
+
+```bash
+npm run publish:npm:dry-run
+npm run publish:npm
+```

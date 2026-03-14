@@ -160,11 +160,20 @@ The root `README.md` covers Docker Compose usage, GHCR image usage, and relay en
 From the repository root:
 
 ```bash
-npm run publish:provider:dry-run
+npm run publish:npm:dry-run
+npm run publish:npm
+```
+
+`@privateclaw/privateclaw` depends on `@privateclaw/protocol`, so the protocol package must be published first. The combined scripts above publish in that order.
+
+If you are publishing by hand, the minimum safe sequence is:
+
+```bash
+npm run publish:protocol
 npm run publish:provider
 ```
 
-The package is configured to publish publicly to `https://registry.npmjs.org`.
+Both packages are configured to publish publicly to `https://registry.npmjs.org`.
 
 Important environment variables:
 

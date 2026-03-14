@@ -33,8 +33,12 @@
     "android:internal:upload:ggai": "scripts/with-ggai-store-env.sh --cwd apps/privateclaw_app/android fastlane upload_internal",
     "android:metadata": "cd apps/privateclaw_app/android && fastlane metadata",
     "android:metadata:ggai": "scripts/with-ggai-store-env.sh --cwd apps/privateclaw_app/android fastlane metadata",
+    "publish:protocol": "npm publish --workspace @privateclaw/protocol --access public",
+    "publish:protocol:dry-run": "npm publish --dry-run --workspace @privateclaw/protocol --access public",
     "publish:provider": "npm publish --workspace @privateclaw/privateclaw --access public",
-    "publish:provider:dry-run": "npm publish --dry-run --workspace @privateclaw/privateclaw --access public"
+    "publish:provider:dry-run": "npm publish --dry-run --workspace @privateclaw/privateclaw --access public",
+    "publish:npm": "npm run publish:protocol && npm run publish:provider",
+    "publish:npm:dry-run": "npm run publish:protocol:dry-run && npm run publish:provider:dry-run"
   },
   "devDependencies": {
     "@types/node": "^24.7.2",

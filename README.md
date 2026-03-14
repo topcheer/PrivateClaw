@@ -338,6 +338,13 @@ flutter build ios --simulator
 - npm protocol package: `@privateclaw/protocol`
 - relay container image: `ghcr.io/topcheer/privateclaw-relay`
 
+Maintainership note: `@privateclaw/privateclaw` pulls `@privateclaw/protocol` during plugin installation, so publish the protocol package first:
+
+```bash
+npm run publish:npm:dry-run
+npm run publish:npm
+```
+
 ## Mobile store delivery
 
 Repository-level shortcuts:

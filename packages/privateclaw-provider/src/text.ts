@@ -107,6 +107,11 @@ export const PRIVATECLAW_RENEW_SESSION_DESCRIPTION = formatBilingualInline(
   "Rotate the current PrivateClaw session key and extend this session by 8 hours.",
 );
 
+export const PRIVATECLAW_SESSION_QR_DESCRIPTION = formatBilingualInline(
+  "重新打印当前 PrivateClaw 会话二维码，便于当面分享。",
+  "Show the current PrivateClaw session QR again for in-person sharing.",
+);
+
 export const PRIVATECLAW_MUTE_BOT_DESCRIPTION = formatBilingualInline(
   "在当前群聊中暂停机器人参与回复。",
   "Pause bot replies in this group chat.",

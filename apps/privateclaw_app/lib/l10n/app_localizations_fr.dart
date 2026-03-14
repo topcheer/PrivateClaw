@@ -30,6 +30,9 @@ class AppLocalizationsFr extends AppLocalizations {
   String get connectSessionButton => 'Rejoindre la session';
 
   @override
+  String get showSessionQrButton => 'Show current QR';
+
+  @override
   String get sessionLabel => 'Session';
 
   @override
@@ -130,6 +133,19 @@ class AppLocalizationsFr extends AppLocalizations {
   String relayUnknownPayload(String payloadType) {
     return 'Type de message chiffré inconnu reçu : $payloadType';
   }
+
+  @override
+  String get sessionQrTitle => 'Current session QR';
+
+  @override
+  String get sessionQrHint =>
+      'Share this QR in person before the session expires.';
+
+  @override
+  String get copyInviteLinkButton => 'Copy invite link';
+
+  @override
+  String get inviteLinkCopied => 'Invite link copied.';
 
   @override
   String get welcomeFallback => 'PrivateClaw est connecté.';

@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 
 import 'models/chat_attachment.dart';
@@ -636,14 +634,17 @@ PrivateClawInvite _buildInvite({
 }
 
 String _buildInviteUri(PrivateClawInvite invite) {
-  final String payload = base64UrlEncode(
-    utf8.encode(jsonEncode(invite.toJson())),
-  ).replaceAll('=', '');
-  return 'privateclaw://connect?payload=$payload';
+  return encodePrivateClawInviteUri(invite);
 }
 
 List<PrivateClawSlashCommand> _buildPreviewCommands() {
   return const <PrivateClawSlashCommand>[
+    PrivateClawSlashCommand(
+      slash: '/session-qr',
+      description: 'Show the current pairing QR again for in-person sharing.',
+      acceptsArgs: false,
+      source: 'provider',
+    ),
     PrivateClawSlashCommand(
       slash: '/renew-session',
       description: 'Extend the current encrypted session for another 8 hours.',

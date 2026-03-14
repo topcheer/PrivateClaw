@@ -30,6 +30,9 @@ class AppLocalizationsVi extends AppLocalizations {
   String get connectSessionButton => 'Tham gia phiên';
 
   @override
+  String get showSessionQrButton => 'Show current QR';
+
+  @override
   String get sessionLabel => 'Phiên';
 
   @override
@@ -129,6 +132,19 @@ class AppLocalizationsVi extends AppLocalizations {
   String relayUnknownPayload(String payloadType) {
     return 'Nhận được loại tin nhắn mã hóa không xác định: $payloadType';
   }
+
+  @override
+  String get sessionQrTitle => 'Current session QR';
+
+  @override
+  String get sessionQrHint =>
+      'Share this QR in person before the session expires.';
+
+  @override
+  String get copyInviteLinkButton => 'Copy invite link';
+
+  @override
+  String get inviteLinkCopied => 'Invite link copied.';
 
   @override
   String get welcomeFallback => 'PrivateClaw đã kết nối.';

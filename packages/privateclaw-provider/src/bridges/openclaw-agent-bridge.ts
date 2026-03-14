@@ -60,6 +60,21 @@ interface OpenClawSessionLogEntry {
   };
 }
 
+interface PrivateClawStructuredMessage {
+  text?: string | null;
+}
+
+interface PrivateClawStructuredResponse {
+  version?: number;
+  messages?: PrivateClawStructuredMessage[];
+  data?: unknown;
+}
+
+interface NormalizedBridgeResult {
+  readonly messages: NormalizedBridgeMessage[];
+  readonly data?: unknown;
+}
+
 interface NormalizedBridgeMessage {
   readonly text: string;
   readonly attachments?: PrivateClawAttachment[];
@@ -67,6 +82,7 @@ interface NormalizedBridgeMessage {
 
 interface CollectedSessionMessages {
   readonly assistantMessages: NormalizedBridgeMessage[];
+  readonly assistantData?: unknown;
   readonly artifactMessages: NormalizedBridgeMessage[];
 }
 
@@ -112,6 +128,9 @@ const DEFAULT_STATE_DIR = process.env.OPENCLAW_STATE_DIR ?? path.join(os.homedir
 const DEFAULT_WORKSPACE_DIR = path.join(DEFAULT_STATE_DIR, "workspace");
 const GENERIC_BINARY_MIME = "application/octet-stream";
 const XML_ENTITY_PATTERN = /&(amp|lt|gt|quot|apos|#\d+|#x[0-9a-f]+);/giu;
+const PRIVATECLAW_RESPONSE_CONTRACT_VERSION = 1;
+const PRIVATECLAW_RESPONSE_TAG_START = "<privateclaw-response>";
+const PRIVATECLAW_RESPONSE_TAG_END = "</privateclaw-response>";
 const DOCX_MIME_TYPES = new Set<string>([
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ]);
@@ -171,11 +190,11 @@ function parseOpenClawAgentJson(stdout: string): OpenClawAgentJsonResult {
 }
 
 function parseOpenClawAgentResult(parsed: OpenClawAgentJsonResult): BridgeResponse {
-  const messages = extractDisplayMessages(parsed);
-  return toBridgeResponse(messages);
+  const result = extractDisplayResult(parsed);
+  return toBridgeResponse(result.messages, result.data);
 }
 
-function extractDisplayMessages(parsed: OpenClawAgentJsonResult): NormalizedBridgeMessage[] {
+function extractDisplayResult(parsed: OpenClawAgentJsonResult): NormalizedBridgeResult {
   const payloads = parsed.result?.payloads ?? parsed.payloads ?? [];
   const hasAlternatePayloadShape = !parsed.status && payloads.length > 0;
   if (parsed.status && parsed.status !== "ok") {
@@ -189,11 +208,27 @@ function extractDisplayMessages(parsed: OpenClawAgentJsonResult): NormalizedBrid
     );
   }
 
+  const structuredResults = payloads.flatMap((payload) =>
+    [payload.text, payload.message, payload.summary].flatMap((candidate) => {
+      if (typeof candidate !== "string") {
+        return [];
+      }
+      const result = parseStructuredResponseResult(candidate);
+      return result ? [result] : [];
+    }),
+  );
+  if (structuredResults.length > 0) {
+    return {
+      messages: structuredResults.flatMap((result) => result.messages),
+      ...combineStructuredData(structuredResults),
+    };
+  }
+
   const messages =
     payloads.flatMap((payload) =>
       [payload.text, payload.message, payload.summary].flatMap((candidate) =>
-        typeof candidate === "string" && candidate.trim() !== ""
-          ? [{ text: candidate }]
+        typeof candidate === "string" && stripStructuredResponseBlock(candidate) !== ""
+          ? [{ text: stripStructuredResponseBlock(candidate) }]
           : [],
       ),
     ) ?? [];
@@ -202,7 +237,7 @@ function extractDisplayMessages(parsed: OpenClawAgentJsonResult): NormalizedBrid
     throw new OpenClawAgentNoDisplayPayloadError(parsed);
   }
 
-  return messages;
+  return { messages };
 }
 
 export class OpenClawAgentBridge implements PrivateClawAgentBridge {
@@ -273,7 +308,7 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
         this.log(
           `session_log_fallback session=${params.sessionId} reason=parse_failed recoveredMessages=${recoveredMessages.length}`,
         );
-        return toBridgeResponse(recoveredMessages);
+        return toBridgeResponse(recoveredMessages, collectedMessages.assistantData);
       }
       throw parseError;
     }
@@ -285,7 +320,7 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
         this.log(
           `session_log_fallback session=${params.sessionId} reason=${JSON.stringify(error instanceof Error ? error.message : String(error))} recoveredMessages=${recoveredMessages.length}`,
         );
-        return toBridgeResponse(recoveredMessages);
+        return toBridgeResponse(recoveredMessages, collectedMessages.assistantData);
       }
       if (error instanceof OpenClawAgentNoDisplayPayloadError) {
         return buildNoDisplayPayloadNotice(params.message, error.parsed);
@@ -339,10 +374,8 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
       .filter((line) => line !== "")
       .map((line) => JSON.parse(line) as OpenClawSessionLogEntry);
 
-    const assistantMessages = entries.flatMap((entry) => {
-      const text = extractAssistantDisplayText(entry);
-      return text ? [{ text }] : [];
-    });
+    const assistantResults = entries.map((entry) => extractAssistantDisplayResult(entry));
+    const assistantMessages = assistantResults.flatMap((result) => result.messages);
 
     const seenPaths = new Set<string>();
     const attachments: PrivateClawAttachment[] = [];
@@ -365,6 +398,7 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
       attachments.length > 0
         ? [{ text: "", attachments } satisfies NormalizedBridgeMessage]
         : [];
+    const assistantData = combineStructuredData(assistantResults).data;
 
     if (attachments.length === 0) {
       this.log(
@@ -372,6 +406,7 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
       );
       return {
         assistantMessages,
+        ...(assistantData !== undefined ? { assistantData } : {}),
         artifactMessages,
       };
     }
@@ -381,6 +416,7 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
     );
     return {
       assistantMessages,
+      ...(assistantData !== undefined ? { assistantData } : {}),
       artifactMessages,
     };
   }
@@ -421,37 +457,41 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
   ): Promise<string> {
     const trimmed = message.trim();
     const stagedAttachments = await this.stageAttachments(sessionId, attachments);
-    this.log(
-      `prompt_ready session=${sessionId} stagedAttachments=${stagedAttachments.length} textChars=${trimmed.length}`,
-    );
+    let promptBody = trimmed;
 
-    if (stagedAttachments.length === 0) {
-      return trimmed;
-    }
+    if (stagedAttachments.length > 0) {
+      const lines = [
+        trimmed !== ""
+          ? trimmed
+          : "The user sent one or more file attachments without additional text.",
+        "",
+        "PrivateClaw staged the attachments into the OpenClaw workspace.",
+        "Inspect the staged files before answering, and use the exact paths below instead of guessing a workspace-root filename.",
+        "",
+        "Staged attachments:",
+      ];
 
-    const lines = [
-      trimmed !== ""
-        ? trimmed
-        : "The user sent one or more file attachments without additional text.",
-      "",
-      "PrivateClaw staged the attachments into the OpenClaw workspace.",
-      "Inspect the staged files before answering, and use the exact paths below instead of guessing a workspace-root filename.",
-      "",
-      "Staged attachments:",
-    ];
-
-    for (const attachment of stagedAttachments) {
-      lines.push(`- ${attachment.name}`);
-      lines.push(`  mimeType: ${attachment.effectiveMimeType}`);
-      lines.push(`  kind: ${attachment.kind}`);
-      lines.push(`  workspacePath: ${attachment.workspacePath}`);
-      if (attachment.extractedTextWorkspacePath) {
-        lines.push(`  extractedTextPath: ${attachment.extractedTextWorkspacePath}`);
+      for (const attachment of stagedAttachments) {
+        lines.push(`- ${attachment.name}`);
+        lines.push(`  mimeType: ${attachment.effectiveMimeType}`);
+        lines.push(`  kind: ${attachment.kind}`);
+        lines.push(`  workspacePath: ${attachment.workspacePath}`);
+        if (attachment.extractedTextWorkspacePath) {
+          lines.push(`  extractedTextPath: ${attachment.extractedTextWorkspacePath}`);
+        }
+        lines.push(`  instruction: ${attachment.instruction}`);
       }
-      lines.push(`  instruction: ${attachment.instruction}`);
+
+      promptBody = lines.join("\n");
     }
 
-    return lines.join("\n");
+    const promptMessage = appendStructuredResponseContract(
+      promptBody !== "" ? promptBody : "The user sent a message that requires a reply.",
+    );
+    this.log(
+      `prompt_ready session=${sessionId} stagedAttachments=${stagedAttachments.length} textChars=${trimmed.length} contractVersion=${PRIVATECLAW_RESPONSE_CONTRACT_VERSION}`,
+    );
+    return promptMessage;
   }
 
   private async stageAttachments(
@@ -703,10 +743,13 @@ function mergeBridgeResponses(
     return primary;
   }
 
-  return toBridgeResponse([
-    ...normalizeBridgeResponse(primary),
-    ...supplemental,
-  ]);
+  return toBridgeResponse(
+    [
+      ...normalizeBridgeResponse(primary),
+      ...supplemental,
+    ],
+    extractBridgeResponseData(primary),
+  );
 }
 
 function normalizeBridgeResponse(response: BridgeResponse): NormalizedBridgeMessage[] {
@@ -724,13 +767,16 @@ function normalizeBridgeResponse(response: BridgeResponse): NormalizedBridgeMess
   );
 }
 
-function toBridgeResponse(messages: NormalizedBridgeMessage[]): BridgeResponse {
+function toBridgeResponse(
+  messages: NormalizedBridgeMessage[],
+  data?: unknown,
+): BridgeResponse {
   if (messages.length === 1) {
     const [message] = messages;
     if (!message) {
       throw new Error("Bridge response did not contain any messages.");
     }
-    if (!message.attachments || message.attachments.length === 0) {
+    if ((!message.attachments || message.attachments.length === 0) && data === undefined) {
       return message.text;
     }
   }
@@ -741,6 +787,7 @@ function toBridgeResponse(messages: NormalizedBridgeMessage[]): BridgeResponse {
         ? message
         : { text: message.text },
     ),
+    ...(data !== undefined ? { data } : {}),
   };
 }
 
@@ -770,9 +817,9 @@ function extractMediaPaths(entry: OpenClawSessionLogEntry): string[] {
   return [...mediaPaths];
 }
 
-function extractAssistantDisplayText(entry: OpenClawSessionLogEntry): string | undefined {
+function extractAssistantDisplayResult(entry: OpenClawSessionLogEntry): NormalizedBridgeResult {
   if (entry.type !== "message" || entry.message?.role !== "assistant" || entry.message.isError) {
-    return undefined;
+    return { messages: [] };
   }
 
   const parts = (entry.message.content ?? [])
@@ -784,10 +831,114 @@ function extractAssistantDisplayText(entry: OpenClawSessionLogEntry): string | u
     .filter((text) => text !== "");
 
   if (parts.length === 0) {
+    return { messages: [] };
+  }
+
+  const rawText = parts.join("\n\n");
+  const structuredResult = parseStructuredResponseResult(rawText);
+  if (structuredResult) {
+    return structuredResult;
+  }
+
+  const fallbackText = stripStructuredResponseBlock(rawText);
+  return fallbackText !== "" ? { messages: [{ text: fallbackText }] } : { messages: [] };
+}
+
+function appendStructuredResponseContract(prompt: string): string {
+  return `${prompt}\n\n${buildStructuredResponseContractPrompt()}`;
+}
+
+function buildStructuredResponseContractPrompt(): string {
+  return [
+    "PrivateClaw response contract:",
+    `- After you finish your reasoning and tool usage, put the final user-visible result inside exactly one ${PRIVATECLAW_RESPONSE_TAG_START}...${PRIVATECLAW_RESPONSE_TAG_END} block.`,
+    "- The block content must be valid JSON.",
+    `- Use this JSON shape: {\"version\":${PRIVATECLAW_RESPONSE_CONTRACT_VERSION},\"messages\":[{\"text\":\"...\"}],\"data\":{}}`,
+    "- Always include at least one messages entry.",
+    "- Put user-visible text only in messages[].text.",
+    "- Use data for optional machine-readable extraction results that PrivateClaw may consume in future file-processing flows.",
+    "- Do not wrap the JSON in markdown fences.",
+  ].join("\n");
+}
+
+function parseStructuredResponseResult(raw: string): NormalizedBridgeResult | undefined {
+  const structured = parseStructuredResponseBlock(raw);
+  if (!structured?.messages || structured.messages.length === 0) {
     return undefined;
   }
 
-  return parts.join("\n\n");
+  const messages = structured.messages.flatMap((message) => {
+    const text = typeof message.text === "string" ? message.text.trim() : "";
+    return text !== "" ? [{ text }] : [];
+  });
+  if (messages.length === 0) {
+    return undefined;
+  }
+
+  return {
+    messages,
+    ...combineStructuredData([{ data: structured.data }]),
+  };
+}
+
+function parseStructuredResponseBlock(raw: string): PrivateClawStructuredResponse | undefined {
+  const match = raw.match(buildStructuredResponseBlockPattern("u"));
+  const payload = match?.[1]?.trim();
+  if (!payload) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(payload) as PrivateClawStructuredResponse;
+    if (parsed.version !== PRIVATECLAW_RESPONSE_CONTRACT_VERSION || !Array.isArray(parsed.messages)) {
+      return undefined;
+    }
+    return parsed;
+  } catch {
+    return undefined;
+  }
+}
+
+function stripStructuredResponseBlock(raw: string): string {
+  return raw.replace(buildStructuredResponseBlockPattern("gu"), "").trim();
+}
+
+function buildStructuredResponseBlockPattern(flags: string): RegExp {
+  return new RegExp(
+    `${escapeRegExpLiteral(PRIVATECLAW_RESPONSE_TAG_START)}([\\s\\S]*?)${escapeRegExpLiteral(PRIVATECLAW_RESPONSE_TAG_END)}`,
+    flags,
+  );
+}
+
+function escapeRegExpLiteral(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+function combineStructuredData(
+  results: ReadonlyArray<{ data?: unknown }>,
+): { data?: unknown } {
+  const data = [...results]
+    .reverse()
+    .map((result) => normalizeStructuredData(result.data))
+    .find((candidate) => candidate !== undefined);
+  return data === undefined ? {} : { data };
+}
+
+function normalizeStructuredData(value: unknown): unknown | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (Array.isArray(value)) {
+    return value.length > 0 ? value : undefined;
+  }
+  if (typeof value === "object") {
+    return Object.keys(value as Record<string, unknown>).length > 0 ? value : undefined;
+  }
+  return value;
+}
+
+function extractBridgeResponseData(response: BridgeResponse): unknown {
+  return typeof response === "string" ? undefined : response.data;
 }
 
 async function buildAttachmentFromMediaPath(mediaPath: string): Promise<PrivateClawAttachment> {

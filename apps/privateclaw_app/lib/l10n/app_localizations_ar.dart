@@ -30,6 +30,9 @@ class AppLocalizationsAr extends AppLocalizations {
   String get connectSessionButton => 'الانضمام إلى الجلسة';
 
   @override
+  String get showSessionQrButton => 'Show current QR';
+
+  @override
   String get sessionLabel => 'الجلسة';
 
   @override
@@ -128,6 +131,19 @@ class AppLocalizationsAr extends AppLocalizations {
   String relayUnknownPayload(String payloadType) {
     return 'تم استلام نوع رسالة مشفرة غير معروف: $payloadType';
   }
+
+  @override
+  String get sessionQrTitle => 'Current session QR';
+
+  @override
+  String get sessionQrHint =>
+      'Share this QR in person before the session expires.';
+
+  @override
+  String get copyInviteLinkButton => 'Copy invite link';
+
+  @override
+  String get inviteLinkCopied => 'Invite link copied.';
 
   @override
   String get welcomeFallback => 'تم الاتصال بـ PrivateClaw.';

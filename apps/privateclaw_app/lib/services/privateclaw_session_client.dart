@@ -82,6 +82,7 @@ class PrivateClawSessionClient {
   Timer? _reconnectTimer;
   bool _disposed = false;
   bool _sawTerminalClose = false;
+  bool _hasEstablishedSession = false;
   int _messageCounter = 0;
   int _connectionGeneration = 0;
   Duration _reconnectDelay = _initialReconnectDelay;
@@ -93,6 +94,8 @@ class PrivateClawSessionClient {
       throw StateError('PrivateClaw session client has been disposed.');
     }
 
+    _sawTerminalClose = false;
+    _hasEstablishedSession = false;
     await _resetCrypto(invite.sessionKey);
     await _openSocket(PrivateClawSessionStatus.connecting);
   }
@@ -145,6 +148,9 @@ class PrivateClawSessionClient {
         _sawTerminalClose ||
         generation != _connectionGeneration ||
         _eventsController.isClosed) {
+      return;
+    }
+    if (_hasEstablishedSession) {
       return;
     }
 
@@ -212,6 +218,7 @@ class PrivateClawSessionClient {
         if (expiresAt != null && expiresAt.isNotEmpty) {
           invite = invite.copyWith(expiresAt: _parseTimestamp(expiresAt));
         }
+        _hasEstablishedSession = true;
         _reconnectDelay = _initialReconnectDelay;
         _emitEvent(
           PrivateClawSessionEvent(
@@ -253,6 +260,7 @@ class PrivateClawSessionClient {
       case 'relay:session_closed':
         final Object? reason = decoded['reason'];
         _sawTerminalClose = true;
+        _hasEstablishedSession = false;
         _emitEvent(
           PrivateClawSessionEvent(
             notice: PrivateClawSessionNotice.sessionClosed,

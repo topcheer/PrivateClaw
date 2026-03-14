@@ -131,4 +131,11 @@ class PrivateClawInvite {
   }
 }
 
+String encodePrivateClawInviteUri(PrivateClawInvite invite) {
+  final String payload = base64UrlEncode(
+    utf8.encode(jsonEncode(invite.toJson())),
+  ).replaceAll('=', '');
+  return 'privateclaw://connect?payload=$payload';
+}
+
 const Object _noValue = Object();

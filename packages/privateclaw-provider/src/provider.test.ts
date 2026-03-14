@@ -11,6 +11,8 @@ import { createRelayServer } from "../../../services/relay-server/src/relay-serv
 import { EchoBridge } from "./bridges/echo-bridge.js";
 import { DEFAULT_SESSION_TTL_MS, PrivateClawProvider } from "./provider.js";
 
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
 function waitForOpen(socket: WebSocket): Promise<void> {
   return new Promise((resolve, reject) => {
     socket.once("open", () => resolve());
@@ -204,6 +206,10 @@ test("provider creates one-time invites and replies through the encrypted relay"
     JSON.stringify(capabilities.commands),
     /renew-session/,
   );
+  assert.match(
+    JSON.stringify(capabilities.commands),
+    /session-qr/,
+  );
 
   appSocket.send(
     JSON.stringify({
@@ -227,6 +233,130 @@ test("provider creates one-time invites and replies through the encrypted relay"
 
   appSocket.close();
   await waitForClose(appSocket);
+});
+
+test("provider returns the current session QR only to the requesting participant", async (t) => {
+  const relay = createRelayServer({
+    host: "127.0.0.1",
+    port: 0,
+    sessionTtlMs: 60_000,
+    frameCacheSize: 8,
+  });
+  const { port } = await relay.start();
+  t.after(async () => {
+    await relay.stop();
+  });
+
+  const provider = new PrivateClawProvider({
+    providerWsUrl: `ws://127.0.0.1:${port}/ws/provider`,
+    appWsUrl: `ws://127.0.0.1:${port}/ws/app`,
+    bridge: new GroupBridge(),
+    defaultTtlMs: DEFAULT_SESSION_TTL_MS,
+  });
+  await provider.connect();
+  t.after(async () => {
+    await provider.dispose();
+  });
+
+  const inviteBundle = await provider.createInviteBundle({ groupMode: true });
+  const invite = decodeInviteString(inviteBundle.inviteUri);
+
+  const appOneUrl = new URL(invite.appWsUrl);
+  appOneUrl.searchParams.set("appId", "app-one");
+  const appOne = new WebSocket(appOneUrl.toString());
+  const appOneAttached = nextMessage(appOne);
+  await waitForOpen(appOne);
+  assert.equal((await appOneAttached).type, "relay:attached");
+  const appOneInitialFrames = nextMessages(appOne, 3);
+  appOne.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "client_hello",
+          appId: "app-one",
+          displayName: "SolarFox",
+          appVersion: "flutter-test",
+          deviceLabel: "Tester One",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+  await appOneInitialFrames;
+
+  const appTwoUrl = new URL(invite.appWsUrl);
+  appTwoUrl.searchParams.set("appId", "app-two");
+  const appTwo = new WebSocket(appTwoUrl.toString());
+  const appTwoAttached = nextMessage(appTwo);
+  await waitForOpen(appTwo);
+  assert.equal((await appTwoAttached).type, "relay:attached");
+  const appTwoInitialFrames = nextMessages(appTwo, 3);
+  const appOneJoinFrames = nextMessages(appOne, 2);
+  appTwo.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "client_hello",
+          appId: "app-two",
+          displayName: "RiverCat",
+          appVersion: "flutter-test",
+          deviceLabel: "Tester Two",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+  await Promise.all([appTwoInitialFrames, appOneJoinFrames]);
+
+  const appOneQrFramesPromise = nextMessages(appOne, 1);
+  appOne.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "user_message",
+          appId: "app-one",
+          text: "/session-qr",
+          clientMessageId: "session-qr-1",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+
+  const [appOneQrFrames] = await Promise.all([
+    appOneQrFramesPromise,
+    waitForNoMessage(appTwo),
+  ]);
+  const qrPayload = decryptRelayPayload(appOneQrFrames[0]!, invite);
+  assert.equal(qrPayload.kind, "assistant_message");
+  assert.equal(qrPayload.replyTo, "session-qr-1");
+  assert.match(qrPayload.text, /二维码|QR/i);
+  assert.equal(qrPayload.attachments?.length, 1);
+  const qrAttachment = qrPayload.attachments?.[0];
+  assert.ok(qrAttachment);
+  assert.equal(qrAttachment.mimeType, "image/png");
+  assert.equal(qrAttachment.name, `privateclaw-${invite.sessionId}.png`);
+  assert.ok(qrAttachment.dataBase64);
+  assert.deepEqual(
+    Buffer.from(qrAttachment.dataBase64, "base64").subarray(
+      0,
+      PNG_SIGNATURE.length,
+    ),
+    PNG_SIGNATURE,
+  );
+
+  appOne.close();
+  appTwo.close();
+  await Promise.all([waitForClose(appOne), waitForClose(appTwo)]);
 });
 
 test("provider renews the session key and keeps the chat usable after re-handshake", async (t) => {

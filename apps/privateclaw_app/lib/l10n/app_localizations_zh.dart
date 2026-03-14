@@ -30,6 +30,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get connectSessionButton => '连接会话';
 
   @override
+  String get showSessionQrButton => '显示当前二维码';
+
+  @override
   String get sessionLabel => '会话';
 
   @override
@@ -122,6 +125,18 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get sessionQrTitle => '当前会话二维码';
+
+  @override
+  String get sessionQrHint => '请在会话过期前当面分享这个二维码。';
+
+  @override
+  String get copyInviteLinkButton => '复制邀请链接';
+
+  @override
+  String get inviteLinkCopied => '邀请链接已复制。';
+
+  @override
   String get welcomeFallback => 'PrivateClaw 已连接。';
 
   @override
@@ -173,6 +188,9 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get connectSessionButton => '連接會話';
+
+  @override
+  String get showSessionQrButton => '顯示目前 QR Code';
 
   @override
   String get sessionLabel => '會話';
@@ -265,6 +283,18 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
   String relayUnknownPayload(String payloadType) {
     return '收到未知的加密訊息類型：$payloadType';
   }
+
+  @override
+  String get sessionQrTitle => '目前工作階段 QR Code';
+
+  @override
+  String get sessionQrHint => '請在工作階段到期前當面分享這個 QR Code。';
+
+  @override
+  String get copyInviteLinkButton => '複製邀請連結';
+
+  @override
+  String get inviteLinkCopied => '邀請連結已複製。';
 
   @override
   String get welcomeFallback => 'PrivateClaw 已連線。';

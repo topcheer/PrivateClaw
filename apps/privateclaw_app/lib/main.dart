@@ -19,6 +19,7 @@ import 'services/privateclaw_session_client.dart';
 import 'store_screenshot_preview.dart';
 import 'widgets/chat_message_bubble.dart';
 import 'widgets/invite_scanner_sheet.dart';
+import 'widgets/session_qr_sheet.dart';
 
 const int _maxInlineAttachmentBytes = 5 * 1024 * 1024;
 
@@ -87,6 +88,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
   PrivateClawSessionStatus _sessionStatus = PrivateClawSessionStatus.idle;
   String _statusText = '';
   bool _isPairingPanelCollapsed = false;
+  bool _hasConnectedSession = false;
   int _attachmentCounter = 0;
   PrivateClawIdentity? _identity;
 
@@ -97,7 +99,17 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
       _messageController.text.trim().isNotEmpty ||
       _selectedAttachments.isNotEmpty;
   bool get _canCollapsePairingPanel =>
-      _invite != null && _sessionStatus == PrivateClawSessionStatus.active;
+      _invite != null &&
+      (_sessionStatus == PrivateClawSessionStatus.active ||
+          (_hasConnectedSession &&
+              (_sessionStatus == PrivateClawSessionStatus.reconnecting ||
+                  _sessionStatus == PrivateClawSessionStatus.relayAttached)));
+  bool get _canShowSessionQr =>
+      _invite != null &&
+      (_hasConnectedSession ||
+          _sessionStatus == PrivateClawSessionStatus.active ||
+          _sessionStatus == PrivateClawSessionStatus.reconnecting ||
+          _sessionStatus == PrivateClawSessionStatus.relayAttached);
   bool get _isPreviewMode => widget.previewData != null;
   bool get _showsDisconnectAction =>
       _client != null ||
@@ -175,6 +187,12 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
     _sessionStatus = previewData.status;
     _statusText = previewData.statusText;
     _isPairingPanelCollapsed = previewData.isPairingPanelCollapsed;
+    _hasConnectedSession =
+        previewData.invite != null &&
+        (previewData.isPairingPanelCollapsed ||
+            previewData.status == PrivateClawSessionStatus.active ||
+            previewData.status == PrivateClawSessionStatus.reconnecting ||
+            previewData.status == PrivateClawSessionStatus.relayAttached);
     _inviteController.text = previewData.inviteInput;
     _messageController.value = TextEditingValue(
       text: previewData.composerDraftText,
@@ -221,6 +239,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
           .listen(_handleClientEvent);
 
       setState(() {
+        _hasConnectedSession = false;
         _identity = identity;
         _invite = invite;
         _client = client;
@@ -303,11 +322,16 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
           _statusText = l10n.welcomeFallback;
         }
         if (_sessionStatus == PrivateClawSessionStatus.active) {
+          _hasConnectedSession = true;
           _isPairingPanelCollapsed = true;
         }
         if (_sessionStatus == PrivateClawSessionStatus.closed ||
             _sessionStatus == PrivateClawSessionStatus.error ||
             _sessionStatus == PrivateClawSessionStatus.idle) {
+          if (_sessionStatus == PrivateClawSessionStatus.closed ||
+              _sessionStatus == PrivateClawSessionStatus.idle) {
+            _hasConnectedSession = false;
+          }
           _isPairingPanelCollapsed = false;
         }
       }
@@ -412,6 +436,22 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
     await _connectFromInput(scannedInvite);
   }
 
+  Future<void> _showSessionQrSheet() async {
+    final PrivateClawInvite? invite = _invite;
+    if (invite == null) {
+      return;
+    }
+
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (BuildContext context) {
+        return SessionQrSheet(invite: invite);
+      },
+    );
+  }
+
   Future<void> _pickAttachments() async {
     final AppLocalizations l10n = AppLocalizations.of(context)!;
     try {
@@ -509,6 +549,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
       return;
     }
     setState(() {
+      _hasConnectedSession = false;
       _invite = null;
       _participants.clear();
       _messages.clear();
@@ -728,47 +769,60 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
     if (_canCollapsePairingPanel && _isPairingPanelCollapsed) {
       return Padding(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-        child: SizedBox(
-          width: double.infinity,
-          child: FilledButton.tonal(
-            onPressed: () {
-              setState(() {
-                _isPairingPanelCollapsed = false;
-              });
-            },
-            child: Row(
-              children: <Widget>[
-                Icon(_statusIcon()),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      if (_invite?.groupMode == true)
-                        Text(
-                          l10n.groupChatSummary(_participants.length),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      Text(
-                        _statusText,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+        child: Row(
+          children: <Widget>[
+            Expanded(
+              child: FilledButton.tonal(
+                onPressed: () {
+                  setState(() {
+                    _isPairingPanelCollapsed = false;
+                  });
+                },
+                child: Row(
+                  children: <Widget>[
+                    Icon(_statusIcon()),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          if (_invite?.groupMode == true)
+                            Text(
+                              l10n.groupChatSummary(_participants.length),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          Text(
+                            _statusText,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          if (_invite != null)
+                            Text(
+                              _invite!.sessionId,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                        ],
                       ),
-                      if (_invite != null)
-                        Text(
-                          _invite!.sessionId,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                    ],
-                  ),
+                    ),
+                    const Icon(Icons.expand_more),
+                  ],
                 ),
-                const Icon(Icons.expand_more),
-              ],
+              ),
             ),
-          ),
+            if (_canShowSessionQr)
+              Padding(
+                padding: const EdgeInsets.only(left: 8),
+                child: IconButton.filledTonal(
+                  key: const ValueKey<String>('session-qr-trigger'),
+                  tooltip: l10n.showSessionQrButton,
+                  onPressed: _showSessionQrSheet,
+                  icon: const Icon(Icons.qr_code_2),
+                ),
+              ),
+          ],
         ),
       );
     }
@@ -828,6 +882,13 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
                     icon: const Icon(Icons.login),
                     label: Text(l10n.connectSessionButton),
                   ),
+                  if (_canShowSessionQr)
+                    FilledButton.tonalIcon(
+                      key: const ValueKey<String>('session-qr-trigger'),
+                      onPressed: _showSessionQrSheet,
+                      icon: const Icon(Icons.qr_code_2),
+                      label: Text(l10n.showSessionQrButton),
+                    ),
                 ],
               ),
               if (_invite != null) ...<Widget>[

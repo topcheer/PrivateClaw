@@ -64,6 +64,35 @@ test("parseOpenClawAgentOutput accepts top-level payload arrays from alternate O
   assert.equal(result, "pong-from-top-level");
 });
 
+test("parseOpenClawAgentOutput prefers tagged structured PrivateClaw responses", () => {
+  const result = parseOpenClawAgentOutput(
+    JSON.stringify({
+      status: "ok",
+      result: {
+        payloads: [
+          {
+            text: [
+              "Draft text that should not be shown.",
+              "<privateclaw-response>",
+              JSON.stringify({
+                version: 1,
+                messages: [{ text: "first-structured" }, { text: "second-structured" }],
+                data: { intent: "future-file-pipeline" },
+              }),
+              "</privateclaw-response>",
+            ].join("\n"),
+          },
+        ],
+      },
+    }),
+  );
+
+  assert.deepEqual(result, {
+    messages: [{ text: "first-structured" }, { text: "second-structured" }],
+    data: { intent: "future-file-pipeline" },
+  });
+});
+
 test("OpenClawAgentBridge invokes openclaw agent with session-aware arguments", async () => {
   let invokedFile = "";
   let invokedArgs: string[] = [];
@@ -104,12 +133,17 @@ test("OpenClawAgentBridge invokes openclaw agent with session-aware arguments", 
   });
 
   assert.equal(invokedFile, "openclaw-custom");
-  assert.deepEqual(invokedArgs, [
+  const prompt = invokedArgs[4] ?? "";
+  assert.deepEqual(invokedArgs.slice(0, 4), [
     "agent",
     "--session-id",
     "privateclaw-session",
     "--message",
-    "hello",
+  ]);
+  assert.match(prompt, /^hello\b/u);
+  assert.match(prompt, /PrivateClaw response contract:/u);
+  assert.match(prompt, /<privateclaw-response>/u);
+  assert.deepEqual(invokedArgs.slice(5), [
     "--json",
     "--agent",
     "ops",
@@ -258,6 +292,79 @@ test("OpenClawAgentBridge recovers assistant text from the session log when agen
   });
 
   assert.equal(result, "pixel.png");
+});
+
+test("OpenClawAgentBridge recovers structured assistant text from the session log", async (t) => {
+  const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "privateclaw-openclaw-state-"));
+  const workspaceDir = path.join(stateDir, "workspace");
+  const sessionLogPath = path.join(
+    stateDir,
+    "agents",
+    "main",
+    "sessions",
+    "privateclaw-session.jsonl",
+  );
+  await fs.mkdir(workspaceDir, { recursive: true });
+  t.after(async () => {
+    await fs.rm(stateDir, { recursive: true, force: true });
+  });
+
+  const bridge = new OpenClawAgentBridge({
+    stateDir,
+    workspaceDir,
+    execFileImpl: (_file, _args, _options, callback) => {
+      void (async () => {
+        await fs.mkdir(path.dirname(sessionLogPath), { recursive: true });
+        await fs.writeFile(
+          sessionLogPath,
+          `${JSON.stringify({
+            type: "message",
+            message: {
+              role: "assistant",
+              content: [
+                {
+                  type: "text",
+                  text: [
+                    "Interim text that should be ignored.",
+                    "<privateclaw-response>",
+                    JSON.stringify({
+                      version: 1,
+                      messages: [{ text: "pixel.png" }],
+                      data: { filename: "pixel.png" },
+                    }),
+                    "</privateclaw-response>",
+                  ].join("\n"),
+                },
+              ],
+              isError: false,
+            },
+          })}\n`,
+          "utf8",
+        );
+        callback(
+          null,
+          JSON.stringify({
+            result: {
+              payloads: [],
+            },
+          }),
+          "",
+        );
+      })().catch((error) => {
+        callback(error instanceof Error ? error : new Error(String(error)), "", "");
+      });
+    },
+  });
+
+  const result = await bridge.handleUserMessage({
+    sessionId: "privateclaw-session",
+    message: "Reply with the exact filename.",
+  });
+
+  assert.deepEqual(result, {
+    messages: [{ text: "pixel.png" }],
+    data: { filename: "pixel.png" },
+  });
 });
 
 test("OpenClawAgentBridge bridges TTS audio artifacts from the session log", async (t) => {
@@ -411,6 +518,8 @@ test("OpenClawAgentBridge stages image and PDF attachments with tool hints", asy
   assert.match(prompt ?? "", /PrivateClaw staged the attachments into the OpenClaw workspace\./u);
   assert.match(prompt ?? "", /Use the image tool with "privateclaw\/privateclaw-session\//u);
   assert.match(prompt ?? "", /Use the pdf tool with "privateclaw\/privateclaw-session\//u);
+  assert.match(prompt ?? "", /PrivateClaw response contract:/u);
+  assert.match(prompt ?? "", /<privateclaw-response>/u);
   assert.equal(result, "attachment-ok");
 
   const stagedDir = path.join(workspaceDir, "privateclaw", "privateclaw-session");

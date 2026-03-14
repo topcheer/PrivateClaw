@@ -24,7 +24,12 @@ export type BridgeMessage =
       attachments?: PrivateClawAttachment[];
     };
 
-export type BridgeResponse = string | { messages: BridgeMessage[] };
+export interface BridgeResponseEnvelope {
+  messages: BridgeMessage[];
+  data?: unknown;
+}
+
+export type BridgeResponse = string | BridgeResponseEnvelope;
 
 export interface PrivateClawAgentBridge {
   handleUserMessage(params: {

@@ -7,6 +7,7 @@
   "inviteInputHint": "privateclaw://connect?payload=...",
   "scanQrButton": "掃描 QR Code",
   "connectSessionButton": "連接會話",
+  "showSessionQrButton": "顯示目前 QR Code",
   "sessionLabel": "會話",
   "expiresLabel": "到期時間",
   "initialStatus": "掃描 PrivateClaw QR Code 或貼上邀請連結，即可開始一次性會話。",
@@ -89,6 +90,10 @@
       }
     }
   },
+  "sessionQrTitle": "目前工作階段 QR Code",
+  "sessionQrHint": "請在工作階段到期前當面分享這個 QR Code。",
+  "copyInviteLinkButton": "複製邀請連結",
+  "inviteLinkCopied": "邀請連結已複製。",
   "welcomeFallback": "PrivateClaw 已連線。",
   "sessionRenewedNotice": "工作階段已續期。新的到期時間：{expiresAt}（剩餘 {remaining}）。",
   "@sessionRenewedNotice": {

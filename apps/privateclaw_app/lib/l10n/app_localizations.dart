@@ -160,6 +160,12 @@ abstract class AppLocalizations {
   /// **'Join session'**
   String get connectSessionButton;
 
+  /// No description provided for @showSessionQrButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Show current QR'**
+  String get showSessionQrButton;
+
   /// No description provided for @sessionLabel.
   ///
   /// In en, this message translates to:
@@ -315,6 +321,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Received an unknown encrypted message type: {payloadType}'**
   String relayUnknownPayload(String payloadType);
+
+  /// No description provided for @sessionQrTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Current session QR'**
+  String get sessionQrTitle;
+
+  /// No description provided for @sessionQrHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Share this QR in person before the session expires.'**
+  String get sessionQrHint;
+
+  /// No description provided for @copyInviteLinkButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy invite link'**
+  String get copyInviteLinkButton;
+
+  /// No description provided for @inviteLinkCopied.
+  ///
+  /// In en, this message translates to:
+  /// **'Invite link copied.'**
+  String get inviteLinkCopied;
 
   /// No description provided for @welcomeFallback.
   ///

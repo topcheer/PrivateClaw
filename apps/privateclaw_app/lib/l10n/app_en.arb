@@ -7,6 +7,7 @@
   "inviteInputHint": "privateclaw://connect?payload=...",
   "scanQrButton": "Scan QR code",
   "connectSessionButton": "Join session",
+  "showSessionQrButton": "Show current QR",
   "sessionLabel": "Session",
   "expiresLabel": "Expires",
   "initialStatus": "Scan a PrivateClaw QR code or paste an invite link to start a one-time session.",
@@ -89,6 +90,10 @@
       }
     }
   },
+  "sessionQrTitle": "Current session QR",
+  "sessionQrHint": "Share this QR in person before the session expires.",
+  "copyInviteLinkButton": "Copy invite link",
+  "inviteLinkCopied": "Invite link copied.",
   "welcomeFallback": "PrivateClaw connected.",
   "sessionRenewedNotice": "Session renewed. New expiry: {expiresAt} ({remaining} left).",
   "@sessionRenewedNotice": {

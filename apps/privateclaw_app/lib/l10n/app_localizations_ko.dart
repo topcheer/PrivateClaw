@@ -30,6 +30,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get connectSessionButton => '세션 연결';
 
   @override
+  String get showSessionQrButton => 'Show current QR';
+
+  @override
   String get sessionLabel => '세션';
 
   @override
@@ -123,6 +126,19 @@ class AppLocalizationsKo extends AppLocalizations {
   String relayUnknownPayload(String payloadType) {
     return '알 수 없는 암호화 메시지 유형을 받았습니다: $payloadType';
   }
+
+  @override
+  String get sessionQrTitle => 'Current session QR';
+
+  @override
+  String get sessionQrHint =>
+      'Share this QR in person before the session expires.';
+
+  @override
+  String get copyInviteLinkButton => 'Copy invite link';
+
+  @override
+  String get inviteLinkCopied => 'Invite link copied.';
 
   @override
   String get welcomeFallback => 'PrivateClaw에 연결되었습니다.';

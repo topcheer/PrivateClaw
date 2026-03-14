@@ -7,6 +7,7 @@
   "inviteInputHint": "privateclaw://connect?payload=...",
   "scanQrButton": "扫描二维码",
   "connectSessionButton": "连接会话",
+  "showSessionQrButton": "显示当前二维码",
   "sessionLabel": "会话",
   "expiresLabel": "过期时间",
   "initialStatus": "扫描 PrivateClaw 二维码或粘贴邀请链接，开始一次性会话。",
@@ -89,6 +90,10 @@
       }
     }
   },
+  "sessionQrTitle": "当前会话二维码",
+  "sessionQrHint": "请在会话过期前当面分享这个二维码。",
+  "copyInviteLinkButton": "复制邀请链接",
+  "inviteLinkCopied": "邀请链接已复制。",
   "welcomeFallback": "PrivateClaw 已连接。",
   "sessionRenewedNotice": "会话已续期。新的过期时间：{expiresAt}（剩余 {remaining}）。",
   "@sessionRenewedNotice": {

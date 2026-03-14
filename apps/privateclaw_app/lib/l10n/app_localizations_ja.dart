@@ -30,6 +30,9 @@ class AppLocalizationsJa extends AppLocalizations {
   String get connectSessionButton => 'セッションに接続';
 
   @override
+  String get showSessionQrButton => 'Show current QR';
+
+  @override
   String get sessionLabel => 'セッション';
 
   @override
@@ -124,6 +127,19 @@ class AppLocalizationsJa extends AppLocalizations {
   String relayUnknownPayload(String payloadType) {
     return '不明な暗号化メッセージ種別を受信しました: $payloadType';
   }
+
+  @override
+  String get sessionQrTitle => 'Current session QR';
+
+  @override
+  String get sessionQrHint =>
+      'Share this QR in person before the session expires.';
+
+  @override
+  String get copyInviteLinkButton => 'Copy invite link';
+
+  @override
+  String get inviteLinkCopied => 'Invite link copied.';
 
   @override
   String get welcomeFallback => 'PrivateClaw に接続しました。';

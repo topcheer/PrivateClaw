@@ -13,6 +13,8 @@ import {
 import QRCode from "qrcode";
 import {
   PRIVATECLAW_QR_ERROR_CORRECTION_LEVEL,
+  PRIVATECLAW_QR_IMAGE_MARGIN,
+  PRIVATECLAW_QR_PNG_WIDTH,
   PRIVATECLAW_QR_SVG_MARGIN,
   PRIVATECLAW_QR_TERMINAL_MARGIN,
 } from "./qr-options.js";
@@ -23,6 +25,7 @@ import {
   formatBilingualText,
   PRIVATECLAW_MUTE_BOT_DESCRIPTION,
   PRIVATECLAW_RENEW_SESSION_DESCRIPTION,
+  PRIVATECLAW_SESSION_QR_DESCRIPTION,
   PRIVATECLAW_UNMUTE_BOT_DESCRIPTION,
 } from "./text.js";
 import type {
@@ -153,6 +156,27 @@ function buildRenewalReminderMessage(session: ProviderSessionState): string {
   return formatBilingualText(
     `这个 PrivateClaw 会话将在 30 分钟内过期（${session.invite.expiresAt}）。发送 ${command} 可将它延长 8 小时。`,
     `This PrivateClaw session will expire in less than 30 minutes (at ${session.invite.expiresAt}). Send ${command} to extend it by 8 hours.`,
+  );
+}
+
+function buildSessionQrMessage(session: ProviderSessionState): string {
+  if (session.groupMode) {
+    return formatBilingualText(
+      `当前 PrivateClaw 群聊二维码已附上。请在 ${session.invite.expiresAt} 之前当面分享给需要加入此会话的设备。`,
+      `The current PrivateClaw group-session QR is attached. Share it in person with devices that should join before ${session.invite.expiresAt}.`,
+    );
+  }
+
+  return formatBilingualText(
+    `当前 PrivateClaw 会话二维码已附上。请在 ${session.invite.expiresAt} 之前当面分享给需要连接的设备。`,
+    `The current PrivateClaw session QR is attached. Share it in person with devices that should connect before ${session.invite.expiresAt}.`,
+  );
+}
+
+function buildSessionQrFailureMessage(details: string): string {
+  return formatBilingualInline(
+    `生成当前会话二维码失败：${details}`,
+    `Failed to render the current session QR: ${details}`,
   );
 }
 
@@ -785,6 +809,12 @@ export class PrivateClawProvider {
         acceptsArgs: false,
         source: "privateclaw",
       },
+      {
+        slash: "/session-qr",
+        description: PRIVATECLAW_SESSION_QR_DESCRIPTION,
+        acceptsArgs: false,
+        source: "privateclaw",
+      },
     ];
 
     if (session.groupMode) {
@@ -1042,6 +1072,8 @@ export class PrivateClawProvider {
         const hasRenewCommandArgs =
           normalizedCommand.startsWith("/renew-session ") ||
           normalizedCommand.startsWith("/session_renew ");
+        const isSessionQrCommand = normalizedCommand === "/session-qr";
+        const hasSessionQrArgs = normalizedCommand.startsWith("/session-qr ");
         const isMuteBotCommand = normalizedCommand === "/mute-bot";
         const hasMuteBotArgs = normalizedCommand.startsWith("/mute-bot ");
         const isUnmuteBotCommand = normalizedCommand === "/unmute-bot";
@@ -1076,6 +1108,74 @@ export class PrivateClawProvider {
             buildCommandDoesNotAcceptArgumentsMessage("/renew-session"),
             "error",
             payload.clientMessageId,
+          );
+          return;
+        }
+
+        if (isSessionQrCommand) {
+          if ((payload.attachments?.length ?? 0) > 0) {
+            await this.sendSystemMessage(
+              sessionId,
+              buildCommandDoesNotAcceptAttachmentsMessage("/session-qr"),
+              "error",
+              payload.clientMessageId,
+              participant
+                ? {
+                    targetAppId: participant.appId,
+                    storeHistory: false,
+                  }
+                : undefined,
+            );
+            return;
+          }
+          if (session.groupMode && !participant) {
+            await this.sendSystemMessage(
+              sessionId,
+              buildMissingParticipantIdentityMessage(),
+              "error",
+              payload.clientMessageId,
+            );
+            return;
+          }
+          try {
+            const qrAttachment = await this.buildSessionQrAttachment(sessionId);
+            await this.sendAssistantMessage(sessionId, {
+              text: buildSessionQrMessage(session),
+              replyTo: payload.clientMessageId,
+              attachments: [qrAttachment],
+              ...(participant ? { targetAppId: participant.appId } : {}),
+              storeHistory: false,
+            });
+          } catch (error) {
+            await this.sendSystemMessage(
+              sessionId,
+              buildSessionQrFailureMessage(
+                error instanceof Error ? error.message : String(error),
+              ),
+              "error",
+              payload.clientMessageId,
+              participant
+                ? {
+                    targetAppId: participant.appId,
+                    storeHistory: false,
+                  }
+                : undefined,
+            );
+          }
+          return;
+        }
+        if (hasSessionQrArgs) {
+          await this.sendSystemMessage(
+            sessionId,
+            buildCommandDoesNotAcceptArgumentsMessage("/session-qr"),
+            "error",
+            payload.clientMessageId,
+            participant
+              ? {
+                  targetAppId: participant.appId,
+                  storeHistory: false,
+                }
+              : undefined,
           );
           return;
         }
@@ -1317,7 +1417,16 @@ export class PrivateClawProvider {
       state: "awaiting_hello",
     });
     this.scheduleRenewalReminder(sessionId);
+    return this.buildInviteBundleForInvite(invite);
+  }
 
+  decodeInvite(uri: string): PrivateClawInvite {
+    return decodeInviteString(uri);
+  }
+
+  private async buildInviteBundleForInvite(
+    invite: PrivateClawInvite,
+  ): Promise<PrivateClawInviteBundle> {
     const inviteUri = encodeInviteToUri(invite);
     const qrSvg = await QRCode.toString(inviteUri, {
       type: "svg",
@@ -1336,14 +1445,29 @@ export class PrivateClawProvider {
       qrSvg,
       qrTerminal,
       announcementText: buildInviteAnnouncementText({
-        sessionId,
-        expiresAt,
-        groupMode,
+        sessionId: invite.sessionId,
+        expiresAt: invite.expiresAt,
+        groupMode: invite.groupMode === true,
       }),
     };
   }
 
-  decodeInvite(uri: string): PrivateClawInvite {
-    return decodeInviteString(uri);
+  private async buildSessionQrAttachment(sessionId: string): Promise<PrivateClawAttachment> {
+    const session = this.requireSession(sessionId);
+    const bundle = await this.buildInviteBundleForInvite(session.invite);
+    const pngBuffer = await QRCode.toBuffer(bundle.inviteUri, {
+      type: "png",
+      errorCorrectionLevel: PRIVATECLAW_QR_ERROR_CORRECTION_LEVEL,
+      margin: PRIVATECLAW_QR_IMAGE_MARGIN,
+      width: PRIVATECLAW_QR_PNG_WIDTH,
+    });
+
+    return {
+      id: buildMessageId("attachment"),
+      name: `privateclaw-${bundle.invite.sessionId}.png`,
+      mimeType: "image/png",
+      sizeBytes: pngBuffer.length,
+      dataBase64: pngBuffer.toString("base64"),
+    };
   }
 }

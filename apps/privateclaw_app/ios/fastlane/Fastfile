@@ -79,7 +79,8 @@ platform :ios do
       skip_screenshots: false,
       metadata_path: "./fastlane/metadata",
       screenshots_path: "./fastlane/screenshots",
-      force: true
+      force: true,
+      precheck_include_in_app_purchases: false
     )
   end
 

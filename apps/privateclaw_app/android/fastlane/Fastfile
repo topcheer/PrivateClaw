@@ -58,7 +58,7 @@ platform :android do
       track_promote_release_status: privateclaw_play_release_status("draft"),
       skip_upload_apk: true,
       skip_upload_aab: true,
-      skip_upload_images: true,
+      skip_upload_images: false,
       skip_upload_screenshots: false,
       skip_upload_changelogs: true
     }
@@ -74,7 +74,7 @@ platform :android do
       aab: "../build/app/outputs/bundle/release/app-release.aab",
       track: "internal",
       release_status: privateclaw_play_release_status("completed"),
-      skip_upload_images: true,
+      skip_upload_images: false,
       skip_upload_screenshots: false,
       skip_upload_apk: true
     )
@@ -94,7 +94,7 @@ platform :android do
       aab: "../build/app/outputs/bundle/release/app-release.aab",
       track: "production",
       release_status: privateclaw_play_release_status("completed"),
-      skip_upload_images: true,
+      skip_upload_images: false,
       skip_upload_screenshots: false,
       skip_upload_apk: true
     )

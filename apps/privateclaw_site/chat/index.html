@@ -30,6 +30,7 @@
         </div>
 
         <div class="chat-header-actions">
+          <a class="ghost-button subtle-button" href="https://github.com/topcheer/PrivateClaw" target="_blank" rel="noreferrer" data-i18n="site.navGithub"></a>
           <span class="status-pill" id="status-pill"></span>
           <label class="locale-picker" for="chat-locale-select">
             <span class="sr-only" data-i18n="site.languageLabel"></span>
@@ -71,6 +72,16 @@
             <label class="field-label" for="invite-input" data-i18n="chat.inviteInputLabel"></label>
             <textarea id="invite-input" rows="4" spellcheck="false"></textarea>
             <p class="field-help" data-i18n="chat.inviteInputHelp"></p>
+            <div class="connect-aux-row">
+              <button id="scan-button" class="ghost-button" type="button">
+                <span data-i18n="chat.scanButton"></span>
+              </button>
+              <button id="scan-image-button" class="ghost-button" type="button">
+                <span data-i18n="chat.scanImageButton"></span>
+              </button>
+              <input id="invite-scan-input" type="file" accept="image/*" hidden />
+            </div>
+            <p class="field-help" id="scan-help" data-i18n="chat.scanHelp"></p>
             <button class="primary-button full-width" id="connect-button" type="submit">
               <span data-i18n="chat.connectButton"></span>
             </button>
@@ -144,6 +155,30 @@
           <button id="close-command-sheet" class="ghost-button subtle-button" type="button">Close</button>
         </div>
         <div class="command-list" id="command-list"></div>
+      </div>
+    </div>
+
+    <div class="sheet-overlay hidden" id="scanner-sheet" hidden>
+      <div class="sheet-card glass-panel scanner-sheet-card">
+        <div class="sheet-header">
+          <div>
+            <strong data-i18n="chat.scannerTitle"></strong>
+            <p class="field-help scanner-body" data-i18n="chat.scannerBody"></p>
+          </div>
+          <button id="close-scanner-sheet" class="ghost-button subtle-button" type="button">
+            <span data-i18n="chat.scannerCloseButton"></span>
+          </button>
+        </div>
+        <div class="scanner-preview-frame">
+          <video id="scanner-video" class="scanner-video" playsinline muted></video>
+          <div class="scanner-guides" aria-hidden="true"></div>
+        </div>
+        <p class="scanner-status" id="scanner-status" data-i18n="chat.scannerStatusStarting"></p>
+        <div class="scanner-actions">
+          <button id="scanner-upload-button" class="ghost-button full-width" type="button">
+            <span data-i18n="chat.scanImageButton"></span>
+          </button>
+        </div>
       </div>
     </div>
 

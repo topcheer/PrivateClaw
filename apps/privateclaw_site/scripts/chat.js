@@ -19,6 +19,9 @@ const elements = {
   statusCopy: document.getElementById("status-copy"),
   connectForm: document.getElementById("connect-form"),
   inviteInput: document.getElementById("invite-input"),
+  scanButton: document.getElementById("scan-button"),
+  scanImageButton: document.getElementById("scan-image-button"),
+  inviteScanInput: document.getElementById("invite-scan-input"),
   connectButton: document.getElementById("connect-button"),
   sessionMeta: document.getElementById("session-meta"),
   providerLabel: document.getElementById("provider-label"),
@@ -41,6 +44,11 @@ const elements = {
   commandSheet: document.getElementById("command-sheet"),
   closeCommandSheet: document.getElementById("close-command-sheet"),
   commandList: document.getElementById("command-list"),
+  scannerSheet: document.getElementById("scanner-sheet"),
+  closeScannerSheet: document.getElementById("close-scanner-sheet"),
+  scannerVideo: document.getElementById("scanner-video"),
+  scannerStatus: document.getElementById("scanner-status"),
+  scannerUploadButton: document.getElementById("scanner-upload-button"),
   toastStack: document.getElementById("toast-stack"),
 };
 
@@ -57,7 +65,15 @@ const state = {
   botMuted: false,
   identity: loadIdentity(),
   objectUrls: new Map(),
+  scanner: {
+    stream: null,
+    frameHandle: null,
+    active: false,
+    detecting: false,
+  },
 };
+
+let qrDetectorPromise = null;
 
 bindLocaleSelect(elements.localeSelect);
 
@@ -97,6 +113,207 @@ function loadIdentity() {
   const identity = createIdentity();
   saveIdentity(identity);
   return identity;
+}
+
+async function getQrDetector() {
+  if (qrDetectorPromise) {
+    return qrDetectorPromise;
+  }
+
+  qrDetectorPromise = (async () => {
+    const Detector = globalThis.BarcodeDetector;
+    if (typeof Detector !== "function") {
+      return null;
+    }
+
+    try {
+      if (typeof Detector.getSupportedFormats === "function") {
+        const supportedFormats = await Detector.getSupportedFormats();
+        if (Array.isArray(supportedFormats) && !supportedFormats.includes("qr_code")) {
+          return null;
+        }
+      }
+    } catch (error) {
+      console.warn("PrivateClaw could not query supported barcode formats.", error);
+    }
+
+    try {
+      return new Detector({ formats: ["qr_code"] });
+    } catch (error) {
+      console.warn("PrivateClaw could not initialize the QR detector.", error);
+      return null;
+    }
+  })();
+
+  return qrDetectorPromise;
+}
+
+function updateScannerStatus(message) {
+  elements.scannerStatus.textContent = message;
+}
+
+function openScannerSheet() {
+  elements.scannerSheet.classList.remove("hidden");
+  elements.scannerSheet.hidden = false;
+}
+
+async function stopScanner() {
+  state.scanner.active = false;
+  state.scanner.detecting = false;
+  if (state.scanner.frameHandle) {
+    cancelAnimationFrame(state.scanner.frameHandle);
+    state.scanner.frameHandle = null;
+  }
+  if (state.scanner.stream) {
+    for (const track of state.scanner.stream.getTracks()) {
+      track.stop();
+    }
+    state.scanner.stream = null;
+  }
+  elements.scannerVideo.pause();
+  elements.scannerVideo.srcObject = null;
+}
+
+async function closeScannerSheet() {
+  await stopScanner();
+  elements.scannerSheet.classList.add("hidden");
+  elements.scannerSheet.hidden = true;
+  updateScannerStatus(t("chat.scannerStatusStarting"));
+}
+
+function extractDetectedInvite(detections) {
+  if (!Array.isArray(detections)) {
+    return null;
+  }
+  for (const detection of detections) {
+    const rawValue = typeof detection?.rawValue === "string" ? detection.rawValue.trim() : "";
+    if (rawValue) {
+      return rawValue;
+    }
+  }
+  return null;
+}
+
+async function completeScannedInvite(rawValue) {
+  elements.inviteInput.value = rawValue;
+  updateScannerStatus(t("chat.scannerStatusFound"));
+  await closeScannerSheet();
+  await connectWithInvite(rawValue);
+}
+
+async function scanFromImageFile(file) {
+  const detector = await getQrDetector();
+  if (!detector) {
+    showToast(t("chat.scanUnsupported"), { error: true });
+    return;
+  }
+
+  try {
+    const bitmap = await createImageBitmap(file);
+    try {
+      const detections = await detector.detect(bitmap);
+      const rawValue = extractDetectedInvite(detections);
+      if (!rawValue) {
+        showToast(t("chat.scanNoCodeFound"), { error: true });
+        return;
+      }
+      await completeScannedInvite(rawValue);
+    } finally {
+      if (typeof bitmap.close === "function") {
+        bitmap.close();
+      }
+    }
+  } catch (error) {
+    console.warn("PrivateClaw could not read a QR image.", error);
+    showToast(t("chat.scanReadFailed"), { error: true });
+  }
+}
+
+async function scanVideoFrame(detector) {
+  if (!state.scanner.active) {
+    return;
+  }
+
+  if (state.scanner.detecting) {
+    state.scanner.frameHandle = requestAnimationFrame(() => {
+      void scanVideoFrame(detector);
+    });
+    return;
+  }
+
+  if (elements.scannerVideo.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+    state.scanner.frameHandle = requestAnimationFrame(() => {
+      void scanVideoFrame(detector);
+    });
+    return;
+  }
+
+  state.scanner.detecting = true;
+  try {
+    const detections = await detector.detect(elements.scannerVideo);
+    const rawValue = extractDetectedInvite(detections);
+    if (rawValue) {
+      await completeScannedInvite(rawValue);
+      return;
+    }
+  } catch (error) {
+    console.warn("PrivateClaw camera scan frame failed.", error);
+  } finally {
+    state.scanner.detecting = false;
+  }
+
+  if (state.scanner.active) {
+    state.scanner.frameHandle = requestAnimationFrame(() => {
+      void scanVideoFrame(detector);
+    });
+  }
+}
+
+async function startScanner() {
+  if (typeof globalThis.BarcodeDetector !== "function") {
+    showToast(t("chat.scanUnsupported"), { error: true });
+    return;
+  }
+
+  if (!navigator.mediaDevices?.getUserMedia) {
+    showToast(t("chat.scanCameraUnsupported"), { error: true });
+    return;
+  }
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { ideal: "environment" },
+      },
+      audio: false,
+    });
+    const detector = await getQrDetector();
+    if (!detector) {
+      for (const track of stream.getTracks()) {
+        track.stop();
+      }
+      showToast(t("chat.scanUnsupported"), { error: true });
+      return;
+    }
+    await stopScanner();
+    state.scanner.stream = stream;
+    openScannerSheet();
+    updateScannerStatus(t("chat.scannerStatusStarting"));
+    elements.scannerVideo.srcObject = stream;
+    await elements.scannerVideo.play();
+    state.scanner.active = true;
+    updateScannerStatus(t("chat.scannerStatusScanning"));
+    void scanVideoFrame(detector);
+  } catch (error) {
+    console.warn("PrivateClaw could not start camera scanning.", error);
+    await closeScannerSheet();
+    const errorName = error instanceof DOMException ? error.name : "";
+    const messageKey =
+      errorName === "NotAllowedError" || errorName === "SecurityError"
+        ? "chat.scanPermissionDenied"
+        : "chat.scanCameraUnsupported";
+    showToast(t(messageKey), { error: true });
+  }
 }
 
 function isMobileDevice() {
@@ -598,6 +815,11 @@ function renderPage() {
   elements.attachButton.setAttribute("aria-label", t("chat.attachButtonAria"));
   elements.commandButton.setAttribute("aria-label", t("chat.commandButtonAria"));
   elements.closeCommandSheet.textContent = t("chat.commandSheetClose");
+  if (state.scanner.active) {
+    updateScannerStatus(t("chat.scannerStatusScanning"));
+  } else if (elements.scannerSheet.hidden) {
+    updateScannerStatus(t("chat.scannerStatusStarting"));
+  }
   renderStatus();
   renderDesktopWarning();
   renderSessionMeta();
@@ -806,6 +1028,14 @@ async function handleFiles(files) {
   }
 }
 
+async function openScanImagePicker() {
+  if (typeof globalThis.BarcodeDetector !== "function") {
+    showToast(t("chat.scanUnsupported"), { error: true });
+    return;
+  }
+  elements.inviteScanInput.click();
+}
+
 elements.connectForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   await connectWithInvite(elements.inviteInput.value);
@@ -818,6 +1048,22 @@ elements.disconnectButton.addEventListener("click", async () => {
 elements.toggleInviteButton.addEventListener("click", () => {
   state.showInviteForm = !state.showInviteForm;
   renderPage();
+});
+
+elements.scanButton.addEventListener("click", async () => {
+  await startScanner();
+});
+
+elements.scanImageButton.addEventListener("click", () => {
+  void openScanImagePicker();
+});
+
+elements.inviteScanInput.addEventListener("change", async () => {
+  const [file] = elements.inviteScanInput.files || [];
+  if (file) {
+    await scanFromImageFile(file);
+  }
+  elements.inviteScanInput.value = "";
 });
 
 elements.attachButton.addEventListener("click", () => {
@@ -850,6 +1096,18 @@ elements.commandSheet.addEventListener("click", (event) => {
   }
 });
 
+elements.closeScannerSheet.addEventListener("click", async () => {
+  await closeScannerSheet();
+});
+elements.scannerSheet.addEventListener("click", async (event) => {
+  if (event.target === elements.scannerSheet) {
+    await closeScannerSheet();
+  }
+});
+elements.scannerUploadButton.addEventListener("click", () => {
+  void openScanImagePicker();
+});
+
 elements.composerForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   await handleSend();
@@ -864,7 +1122,10 @@ elements.composerInput.addEventListener("keydown", async (event) => {
 });
 
 window.addEventListener("resize", renderPage);
-window.addEventListener("beforeunload", clearObjectUrls);
+window.addEventListener("beforeunload", () => {
+  clearObjectUrls();
+  void stopScanner();
+});
 onLocaleChange(renderPage);
 
 setStatus("idle");

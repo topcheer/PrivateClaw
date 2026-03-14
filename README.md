@@ -236,6 +236,7 @@ This repository now includes Railway-ready root configs for both relay flavors:
 - `railway.redis.toml` + `Dockerfile.multiarch.redis`: relay container that boots Redis inside the same container
 
 The relay answers both `/healthz` and `/api/health`, and it honors Railway's injected `PORT` automatically when `PRIVATECLAW_RELAY_PORT` is not set.
+The Railway images intentionally do not bake `PRIVATECLAW_RELAY_PORT` into the container, so the runtime can bind the platform-provided `PORT` correctly.
 
 Standalone Railway deploy:
 

@@ -217,6 +217,7 @@ PRIVATECLAW_REDIS_URL=redis://redis:6379 docker compose --profile redis up --bui
 - `railway.redis.toml` + `Dockerfile.multiarch.redis`：同容器内自启 Redis 的 relay 容器
 
 Relay 现在同时响应 `/healthz` 和 `/api/health`，并且在未设置 `PRIVATECLAW_RELAY_PORT` 时会自动读取 Railway 注入的 `PORT`。
+Railway 镜像里不会再把 `PRIVATECLAW_RELAY_PORT` 写死到容器环境中，这样运行时才能正确监听 Railway 分配的 `PORT`。
 
 独立容器部署：
 

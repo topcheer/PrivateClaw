@@ -21,7 +21,6 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 ENV PRIVATECLAW_RELAY_HOST=0.0.0.0
-ENV PRIVATECLAW_RELAY_PORT=8787
 
 COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/package-lock.json ./package-lock.json

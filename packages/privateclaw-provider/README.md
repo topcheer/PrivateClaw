@@ -138,7 +138,7 @@ Once the plugin is installed and enabled, OpenClaw exposes a plugin CLI command:
 openclaw privateclaw pair
 ```
 
-This starts a local PrivateClaw session and renders the pairing QR code directly in the terminal, without requiring another chat app to trigger `/privateclaw`.
+This starts a local PrivateClaw session and renders the pairing QR code directly in the terminal, without requiring another chat app to trigger `/privateclaw`. It also saves a PNG copy into the OpenClaw media directory, prints that local path, and supports `--open` when you want a browser preview page for the QR.
 Fresh sessions created by the provider default to an 8-hour lifetime unless you override `sessionTtlMs`, and the provider emits a reminder once less than 30 minutes remain so any participant can run `/renew-session`.
 
 For a multi-app group session, use:

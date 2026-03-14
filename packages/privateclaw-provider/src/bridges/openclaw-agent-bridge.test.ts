@@ -7,6 +7,7 @@ import { zipSync } from "fflate";
 import {
   OpenClawAgentBridge,
   parseOpenClawAgentOutput,
+  resolveOpenClawLaunchCommand,
 } from "./openclaw-agent-bridge.js";
 
 test("parseOpenClawAgentOutput returns a string for a single payload", () => {
@@ -107,6 +108,51 @@ test("OpenClawAgentBridge invokes openclaw agent with session-aware arguments", 
     "30",
   ]);
   assert.equal(result, "bridge-ok");
+});
+
+test("resolveOpenClawLaunchCommand reuses the current OpenClaw CLI script on Windows", () => {
+  const command = resolveOpenClawLaunchCommand({
+    platform: "win32",
+    nodeExecutable: "C:\\Program Files\\nodejs\\node.exe",
+    processArgv: [
+      "C:\\Program Files\\nodejs\\node.exe",
+      "C:\\Users\\tester\\AppData\\Roaming\\npm\\node_modules\\openclaw\\dist\\cli.js",
+    ],
+  });
+
+  assert.equal(command.file, "C:\\Program Files\\nodejs\\node.exe");
+  assert.deepEqual(command.args, [
+    "C:\\Users\\tester\\AppData\\Roaming\\npm\\node_modules\\openclaw\\dist\\cli.js",
+  ]);
+  assert.equal(command.shell, false);
+});
+
+test("OpenClawAgentBridge reports a helpful error when the OpenClaw CLI is missing", async () => {
+  const bridge = new OpenClawAgentBridge({
+    executable: "missing-openclaw",
+    execFileImpl: (_file, _args, _options, callback) => {
+      const error = Object.assign(new Error("spawn missing-openclaw ENOENT"), {
+        code: "ENOENT",
+      });
+      callback(error, "", "");
+    },
+  });
+
+  await assert.rejects(
+    bridge.handleUserMessage({
+      sessionId: "privateclaw-session",
+      message: "hello",
+      history: [],
+      invite: {
+        version: 1,
+        sessionId: "privateclaw-session",
+        sessionKey: "test",
+        appWsUrl: "ws://127.0.0.1/app?sessionId=privateclaw-session",
+        expiresAt: new Date().toISOString(),
+      },
+    }),
+    /Set openclawAgentExecutable or PRIVATECLAW_OPENCLAW_AGENT_BIN/u,
+  );
 });
 
 test("OpenClawAgentBridge converts side-effect-only slash commands into a friendly note", async () => {

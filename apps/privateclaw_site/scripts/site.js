@@ -7,6 +7,7 @@ const heroStats = document.getElementById("hero-stats");
 const previewChat = document.getElementById("preview-chat");
 const featureGrid = document.getElementById("feature-grid");
 const scenarioGrid = document.getElementById("scenario-grid");
+const setupGrid = document.getElementById("setup-grid");
 
 bindLocaleSelect(localeSelect);
 
@@ -84,6 +85,56 @@ function renderCards(target, items, cardClass) {
   }
 }
 
+function renderSetupSteps() {
+  setupGrid.replaceChildren();
+  const steps = getValue("site.setupSteps");
+  if (!Array.isArray(steps)) {
+    return;
+  }
+
+  for (const item of steps) {
+    const card = document.createElement("article");
+    card.className = "setup-card";
+
+    const stepLabel = document.createElement("div");
+    stepLabel.className = "setup-step-label";
+    stepLabel.textContent = item.step;
+
+    const title = document.createElement("h3");
+    title.textContent = item.title;
+
+    const body = document.createElement("p");
+    body.textContent = item.body;
+
+    card.append(stepLabel, title, body);
+
+    if (Array.isArray(item.commands) && item.commands.length > 0) {
+      const commands = document.createElement("div");
+      commands.className = "setup-command-list";
+      for (const command of item.commands) {
+        const pre = document.createElement("pre");
+        pre.className = "setup-command";
+
+        const code = document.createElement("code");
+        code.textContent = command;
+
+        pre.append(code);
+        commands.append(pre);
+      }
+      card.append(commands);
+    }
+
+    if (item.note) {
+      const note = document.createElement("p");
+      note.className = "setup-note";
+      note.textContent = item.note;
+      card.append(note);
+    }
+
+    setupGrid.append(card);
+  }
+}
+
 function renderMobileEntry() {
   const mobile = isMobileDevice();
   mobileWebEntry.hidden = !mobile;
@@ -99,6 +150,7 @@ function renderPage() {
   renderPreview();
   renderCards(featureGrid, getValue("site.features"), "feature-card");
   renderCards(scenarioGrid, getValue("site.scenarios"), "scenario-card");
+  renderSetupSteps();
 }
 
 window.addEventListener("resize", renderMobileEntry);

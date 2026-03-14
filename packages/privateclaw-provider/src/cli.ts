@@ -62,6 +62,7 @@ const ttlMs = parsePositiveInteger(
   process.env.PRIVATECLAW_SESSION_TTL_MS,
   DEFAULT_SESSION_TTL_MS,
 );
+const openQr = parseBooleanFlag(process.env.PRIVATECLAW_OPEN_QR);
 const providerLabel = process.env.PRIVATECLAW_PROVIDER_LABEL?.trim() || "PrivateClaw";
 const welcomeMessage = process.env.PRIVATECLAW_WELCOME_MESSAGE?.trim();
 
@@ -101,6 +102,7 @@ const provider = new PrivateClawProvider({
 await runPairSession({
   provider,
   ttlMs,
+  ...(openQr ? { openInBrowser: true } : {}),
   writeLine: (line) => {
     console.log(line);
   },

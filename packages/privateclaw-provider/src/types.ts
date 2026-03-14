@@ -57,6 +57,7 @@ export interface PrivateClawInviteBundle {
   qrSvg: string;
   qrTerminal: string;
   announcementText: string;
+  qrPngPath?: string;
 }
 
 export interface ProviderSessionState {

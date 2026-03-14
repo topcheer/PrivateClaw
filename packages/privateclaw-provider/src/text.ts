@@ -68,9 +68,19 @@ export const PRIVATECLAW_CLI_PRINT_ONLY_OPTION_DESCRIPTION =
     "Print the invite and QR code, then exit immediately.",
   );
 
+export const PRIVATECLAW_CLI_OPEN_OPTION_DESCRIPTION = formatBilingualInline(
+  "生成二维码后在浏览器中打开本地预览页。",
+  "Open a local browser preview after generating the QR code.",
+);
+
 export const PRIVATECLAW_INVITE_URI_LABEL = formatBilingualInline(
   "邀请链接",
   "Invite URI",
+);
+
+export const PRIVATECLAW_QR_PNG_PATH_LABEL = formatBilingualInline(
+  "二维码 PNG 路径",
+  "QR PNG path",
 );
 
 export const PRIVATECLAW_WAITING_FOR_APP_MESSAGE = formatBilingualInline(

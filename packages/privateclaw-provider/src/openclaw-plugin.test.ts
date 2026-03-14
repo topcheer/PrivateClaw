@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import { decodeInviteString } from "@privateclaw/protocol";
 import { createRelayServer } from "../../../services/relay-server/src/relay-server.js";
 import { EchoBridge } from "./bridges/echo-bridge.js";
@@ -167,10 +168,12 @@ test("privateclaw command writes QR media into the OpenClaw state media director
     "new sessions should default to roughly 8 hours even when relay default TTL is shorter",
   );
   const expectedMediaDir = path.join(stateDir, "media", "privateclaw");
-  assert.equal(path.dirname(reply.mediaUrl), expectedMediaDir);
-  assert.equal(path.basename(reply.mediaUrl), `privateclaw-${invite.sessionId}.png`);
+  const mediaPath =
+    process.platform === "win32" ? fileURLToPath(reply.mediaUrl) : reply.mediaUrl;
+  assert.equal(path.dirname(mediaPath), expectedMediaDir);
+  assert.equal(path.basename(mediaPath), `privateclaw-${invite.sessionId}.png`);
 
-  const qrPng = await readFile(reply.mediaUrl);
+  const qrPng = await readFile(mediaPath);
   assert.deepEqual(qrPng.subarray(0, PNG_SIGNATURE.length), PNG_SIGNATURE);
 });
 
@@ -211,6 +214,18 @@ test("privateclaw plugin local pair CLI defaults to the long session TTL", async
   const pair = privateclaw.children.get("pair");
   assert.ok(pair?.actionHandler, "plugin should register the privateclaw pair subcommand");
 
+  const stateDir = await mkdtemp(path.join(os.tmpdir(), "privateclaw-cli-state-"));
+  const previousStateDir = process.env.OPENCLAW_STATE_DIR;
+  process.env.OPENCLAW_STATE_DIR = stateDir;
+  t.after(async () => {
+    if (previousStateDir == null) {
+      delete process.env.OPENCLAW_STATE_DIR;
+    } else {
+      process.env.OPENCLAW_STATE_DIR = previousStateDir;
+    }
+    await rm(stateDir, { recursive: true, force: true });
+  });
+
   const printed: string[] = [];
   const originalLog = console.log;
   console.log = (message?: unknown, ...optionalParams: unknown[]) => {
@@ -242,6 +257,10 @@ test("privateclaw plugin local pair CLI defaults to the long session TTL", async
     line.startsWith("邀请链接 / Invite URI: privateclaw://connect?payload="),
   );
   assert.ok(inviteUri, "pair command should print a PrivateClaw invite URI");
+  const qrPathLine = printed.find((line) =>
+    line.startsWith("二维码 PNG 路径 / QR PNG path: "),
+  );
+  assert.ok(qrPathLine, "pair command should print the saved QR PNG path");
   const invite = decodeInviteString(
     inviteUri.replace("邀请链接 / Invite URI: ", ""),
   );
@@ -250,4 +269,7 @@ test("privateclaw plugin local pair CLI defaults to the long session TTL", async
     remainingMs > DEFAULT_SESSION_TTL_MS - 60_000,
     "local pair sessions should default to roughly 8 hours even when relay default TTL is shorter",
   );
+  const qrPath = qrPathLine.replace("二维码 PNG 路径 / QR PNG path: ", "");
+  const qrPng = await readFile(qrPath);
+  assert.deepEqual(qrPng.subarray(0, PNG_SIGNATURE.length), PNG_SIGNATURE);
 });

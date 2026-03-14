@@ -1,5 +1,5 @@
 import type { PrivateClawAttachment } from "@privateclaw/protocol";
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -12,6 +12,8 @@ type OpenClawThinkingLevel = "off" | "minimal" | "low" | "medium" | "high";
 
 interface OpenClawAgentBridgeExecOptions {
   maxBuffer: number;
+  shell?: boolean;
+  windowsHide?: boolean;
 }
 
 type OpenClawAgentExecFile = (
@@ -91,6 +93,12 @@ export interface OpenClawAgentBridgeOptions {
   execFileImpl?: OpenClawAgentExecFile;
 }
 
+interface OpenClawLaunchCommand {
+  readonly file: string;
+  readonly args: string[];
+  readonly shell: boolean;
+}
+
 const DEFAULT_MAX_BUFFER = 10 * 1024 * 1024;
 const DEFAULT_STATE_DIR = process.env.OPENCLAW_STATE_DIR ?? path.join(os.homedir(), ".openclaw");
 const DEFAULT_WORKSPACE_DIR = path.join(DEFAULT_STATE_DIR, "workspace");
@@ -115,6 +123,39 @@ const TEXT_LIKE_MIME_TYPES = new Set<string>([
 export function parseOpenClawAgentOutput(stdout: string): BridgeResponse {
   const parsed = parseOpenClawAgentJson(stdout);
   return parseOpenClawAgentResult(parsed);
+}
+
+export function resolveOpenClawLaunchCommand(options: {
+  executable?: string;
+  platform?: NodeJS.Platform;
+  nodeExecutable?: string;
+  processArgv?: string[];
+} = {}): OpenClawLaunchCommand {
+  const platform = options.platform ?? process.platform;
+  const executable = options.executable?.trim();
+  if (executable) {
+    return {
+      file: executable,
+      args: [],
+      shell: shouldUseShellForExecutable(executable, platform),
+    };
+  }
+
+  const processArgv = options.processArgv ?? process.argv;
+  const currentCliScript = processArgv[1];
+  if (looksLikeOpenClawCliScript(currentCliScript)) {
+    return {
+      file: options.nodeExecutable ?? process.execPath,
+      args: [currentCliScript],
+      shell: false,
+    };
+  }
+
+  return {
+    file: "openclaw",
+    args: [],
+    shell: platform === "win32",
+  };
 }
 
 function parseOpenClawAgentJson(stdout: string): OpenClawAgentJsonResult {
@@ -152,13 +193,20 @@ function extractDisplayMessages(parsed: OpenClawAgentJsonResult): NormalizedBrid
 
 export class OpenClawAgentBridge implements PrivateClawAgentBridge {
   private readonly executable: string;
+  private readonly executableArgs: string[];
+  private readonly executableUsesShell: boolean;
   private readonly execFileImpl: OpenClawAgentExecFile;
   private readonly stateDir: string;
   private readonly workspaceDir: string;
 
   constructor(private readonly options: OpenClawAgentBridgeOptions = {}) {
-    this.executable = options.executable ?? "openclaw";
-    this.execFileImpl = options.execFileImpl ?? execFile;
+    const launchCommand = resolveOpenClawLaunchCommand({
+      ...(options.executable ? { executable: options.executable } : {}),
+    });
+    this.executable = launchCommand.file;
+    this.executableArgs = launchCommand.args;
+    this.executableUsesShell = launchCommand.shell;
+    this.execFileImpl = options.execFileImpl ?? defaultExecFileImpl;
     this.stateDir = options.stateDir ?? DEFAULT_STATE_DIR;
     this.workspaceDir = options.workspaceDir ?? path.join(this.stateDir, "workspace");
   }
@@ -406,10 +454,22 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
     return new Promise((resolve, reject) => {
       this.execFileImpl(
         this.executable,
-        args,
-        { maxBuffer: DEFAULT_MAX_BUFFER },
+        [...this.executableArgs, ...args],
+        {
+          maxBuffer: DEFAULT_MAX_BUFFER,
+          ...(this.executableUsesShell ? { shell: true } : {}),
+          ...(process.platform === "win32" ? { windowsHide: true } : {}),
+        },
         (error, stdout, stderr) => {
           if (error) {
+            if (isNodeError(error) && error.code === "ENOENT") {
+              reject(
+                new Error(
+                  `Failed to run OpenClaw agent bridge: OpenClaw CLI was not found (${this.executable}). Set openclawAgentExecutable or PRIVATECLAW_OPENCLAW_AGENT_BIN if OpenClaw is not on PATH.`,
+                ),
+              );
+              return;
+            }
             const suffix = stderr.trim() !== "" ? ` ${stderr.trim()}` : "";
             reject(new Error(`Failed to run OpenClaw agent bridge:${suffix || ` ${error.message}`}`));
             return;
@@ -420,6 +480,96 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
       );
     });
   }
+}
+
+function defaultExecFileImpl(
+  file: string,
+  args: string[],
+  options: OpenClawAgentBridgeExecOptions,
+  callback: (error: Error | null, stdout: string, stderr: string) => void,
+): void {
+  let finished = false;
+  let stdout = "";
+  let stderr = "";
+  let bufferedBytes = 0;
+
+  const finish = (error: Error | null) => {
+    if (finished) {
+      return;
+    }
+    finished = true;
+    callback(error, stdout, stderr);
+  };
+
+  const child = spawn(file, args, {
+    shell: options.shell,
+    ...(typeof options.windowsHide === "boolean" ? { windowsHide: options.windowsHide } : {}),
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  const append = (chunk: Buffer | string, target: "stdout" | "stderr") => {
+    const text = typeof chunk === "string" ? chunk : chunk.toString("utf8");
+    bufferedBytes += Buffer.byteLength(text);
+    if (bufferedBytes > options.maxBuffer) {
+      child.kill();
+      finish(new Error(`OpenClaw agent bridge output exceeded ${options.maxBuffer} bytes.`));
+      return;
+    }
+    if (target === "stdout") {
+      stdout += text;
+      return;
+    }
+    stderr += text;
+  };
+
+  child.stdout?.on("data", (chunk) => {
+    append(chunk, "stdout");
+  });
+  child.stderr?.on("data", (chunk) => {
+    append(chunk, "stderr");
+  });
+  child.once("error", (error) => {
+    finish(error instanceof Error ? error : new Error(String(error)));
+  });
+  child.once("close", (code, signal) => {
+    if (finished) {
+      return;
+    }
+    if (code === 0) {
+      finish(null);
+      return;
+    }
+    finish(
+      new Error(
+        signal
+          ? `OpenClaw agent bridge exited via ${signal}.`
+          : `OpenClaw agent bridge exited with code ${code ?? "unknown"}.`,
+      ),
+    );
+  });
+}
+
+function looksLikeOpenClawCliScript(value: string | undefined): value is string {
+  if (!value) {
+    return false;
+  }
+  const normalized = value.replace(/\\/gu, "/").toLowerCase();
+  return (
+    normalized.includes("/node_modules/openclaw/") ||
+    normalized.endsWith("/openclaw") ||
+    normalized.endsWith("/openclaw.js") ||
+    normalized.endsWith("/openclaw.cjs")
+  );
+}
+
+function shouldUseShellForExecutable(
+  executable: string,
+  platform: NodeJS.Platform,
+): boolean {
+  if (platform !== "win32") {
+    return false;
+  }
+  return !/\.(?:exe|com)$/iu.test(path.basename(executable));
 }
 
 function buildNoDisplayPayloadNotice(

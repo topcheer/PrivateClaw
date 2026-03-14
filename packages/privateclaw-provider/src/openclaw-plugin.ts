@@ -1,19 +1,14 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
-import QRCode from "qrcode";
 import { EchoBridge } from "./bridges/echo-bridge.js";
 import {
   OpenClawAgentBridge,
   type OpenClawAgentBridgeOptions,
 } from "./bridges/openclaw-agent-bridge.js";
+import {
+  resolvePrivateClawMediaDir,
+  writeInviteQrPng,
+} from "./invite-qr-files.js";
 import { loadAvailableOpenClawCommands } from "./openclaw-command-discovery.js";
 import { parsePositiveIntegerFlag, runPairSession } from "./pair-session.js";
-import {
-  PRIVATECLAW_QR_ERROR_CORRECTION_LEVEL,
-  PRIVATECLAW_QR_IMAGE_MARGIN,
-  PRIVATECLAW_QR_PNG_WIDTH,
-} from "./qr-options.js";
 import { WebhookBridge } from "./bridges/webhook-bridge.js";
 import {
   type OpenClawExtensionPluginCompat,
@@ -29,6 +24,7 @@ import {
   buildPrivateClawCommandErrorMessage,
   PRIVATECLAW_CLI_GROUP_OPTION_DESCRIPTION,
   PRIVATECLAW_CLI_LABEL_OPTION_DESCRIPTION,
+  PRIVATECLAW_CLI_OPEN_OPTION_DESCRIPTION,
   PRIVATECLAW_CLI_PAIR_DESCRIPTION,
   PRIVATECLAW_CLI_PRINT_ONLY_OPTION_DESCRIPTION,
   PRIVATECLAW_CLI_ROOT_DESCRIPTION,
@@ -91,6 +87,7 @@ interface PrivateClawPairCliOptions {
   label?: string;
   printOnly?: boolean;
   group?: boolean;
+  open?: boolean;
 }
 
 const DEFAULT_PROVIDER_LABEL = "PrivateClaw";
@@ -298,6 +295,7 @@ function normalizePairCliOptions(raw: unknown): PrivateClawPairCliOptions {
     ...(label ? { label } : {}),
     ...(typeof options.printOnly === "boolean" ? { printOnly: options.printOnly } : {}),
     ...(typeof options.group === "boolean" ? { group: options.group } : {}),
+    ...(typeof options.open === "boolean" ? { open: options.open } : {}),
   };
 }
 
@@ -359,11 +357,7 @@ class PrivateClawPluginRuntime {
   }
 
   private getMediaDir(): string {
-    return path.join(
-      this.stateDir ?? process.env.OPENCLAW_STATE_DIR ?? path.join(os.homedir(), ".openclaw"),
-      "media",
-      "privateclaw",
-    );
+    return resolvePrivateClawMediaDir(this.stateDir);
   }
 
   private getProvider(): PrivateClawProvider {
@@ -394,10 +388,10 @@ class PrivateClawPluginRuntime {
 
   async buildCommandReply(bundle: PrivateClawInviteBundle): Promise<ReplyPayloadCompat> {
     const text = `${bundle.announcementText}\n\n${PRIVATECLAW_INVITE_URI_LABEL}:\n${bundle.inviteUri}`;
-    const qrPngPath = await writeInviteQrPng(bundle, this.getMediaDir());
+    const qrPng = await writeInviteQrPng(bundle, this.getMediaDir());
     return {
       text,
-      mediaUrl: qrPngPath,
+      mediaUrl: process.platform === "win32" ? qrPng.pngFileUrl : qrPng.pngPath,
     };
   }
 
@@ -406,6 +400,7 @@ class PrivateClawPluginRuntime {
     label?: string;
     printOnly?: boolean;
     groupMode?: boolean;
+    openInBrowser?: boolean;
     writeLine?: (line: string) => void;
   }): Promise<PrivateClawInviteBundle> {
     return runPairSession({
@@ -416,6 +411,10 @@ class PrivateClawPluginRuntime {
       ...(params?.label ? { label: params.label } : {}),
       ...(typeof params?.printOnly === "boolean" ? { printOnly: params.printOnly } : {}),
       ...(params?.groupMode === true ? { groupMode: true } : {}),
+      ...(typeof params?.openInBrowser === "boolean"
+        ? { openInBrowser: params.openInBrowser }
+        : {}),
+      qrMediaDir: this.getMediaDir(),
       ...(params?.writeLine ? { writeLine: params.writeLine } : {}),
     });
   }
@@ -428,22 +427,6 @@ class PrivateClawPluginRuntime {
     await this.provider.dispose();
     this.provider = undefined;
   }
-}
-
-async function writeInviteQrPng(
-  bundle: PrivateClawInviteBundle,
-  mediaDir: string,
-): Promise<string> {
-  const pngBuffer = await QRCode.toBuffer(bundle.inviteUri, {
-    type: "png",
-    errorCorrectionLevel: PRIVATECLAW_QR_ERROR_CORRECTION_LEVEL,
-    margin: PRIVATECLAW_QR_IMAGE_MARGIN,
-    width: PRIVATECLAW_QR_PNG_WIDTH,
-  });
-  await mkdir(mediaDir, { recursive: true });
-  const qrPath = path.join(mediaDir, `privateclaw-${bundle.invite.sessionId}.png`);
-  await writeFile(qrPath, pngBuffer);
-  return qrPath;
 }
 
 function formatCommandError(error: unknown): string {
@@ -517,6 +500,7 @@ function createPluginDefinition(
             .option("--label <label>", PRIVATECLAW_CLI_LABEL_OPTION_DESCRIPTION)
             .option("--group", PRIVATECLAW_CLI_GROUP_OPTION_DESCRIPTION)
             .option("--print-only", PRIVATECLAW_CLI_PRINT_ONLY_OPTION_DESCRIPTION)
+            .option("--open", PRIVATECLAW_CLI_OPEN_OPTION_DESCRIPTION)
             .action(async (rawOptions: unknown) => {
               const options = normalizePairCliOptions(rawOptions);
               const ttlMs = parsePositiveIntegerFlag(options.ttlMs, "--ttl-ms");
@@ -527,6 +511,9 @@ function createPluginDefinition(
                 ...(options.group ? { groupMode: true } : {}),
                 ...(typeof options.printOnly === "boolean"
                   ? { printOnly: options.printOnly }
+                  : {}),
+                ...(typeof options.open === "boolean"
+                  ? { openInBrowser: options.open }
                   : {}),
                 writeLine: (line) => {
                   console.log(line);

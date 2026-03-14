@@ -1,6 +1,6 @@
 {
   "name": "@privateclaw/privateclaw",
-  "version": "0.1.2",
+  "version": "0.1.4",
   "description": "PrivateClaw provider runtime and OpenClaw-compatible plugin adapter",
   "type": "module",
   "main": "./dist/index.js",
@@ -40,7 +40,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.json",
     "demo": "tsx src/cli.ts",
     "prepack": "npm run build",
     "test": "node --import tsx --test src/*.test.ts src/**/*.test.ts"

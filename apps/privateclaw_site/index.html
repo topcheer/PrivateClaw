@@ -28,8 +28,33 @@
         </a>
 
         <nav class="topbar-actions">
-          <a class="ghost-button" href="https://github.com/topcheer/PrivateClaw" target="_blank" rel="noreferrer" data-i18n="site.navGithub"></a>
-          <a class="ghost-button" href="https://groups.google.com/g/gg-studio-ai-products" target="_blank" rel="noreferrer" data-i18n="site.navBetaGroup"></a>
+          <a class="ghost-button icon-link" href="https://github.com/topcheer/PrivateClaw" target="_blank" rel="noreferrer">
+            <svg aria-hidden="true" viewBox="0 0 24 24" class="icon-link-svg">
+              <path
+                fill="currentColor"
+                d="M12 .5C5.65.5.5 5.66.5 12.03c0 5.1 3.3 9.42 7.87 10.95.58.11.79-.25.79-.56 0-.28-.01-1.19-.02-2.16-3.2.7-3.88-1.37-3.88-1.37-.52-1.34-1.28-1.69-1.28-1.69-1.05-.72.08-.71.08-.71 1.16.08 1.78 1.2 1.78 1.2 1.03 1.77 2.71 1.26 3.37.97.1-.75.4-1.26.72-1.55-2.55-.29-5.22-1.28-5.22-5.67 0-1.25.45-2.28 1.18-3.08-.12-.29-.51-1.47.11-3.06 0 0 .97-.31 3.17 1.18a10.9 10.9 0 0 1 5.78 0c2.2-1.49 3.16-1.18 3.16-1.18.63 1.59.24 2.77.12 3.06.74.8 1.18 1.83 1.18 3.08 0 4.4-2.67 5.37-5.24 5.66.41.36.78 1.08.78 2.18 0 1.57-.01 2.83-.01 3.22 0 .31.21.68.8.56A11.55 11.55 0 0 0 23.5 12.03C23.5 5.66 18.35.5 12 .5Z"
+              />
+            </svg>
+            <span class="sr-only" data-i18n="site.navGithub"></span>
+          </a>
+          <a class="ghost-button icon-link google-icon-link" href="https://groups.google.com/g/gg-studio-ai-products" target="_blank" rel="noreferrer">
+            <svg aria-hidden="true" viewBox="0 0 24 24" class="icon-link-svg">
+              <path fill="#4285F4" d="M23.49 12.27c0-.79-.07-1.55-.2-2.27H12v4.3h6.45a5.52 5.52 0 0 1-2.39 3.63v3.02h3.87c2.27-2.09 3.56-5.18 3.56-8.68Z" />
+              <path fill="#34A853" d="M12 24c3.24 0 5.95-1.07 7.94-2.91l-3.87-3.02c-1.07.72-2.45 1.14-4.07 1.14-3.13 0-5.79-2.11-6.74-4.95H1.26v3.12A12 12 0 0 0 12 24Z" />
+              <path fill="#FBBC05" d="M5.26 14.26A7.2 7.2 0 0 1 4.88 12c0-.79.14-1.56.38-2.26V6.62H1.26A12 12 0 0 0 0 12c0 1.94.46 3.77 1.26 5.38l4-3.12Z" />
+              <path fill="#EA4335" d="M12 4.77c1.76 0 3.33.61 4.57 1.8l3.43-3.43C17.94 1.18 15.24 0 12 0A12 12 0 0 0 1.26 6.62l4 3.12c.95-2.84 3.61-4.97 6.74-4.97Z" />
+            </svg>
+            <span class="sr-only" data-i18n="site.navBetaGroup"></span>
+          </a>
+          <a class="ghost-button icon-link" href="https://t.me/+W3RUKxEO9kIxMmZl" target="_blank" rel="noreferrer">
+            <svg aria-hidden="true" viewBox="0 0 24 24" class="icon-link-svg">
+              <path
+                fill="#229ED9"
+                d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0Zm5.894 8.163-1.969 9.287c-.149.659-.538.822-1.09.512l-3.014-2.221-1.454 1.4c-.161.161-.296.296-.605.296l.216-3.076 5.598-5.056c.243-.216-.054-.338-.378-.122L8.283 13.54l-2.978-.929c-.647-.204-.659-.647.135-.957l11.64-4.487c.54-.203 1.012.122.814.996Z"
+              />
+            </svg>
+            <span class="sr-only" data-i18n="site.navTelegramGroup"></span>
+          </a>
           <label class="locale-picker" for="locale-select">
             <span class="sr-only" data-i18n="site.languageLabel"></span>
             <select id="locale-select" aria-label="Language"></select>
@@ -105,6 +130,15 @@
           <div class="scenario-grid" id="scenario-grid"></div>
         </section>
 
+        <section class="section-block setup-section">
+          <div class="section-heading">
+            <span class="section-kicker" data-i18n="site.setupKicker"></span>
+            <h2 data-i18n="site.setupTitle"></h2>
+            <p data-i18n="site.setupBody"></p>
+          </div>
+          <div class="setup-grid" id="setup-grid"></div>
+        </section>
+
         <section class="section-block community-section">
           <div class="community-card glass-panel">
             <div>
@@ -114,6 +148,7 @@
             </div>
             <div class="community-actions">
               <a class="primary-button" href="https://groups.google.com/g/gg-studio-ai-products" target="_blank" rel="noreferrer" data-i18n="site.betaPrimaryCta"></a>
+              <a class="ghost-button" href="https://t.me/+W3RUKxEO9kIxMmZl" target="_blank" rel="noreferrer" data-i18n="site.betaTelegramCta"></a>
               <span class="community-footnote" data-i18n="site.betaFootnote"></span>
             </div>
           </div>
@@ -121,13 +156,19 @@
       </main>
 
       <footer class="footer-bar glass-panel">
-        <div>
+        <div class="footer-copy">
           <strong>PrivateClaw</strong>
           <p data-i18n="site.footerLine"></p>
+          <p class="footer-note" data-i18n="site.footerDisclaimer"></p>
+          <div class="footer-links">
+            <a href="./privacy/" data-i18n="site.footerPrivacy"></a>
+            <a href="./terms/" data-i18n="site.footerTerms"></a>
+          </div>
         </div>
-        <div class="footer-meta">
+        <div class="footer-meta footer-legal">
           <span>privateclaw.us</span>
           <span data-i18n="site.footerSupport"></span>
+          <span data-i18n="site.footerCopyright"></span>
         </div>
       </footer>
     </div>

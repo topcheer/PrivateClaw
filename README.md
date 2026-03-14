@@ -155,7 +155,7 @@ If you want to start a session without another chat app, use the plugin-provided
 openclaw privateclaw pair
 ```
 
-This command creates a session immediately and renders the pairing QR code in your terminal. It keeps the provider session alive until you stop it with `Ctrl+C`. New sessions created this way stay valid for 8 hours by default unless you explicitly override the TTL.
+This command creates a session immediately and renders the pairing QR code in your terminal. It also saves a PNG copy under the OpenClaw media directory and prints that local path, which helps on terminals that do not render QR blocks cleanly. Add `--open` if you want PrivateClaw to launch a browser preview page for the QR automatically. It keeps the provider session alive until you stop it with `Ctrl+C`. New sessions created this way stay valid for 8 hours by default unless you explicitly override the TTL.
 
 To start the same flow in group mode:
 

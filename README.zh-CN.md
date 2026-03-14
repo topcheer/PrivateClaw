@@ -134,7 +134,7 @@ openclaw channels add --channel telegram --token <token>
 openclaw privateclaw pair
 ```
 
-这个命令会立刻创建会话，并在终端里直接渲染配对二维码；命令会保持运行，直到你按 `Ctrl+C` 停止。
+这个命令会立刻创建会话，并在终端里直接渲染配对二维码；同时也会把 PNG 文件保存到 OpenClaw 的 media 目录，并把本地路径打印出来，方便那些终端无法稳定显示二维码的场景。如果你想让 PrivateClaw 自动弹出浏览器预览页，可以额外加上 `--open`。命令会保持运行，直到你按 `Ctrl+C` 停止。
 
 如果想直接从 CLI 启动群聊模式：
 

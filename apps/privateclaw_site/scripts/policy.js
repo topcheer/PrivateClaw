@@ -1,4 +1,4 @@
-import { applyTranslations, bindLocaleSelect, getLocale, onLocaleChange } from "./i18n.js";
+import { applyTranslations, bindLocaleSelect, getLocale, onLocaleChange } from "./i18n.js?v=20260314-1";
 
 const POLICY_BUNDLES = {
   en: {

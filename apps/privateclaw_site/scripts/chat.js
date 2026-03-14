@@ -1,11 +1,11 @@
-import { applyTranslations, bindLocaleSelect, onLocaleChange, t } from "./i18n.js";
+import { applyTranslations, bindLocaleSelect, onLocaleChange, t } from "./i18n.js?v=20260314-1";
 import {
   createIdentity,
   decodeBase64,
   decodeInviteString,
   readFileAsAttachment,
-} from "./protocol-web.js";
-import { PrivateClawWebSessionClient } from "./session-client.js";
+} from "./protocol-web.js?v=20260314-1";
+import { PrivateClawWebSessionClient } from "./session-client.js?v=20260314-1";
 
 const MAX_INLINE_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 const QR_SCAN_MAX_DIMENSION = 1440;

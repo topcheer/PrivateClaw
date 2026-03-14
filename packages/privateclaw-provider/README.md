@@ -40,19 +40,35 @@ sequenceDiagram
 npm install @privateclaw/privateclaw @privateclaw/protocol
 ```
 
-To install it into OpenClaw from npm:
+The production default relay for this package is:
+
+```text
+https://relay.privateclaw.us
+```
+
+`openclaw plugins install` accepts a path, archive, or npm package spec. For production, use the npm package:
 
 ```bash
 openclaw plugins install @privateclaw/privateclaw@latest
 openclaw plugins enable privateclaw
-openclaw config set plugins.entries.privateclaw.config.relayBaseUrl https://relay.example.com
+openclaw config set plugins.entries.privateclaw.config.relayBaseUrl https://relay.privateclaw.us
 ```
 
-For local development from this repository:
+If npm is not updated yet but you want the newest GitHub checkout immediately, pack the workspace and install the archive:
+
+```bash
+TARBALL="$(npm pack --workspace @privateclaw/privateclaw | tail -n 1)"
+openclaw plugins install "./${TARBALL}"
+openclaw plugins enable privateclaw
+openclaw config set plugins.entries.privateclaw.config.relayBaseUrl https://relay.privateclaw.us
+```
+
+For local development from this repository, use a linked checkout and point it at your local relay:
 
 ```bash
 openclaw plugins install --link ./packages/privateclaw-provider
 openclaw plugins enable privateclaw
+openclaw config set plugins.entries.privateclaw.config.relayBaseUrl ws://127.0.0.1:8787
 ```
 
 PrivateClaw is not configured with `openclaw channels add privateclaw`. If you want `/privateclaw` to be available inside Telegram/Discord/QQ, add one of those normal OpenClaw channels separately with `openclaw channels add --channel ...`.
@@ -64,7 +80,7 @@ If you want to point the provider at a custom relay domain, resolve both sockets
 ```ts
 import { EchoBridge, PrivateClawProvider, resolveRelayEndpoints } from "@privateclaw/privateclaw";
 
-const relay = resolveRelayEndpoints("https://relay.example.com");
+const relay = resolveRelayEndpoints("https://relay.privateclaw.us");
 
 const provider = new PrivateClawProvider({
   ...relay,

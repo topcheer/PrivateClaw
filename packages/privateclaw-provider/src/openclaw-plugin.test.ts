@@ -6,7 +6,9 @@ import test from "node:test";
 import { decodeInviteString } from "@privateclaw/protocol";
 import { createRelayServer } from "../../../services/relay-server/src/relay-server.js";
 import { EchoBridge } from "./bridges/echo-bridge.js";
+import { privateClawConfigSchema } from "./compat/openclaw.js";
 import { DEFAULT_SESSION_TTL_MS } from "./provider.js";
+import { DEFAULT_RELAY_BASE_URL } from "./relay-defaults.js";
 import type {
   OpenClawPluginCliRegistrarCompat,
   OpenClawPluginApiCompat,
@@ -94,6 +96,13 @@ class FakeCliCommand {
     return this;
   }
 }
+
+test("privateclaw schema advertises the public relay default", () => {
+  assert.equal(
+    privateClawConfigSchema.properties.relayBaseUrl.default,
+    DEFAULT_RELAY_BASE_URL,
+  );
+});
 
 test("privateclaw command writes QR media into the OpenClaw state media directory", async (t) => {
   const relay = createRelayServer({

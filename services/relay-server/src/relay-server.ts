@@ -484,7 +484,10 @@ export function createRelayServer(
       `http://${request.headers.host ?? `${config.host}:${startedPort}`}`,
     );
 
-    if (request.method === "GET" && url.pathname === "/healthz") {
+    if (
+      request.method === "GET" &&
+      (url.pathname === "/healthz" || url.pathname === "/api/health")
+    ) {
       response.writeHead(200, { "content-type": "application/json" });
       response.end(
         JSON.stringify({ ok: true, sessions: sessionHub.sessionCount }),

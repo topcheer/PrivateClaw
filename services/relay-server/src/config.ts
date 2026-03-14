@@ -6,7 +6,11 @@ export interface RelayServerConfig {
   redisUrl?: string;
 }
 
-function parsePositiveInteger(value: string | undefined, fallback: number, label: string): number {
+function parsePositiveInteger(
+  value: string | undefined,
+  fallback: number,
+  label: string,
+): number {
   if (!value || value.trim() === "") {
     return fallback;
   }
@@ -21,7 +25,11 @@ function parsePositiveInteger(value: string | undefined, fallback: number, label
 
 export function loadRelayConfig(env: NodeJS.ProcessEnv = process.env): RelayServerConfig {
   const host = env.PRIVATECLAW_RELAY_HOST?.trim() || "127.0.0.1";
-  const port = parsePositiveInteger(env.PRIVATECLAW_RELAY_PORT, 8787, "PRIVATECLAW_RELAY_PORT");
+  const port = parsePositiveInteger(
+    env.PRIVATECLAW_RELAY_PORT?.trim() || env.PORT?.trim(),
+    8787,
+    "PRIVATECLAW_RELAY_PORT",
+  );
   const sessionTtlMs = parsePositiveInteger(
     env.PRIVATECLAW_SESSION_TTL_MS,
     15 * 60 * 1000,
@@ -32,7 +40,7 @@ export function loadRelayConfig(env: NodeJS.ProcessEnv = process.env): RelayServ
     25,
     "PRIVATECLAW_FRAME_CACHE_SIZE",
   );
-  const redisUrl = env.PRIVATECLAW_REDIS_URL?.trim();
+  const redisUrl = env.PRIVATECLAW_REDIS_URL?.trim() || env.REDIS_URL?.trim();
 
   return {
     host,

@@ -1,0 +1,10 @@
+# Copy this over railway.toml if you want an embedded Redis cache in the same container.
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile.multiarch.redis"
+
+[deploy]
+healthcheckPath = "/api/health"
+healthcheckTimeout = 300
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10

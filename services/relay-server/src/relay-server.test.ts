@@ -57,6 +57,36 @@ function waitForClose(socket: WebSocket): Promise<void> {
   });
 }
 
+test("relay exposes health endpoints for container platforms", async (t) => {
+  const relay = createRelayServer({
+    host: "127.0.0.1",
+    port: 0,
+    sessionTtlMs: 60_000,
+    frameCacheSize: 8,
+  });
+  const { port } = await relay.start();
+  t.after(async () => {
+    await relay.stop();
+  });
+
+  const [legacyResponse, railwayResponse] = await Promise.all([
+    fetch(`http://127.0.0.1:${port}/healthz`),
+    fetch(`http://127.0.0.1:${port}/api/health`),
+  ]);
+
+  assert.equal(legacyResponse.status, 200);
+  assert.equal(legacyResponse.headers.get("content-type"), "application/json");
+  assert.equal(railwayResponse.status, 200);
+  assert.equal(railwayResponse.headers.get("content-type"), "application/json");
+
+  const railwayHealth = (await railwayResponse.json()) as {
+    ok?: unknown;
+    sessions?: unknown;
+  };
+  assert.equal(railwayHealth.ok, true);
+  assert.equal(railwayHealth.sessions, 0);
+});
+
 test("relay server creates a session and forwards encrypted frames", async (t) => {
   const relay = createRelayServer({
     host: "127.0.0.1",

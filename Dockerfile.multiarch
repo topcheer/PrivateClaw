@@ -6,13 +6,14 @@ COPY package.json package-lock.json tsconfig.base.json ./
 COPY packages/privateclaw-protocol/package.json packages/privateclaw-protocol/package.json
 COPY services/relay-server/package.json services/relay-server/package.json
 
-RUN npm install
+RUN npm ci
 
 COPY packages/privateclaw-protocol packages/privateclaw-protocol
 COPY services/relay-server services/relay-server
 
 RUN npm run build --workspace @privateclaw/protocol \
-  && npm run build --workspace @privateclaw/relay-server
+  && npm run build --workspace @privateclaw/relay-server \
+  && npm prune --omit=dev
 
 FROM node:22-alpine AS runtime
 

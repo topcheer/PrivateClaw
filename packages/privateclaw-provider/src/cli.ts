@@ -6,6 +6,7 @@ import { OpenAICompatibleBridge } from "./bridges/openai-compatible-bridge.js";
 import { WebhookBridge } from "./bridges/webhook-bridge.js";
 import { runPairSession } from "./pair-session.js";
 import { DEFAULT_SESSION_TTL_MS, PrivateClawProvider } from "./provider.js";
+import { DEFAULT_RELAY_BASE_URL } from "./relay-defaults.js";
 import { resolveRelayEndpoints } from "./relay-endpoints.js";
 
 function parsePositiveInteger(value: string | undefined, fallback: number): number {
@@ -33,7 +34,7 @@ function resolveChatCompletionsUrl(baseUrl: string): string {
   return url.toString();
 }
 
-const relayBaseUrl = process.env.PRIVATECLAW_RELAY_BASE_URL?.trim() || "ws://127.0.0.1:8787";
+const relayBaseUrl = process.env.PRIVATECLAW_RELAY_BASE_URL?.trim() || DEFAULT_RELAY_BASE_URL;
 const { providerWsUrl, appWsUrl } = resolveRelayEndpoints(relayBaseUrl);
 const webhookUrl = process.env.PRIVATECLAW_WEBHOOK_URL?.trim();
 const webhookToken = process.env.PRIVATECLAW_WEBHOOK_TOKEN?.trim();

@@ -6,6 +6,7 @@ export * from "./compat/openclaw.js";
 export { default } from "./openclaw-plugin.js";
 export * from "./openclaw-plugin.js";
 export * from "./provider.js";
+export * from "./relay-defaults.js";
 export * from "./relay-endpoints.js";
 export * from "./relay-provider-client.js";
 export * from "./types.js";

@@ -1,10 +1,13 @@
+import { DEFAULT_RELAY_BASE_URL } from "../relay-defaults.js";
+
 export const privateClawConfigSchema = {
   type: "object",
   additionalProperties: false,
   properties: {
     relayBaseUrl: {
       type: "string",
-      description: "Relay base URL used to derive /ws/provider and /ws/app endpoints.",
+      description: `Relay base URL used to derive /ws/provider and /ws/app endpoints. Defaults to ${DEFAULT_RELAY_BASE_URL}.`,
+      default: DEFAULT_RELAY_BASE_URL,
     },
     sessionTtlMs: {
       type: "number",

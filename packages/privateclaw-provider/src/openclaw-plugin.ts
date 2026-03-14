@@ -23,6 +23,7 @@ import {
   privateClawConfigSchema,
 } from "./compat/openclaw.js";
 import { DEFAULT_SESSION_TTL_MS, PrivateClawProvider } from "./provider.js";
+import { DEFAULT_RELAY_BASE_URL } from "./relay-defaults.js";
 import { resolveRelayEndpoints } from "./relay-endpoints.js";
 import {
   buildPrivateClawCommandErrorMessage,
@@ -92,7 +93,6 @@ interface PrivateClawPairCliOptions {
   group?: boolean;
 }
 
-const DEFAULT_RELAY_BASE_URL = "ws://127.0.0.1:8787";
 const DEFAULT_PROVIDER_LABEL = "PrivateClaw";
 const DEFAULT_BRIDGE_MODE: PrivateClawBridgeMode = "openclaw-agent";
 const ALLOWED_THINKING_LEVELS = new Set<OpenClawThinkingLevel>([

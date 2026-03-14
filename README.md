@@ -2,6 +2,12 @@
 
 [中文说明](./README.zh-CN.md)
 
+> ## Deploy the relay on Railway
+>
+> [![Deploy relay to Railway](https://img.shields.io/badge/Railway-One--Click%20Deploy-7B3FF2?logo=railway&logoColor=white)](https://railway.com/?referralCode=V6e2VV)
+>
+> Use the Railway one-click entry above to deploy the PrivateClaw relay quickly.
+
 PrivateClaw is a lightweight, end-to-end encrypted private channel for OpenClaw. It lets a user leave a public bot surface, scan a one-time QR code, and continue the conversation inside a dedicated mobile app without giving the relay access to plaintext.
 
 Sessions can stay one-to-one by default, or opt into a small group mode where multiple paired apps share the same encrypted OpenClaw conversation while keeping stable per-install display names inside the chat UI.
@@ -90,46 +96,25 @@ sequenceDiagram
 └── services/relay-server
 ```
 
-## Quick start
+## Production deployment
 
-### 1. Install dependencies
+PrivateClaw's public production relay is:
 
-```bash
-npm install
-cd apps/privateclaw_app && flutter pub get
-cd ../..
+```text
+https://relay.privateclaw.us
 ```
 
-### 2. Start the relay
+The repo code now defaults to that relay. For production installs, I still recommend setting it explicitly in OpenClaw so the currently published npm package and future versions behave the same way.
 
-For local development:
-
-```bash
-npm run docker:relay
-```
-
-For a direct Node.js run:
-
-```bash
-npm run dev:relay
-```
-
-### 3. Install the provider into OpenClaw
-
-From npm:
+### 1. Install the provider into OpenClaw from npm
 
 ```bash
 openclaw plugins install @privateclaw/privateclaw@latest
 openclaw plugins enable privateclaw
-openclaw config set plugins.entries.privateclaw.config.relayBaseUrl https://relay.example.com
+openclaw config set plugins.entries.privateclaw.config.relayBaseUrl https://relay.privateclaw.us
 ```
 
-From this repository during development:
-
-```bash
-openclaw plugins install --link ./packages/privateclaw-provider
-openclaw plugins enable privateclaw
-```
+`openclaw plugins install` is the correct production entrypoint here. Its built-in help explicitly says it installs a plugin from a `path, archive, or npm spec`, so `@privateclaw/privateclaw@latest` is a first-class npm install path rather than a local-only shortcut.
 
 PrivateClaw is an OpenClaw plugin command provider, not a built-in chat transport. That means you do **not** configure it with `openclaw channels add privateclaw`. Instead:
 
@@ -137,15 +122,16 @@ PrivateClaw is an OpenClaw plugin command provider, not a built-in chat transpor
 - use `openclaw plugins enable privateclaw` to enable it,
 - and configure it under `plugins.entries.privateclaw.config`.
 
-The provider package also exports `resolveRelayEndpoints(...)` if you want to derive provider and app socket URLs from a single relay base URL:
+If npm is temporarily behind the GitHub repo and you need the newest GitHub checkout immediately, install the packed workspace archive instead:
 
-```ts
-import { resolveRelayEndpoints } from "@privateclaw/privateclaw";
-
-const relay = resolveRelayEndpoints("https://relay.example.com");
+```bash
+TARBALL="$(npm pack --workspace @privateclaw/privateclaw | tail -n 1)"
+openclaw plugins install "./${TARBALL}"
+openclaw plugins enable privateclaw
+openclaw config set plugins.entries.privateclaw.config.relayBaseUrl https://relay.privateclaw.us
 ```
 
-### 4. Choose how to start a session
+### 2. Choose how to start a session
 
 #### Path A: existing OpenClaw chat channel
 
@@ -167,8 +153,7 @@ If you want to start a session without another chat app, use the plugin-provided
 openclaw privateclaw pair
 ```
 
-This command creates a session immediately and renders the pairing QR code in your terminal. It keeps the provider session alive until you stop it with `Ctrl+C`.
-New sessions created this way stay valid for 8 hours by default unless you explicitly override the TTL.
+This command creates a session immediately and renders the pairing QR code in your terminal. It keeps the provider session alive until you stop it with `Ctrl+C`. New sessions created this way stay valid for 8 hours by default unless you explicitly override the TTL.
 
 To start the same flow in group mode:
 
@@ -176,7 +161,7 @@ To start the same flow in group mode:
 openclaw privateclaw pair --group
 ```
 
-### 5. Run the app
+### 3. Run the app
 
 ```bash
 cd apps/privateclaw_app
@@ -186,9 +171,50 @@ flutter run
 Then either scan the QR code returned by `/privateclaw` from your existing channel, or scan the QR code rendered by `openclaw privateclaw pair`.
 If you are pairing on a simulator or desktop, you can also paste either the raw `privateclaw://connect?...` link or the full `Invite URI: ...` / `邀请链接 / Invite URI: ...` line into the app.
 
+## Development and testing deployment
+
+### 1. Install dependencies
+
+```bash
+npm install
+cd apps/privateclaw_app && flutter pub get
+cd ../..
+```
+
+### 2. Start a local relay
+
+For local Docker development:
+
+```bash
+npm run docker:relay
+```
+
+For a direct Node.js run:
+
+```bash
+npm run dev:relay
+```
+
+### 3. Link the local provider checkout into OpenClaw
+
+```bash
+openclaw plugins install --link ./packages/privateclaw-provider
+openclaw plugins enable privateclaw
+openclaw config set plugins.entries.privateclaw.config.relayBaseUrl ws://127.0.0.1:8787
+```
+
+The provider package also exports `resolveRelayEndpoints(...)` if you want to derive provider and app socket URLs from one base URL:
+
+```ts
+import { resolveRelayEndpoints } from "@privateclaw/privateclaw";
+
+const relay = resolveRelayEndpoints("ws://127.0.0.1:8787");
+```
+
 ## Self-hosting the relay
 
 The relay is intentionally small. It can run with only Node.js, or as a Docker container with optional Redis-backed frame caching.
+If you use your own relay instead of `https://relay.privateclaw.us`, point OpenClaw at it with `openclaw config set plugins.entries.privateclaw.config.relayBaseUrl <your-relay-base-url>`.
 
 ### Docker Compose
 
@@ -201,6 +227,30 @@ With the optional Redis profile:
 ```bash
 PRIVATECLAW_REDIS_URL=redis://redis:6379 docker compose --profile redis up --build
 ```
+
+### Railway one-click deploy
+
+This repository now includes Railway-ready root configs for both relay flavors:
+
+- `railway.toml` + `Dockerfile.multiarch`: standalone relay container
+- `railway.redis.toml` + `Dockerfile.multiarch.redis`: relay container that boots Redis inside the same container
+
+The relay answers both `/healthz` and `/api/health`, and it honors Railway's injected `PORT` automatically when `PRIVATECLAW_RELAY_PORT` is not set.
+
+Standalone Railway deploy:
+
+1. Create a Railway service from this repository.
+2. Keep the default root `railway.toml`.
+3. Deploy.
+
+If you want external Redis on Railway, set `PRIVATECLAW_REDIS_URL` or `REDIS_URL` in the service variables.
+
+Embedded-Redis Railway deploy:
+
+1. Replace `railway.toml` with `railway.redis.toml`, or set Railway's Dockerfile path to `Dockerfile.multiarch.redis`.
+2. Deploy.
+
+The embedded-Redis image starts Redis on `127.0.0.1:6379` inside the relay container and wires `PRIVATECLAW_REDIS_URL` automatically.
 
 ### GitHub-hosted container image
 
@@ -222,12 +272,13 @@ The relay reads the following variables directly from the process environment:
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `PRIVATECLAW_RELAY_HOST` | `127.0.0.1` | Host interface to bind |
-| `PRIVATECLAW_RELAY_PORT` | `8787` | Relay HTTP/WebSocket port |
+| `PRIVATECLAW_RELAY_PORT` | `8787` | Relay HTTP/WebSocket port; falls back to Railway `PORT` when unset |
 | `PRIVATECLAW_SESSION_TTL_MS` | `900000` | Session lifetime in milliseconds |
 | `PRIVATECLAW_FRAME_CACHE_SIZE` | `25` | Buffered ciphertext frames per direction |
 | `PRIVATECLAW_REDIS_URL` | unset | Optional Redis URL for encrypted frame caching |
+| `REDIS_URL` | unset | Fallback Redis URL alias used when `PRIVATECLAW_REDIS_URL` is unset |
 
-The relay also exposes `/healthz` for container and platform health checks.
+The relay exposes both `/healthz` and `/api/health` for container and platform health checks.
 
 ## Provider runtime
 

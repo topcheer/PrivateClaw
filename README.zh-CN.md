@@ -2,6 +2,12 @@
 
 [English README](./README.md)
 
+> ## Railway 一键部署 Relay
+>
+> [![Deploy relay to Railway](https://img.shields.io/badge/Railway-One--Click%20Deploy-7B3FF2?logo=railway&logoColor=white)](https://railway.com/?referralCode=V6e2VV)
+>
+> 点击上面的入口即可快速把 PrivateClaw relay 部署到 Railway。
+
 PrivateClaw 是一个围绕 OpenClaw 构建的轻量级端到端加密私有会话方案：用户先在公开机器人渠道中触发 `/privateclaw`，然后通过一次性二维码切换到 PrivateClaw App 中继续对话；中继只负责转发密文，不可见明文内容。
 
 默认会话是单人私聊模式；如果显式启用群聊模式，同一个邀请也可以被多个 App 端加入，并在聊天界面中以稳定昵称区分不同参与者。
@@ -69,54 +75,42 @@ sequenceDiagram
   P-->>B: assistant 消息
 ```
 
-## 快速开始
+## 生产部署
 
-### 1. 安装依赖
+PrivateClaw 的公共生产 relay 是：
 
-```bash
-npm install
-cd apps/privateclaw_app && flutter pub get
-cd ../..
+```text
+https://relay.privateclaw.us
 ```
 
-### 2. 启动 relay
+仓库里的源码默认值已经切到这个地址。为了让当前 npm 已发布版本和后续版本都表现一致，生产环境里仍建议在 OpenClaw 配置里显式写入它。
 
-本地开发：
-
-```bash
-npm run docker:relay
-```
-
-或者直接以 Node.js 方式运行：
-
-```bash
-npm run dev:relay
-```
-
-### 3. 在 OpenClaw 中安装 provider
-
-从 npm 安装：
+### 1. 通过 npm 把 provider 安装到 OpenClaw
 
 ```bash
 openclaw plugins install @privateclaw/privateclaw@latest
 openclaw plugins enable privateclaw
-openclaw config set plugins.entries.privateclaw.config.relayBaseUrl https://relay.example.com
+openclaw config set plugins.entries.privateclaw.config.relayBaseUrl https://relay.privateclaw.us
 ```
 
-从当前仓库联调：
+这里应该使用 `openclaw plugins install`，而且它的帮助信息已经明确说明支持 `path, archive, or npm spec`，所以 `@privateclaw/privateclaw@latest` 是标准的 npm 安装路径，不是只能本地联调时用的命令。
 
-```bash
-openclaw plugins install --link ./packages/privateclaw-provider
-openclaw plugins enable privateclaw
-```
-
-PrivateClaw 是一个 OpenClaw 插件命令提供者，不是内置的聊天传输 channel。因此**不要**使用 `openclaw channels add privateclaw`。正确方式是：
+PrivateClaw 是一个 OpenClaw 插件命令提供者，不是内置聊天传输 channel。因此**不要**使用 `openclaw channels add privateclaw`。正确方式是：
 
 - 用 `openclaw plugins install ...` 安装插件
 - 用 `openclaw plugins enable privateclaw` 启用插件
 - 用 `plugins.entries.privateclaw.config` 进行配置
 
-### 4. 选择如何启动会话
+如果 npm 暂时还没追上 GitHub 最新代码，而你又想立即使用最新仓库版本，可以先打包工作区再安装 `.tgz`：
+
+```bash
+TARBALL="$(npm pack --workspace @privateclaw/privateclaw | tail -n 1)"
+openclaw plugins install "./${TARBALL}"
+openclaw plugins enable privateclaw
+openclaw config set plugins.entries.privateclaw.config.relayBaseUrl https://relay.privateclaw.us
+```
+
+### 2. 选择如何启动会话
 
 #### 方式 A：通过已有 OpenClaw 聊天渠道触发
 
@@ -146,7 +140,7 @@ openclaw privateclaw pair
 openclaw privateclaw pair --group
 ```
 
-### 5. 运行 App
+### 3. 运行 App
 
 ```bash
 cd apps/privateclaw_app
@@ -159,7 +153,49 @@ flutter run
 
 在模拟器、桌面或剪贴板调试场景中，也可以直接粘贴原始 `privateclaw://connect?...` 链接，或者粘贴完整的 `邀请链接 / Invite URI: ...` 文本。
 
+## 开发与测试部署
+
+### 1. 安装依赖
+
+```bash
+npm install
+cd apps/privateclaw_app && flutter pub get
+cd ../..
+```
+
+### 2. 启动本地 relay
+
+本地 Docker 开发：
+
+```bash
+npm run docker:relay
+```
+
+或者直接以 Node.js 方式运行：
+
+```bash
+npm run dev:relay
+```
+
+### 3. 把本地 provider 仓库联到 OpenClaw
+
+```bash
+openclaw plugins install --link ./packages/privateclaw-provider
+openclaw plugins enable privateclaw
+openclaw config set plugins.entries.privateclaw.config.relayBaseUrl ws://127.0.0.1:8787
+```
+
+如果你希望从一个 relay base URL 推导 provider / app 两个 WebSocket 地址，也可以直接使用导出的辅助函数：
+
+```ts
+import { resolveRelayEndpoints } from "@privateclaw/privateclaw";
+
+const relay = resolveRelayEndpoints("ws://127.0.0.1:8787");
+```
+
 ## 自建 relay
+
+如果你使用自己的 relay，而不是 `https://relay.privateclaw.us`，记得执行 `openclaw config set plugins.entries.privateclaw.config.relayBaseUrl <你的 relay base URL>` 把 OpenClaw 指过去。
 
 ### Docker Compose
 
@@ -172,6 +208,30 @@ docker compose up --build relay
 ```bash
 PRIVATECLAW_REDIS_URL=redis://redis:6379 docker compose --profile redis up --build
 ```
+
+### Railway 一键部署
+
+仓库根目录现在直接提供了两套 Railway 配置：
+
+- `railway.toml` + `Dockerfile.multiarch`：独立 relay 容器
+- `railway.redis.toml` + `Dockerfile.multiarch.redis`：同容器内自启 Redis 的 relay 容器
+
+Relay 现在同时响应 `/healthz` 和 `/api/health`，并且在未设置 `PRIVATECLAW_RELAY_PORT` 时会自动读取 Railway 注入的 `PORT`。
+
+独立容器部署：
+
+1. 在 Railway 中从本仓库创建一个服务。
+2. 保持根目录默认的 `railway.toml` 不变。
+3. 直接部署。
+
+如果你想在 Railway 上接外部 Redis，只需要给服务变量设置 `PRIVATECLAW_REDIS_URL` 或 `REDIS_URL`。
+
+同容器 Redis 部署：
+
+1. 把 `railway.redis.toml` 覆盖为 `railway.toml`，或者在 Railway 中把 Dockerfile 路径改成 `Dockerfile.multiarch.redis`。
+2. 直接部署。
+
+这个带 Redis 的镜像会在 relay 容器内把 Redis 启在 `127.0.0.1:6379`，并自动设置 `PRIVATECLAW_REDIS_URL`。
 
 ### GitHub Actions 构建的镜像
 
@@ -189,12 +249,13 @@ docker run --rm \
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
 | `PRIVATECLAW_RELAY_HOST` | `127.0.0.1` | 监听地址 |
-| `PRIVATECLAW_RELAY_PORT` | `8787` | 服务端口 |
+| `PRIVATECLAW_RELAY_PORT` | `8787` | 服务端口；未设置时会回退到 Railway 的 `PORT` |
 | `PRIVATECLAW_SESSION_TTL_MS` | `900000` | 会话过期时间 |
 | `PRIVATECLAW_FRAME_CACHE_SIZE` | `25` | 双向密文缓冲条数 |
 | `PRIVATECLAW_REDIS_URL` | 未设置 | 可选 Redis 地址 |
+| `REDIS_URL` | 未设置 | `PRIVATECLAW_REDIS_URL` 未设置时使用的别名 |
 
-Relay 暴露 `/healthz` 用于健康检查。
+Relay 同时暴露 `/healthz` 和 `/api/health` 用于健康检查。
 
 ## 开发
 

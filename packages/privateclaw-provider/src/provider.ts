@@ -1023,6 +1023,11 @@ export class PrivateClawProvider {
         this.options.onLog?.(
           `[provider] user_message session=${sessionId} textChars=${payload.text.length} attachments=${payload.attachments?.length ?? 0}`,
         );
+        for (const attachment of payload.attachments ?? []) {
+          this.options.onLog?.(
+            `[provider] attachment_in session=${sessionId} name=${JSON.stringify(attachment.name)} mimeType=${attachment.mimeType} sizeBytes=${attachment.sizeBytes} hasData=${Boolean(attachment.dataBase64?.trim())} hasUri=${Boolean(attachment.uri?.trim())}`,
+          );
+        }
 
         const participant =
           (payload.appId ? session.participants.get(payload.appId) : undefined) ??
@@ -1205,6 +1210,14 @@ export class PrivateClawProvider {
           });
 
           for (const message of normalizeBridgeMessages(bridgeResponse)) {
+            this.options.onLog?.(
+              `[provider] bridge_message_out session=${sessionId} textChars=${message.text.length} attachments=${message.attachments?.length ?? 0}`,
+            );
+            for (const attachment of message.attachments ?? []) {
+              this.options.onLog?.(
+                `[provider] attachment_out session=${sessionId} name=${JSON.stringify(attachment.name)} mimeType=${attachment.mimeType} sizeBytes=${attachment.sizeBytes} hasData=${Boolean(attachment.dataBase64?.trim())}`,
+              );
+            }
             await this.sendAssistantMessage(sessionId, {
               text: message.text,
               replyTo: payload.clientMessageId,

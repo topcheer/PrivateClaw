@@ -246,7 +246,10 @@ function resolvePluginConfig(
   };
 }
 
-function buildBridge(config: ResolvedPrivateClawPluginConfig): PrivateClawAgentBridge {
+function buildBridge(
+  config: ResolvedPrivateClawPluginConfig,
+  onLog?: (message: string) => void,
+): PrivateClawAgentBridge {
   if (config.bridgeMode === "webhook") {
     if (!config.webhookUrl) {
       throw new Error(
@@ -279,6 +282,7 @@ function buildBridge(config: ResolvedPrivateClawPluginConfig): PrivateClawAgentB
     ...(typeof config.openclawAgentTimeoutSeconds === "number"
       ? { timeoutSeconds: config.openclawAgentTimeoutSeconds }
       : {}),
+    ...(onLog ? { onLog } : {}),
   });
 }
 
@@ -318,11 +322,12 @@ function buildProviderOptions(
   api: Pick<OpenClawPluginApiCompat, "logger">,
 ): { options: PrivateClawProviderOptions; defaultTtlMs?: number } {
   const relay = resolveRelayEndpoints(pluginConfig.relayBaseUrl);
+  const log = (message: string) => api.logger.info(`[privateclaw] ${message}`);
   return {
     options: {
       providerWsUrl: relay.providerWsUrl,
       appWsUrl: relay.appWsUrl,
-      bridge: buildBridge(pluginConfig),
+      bridge: buildBridge(pluginConfig, log),
       providerLabel: pluginConfig.providerLabel,
       commandsProvider: async () => {
         try {
@@ -335,7 +340,7 @@ function buildProviderOptions(
         }
       },
       ...(pluginConfig.welcomeMessage ? { welcomeMessage: pluginConfig.welcomeMessage } : {}),
-      onLog: (message) => api.logger.info(`[privateclaw] ${message}`),
+      onLog: log,
     },
     ...(typeof pluginConfig.sessionTtlMs === "number"
       ? { defaultTtlMs: pluginConfig.sessionTtlMs }

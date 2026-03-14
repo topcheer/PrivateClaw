@@ -75,6 +75,9 @@ const bridge =
         ...(openClawAgentThinking ? { thinking: openClawAgentThinking } : {}),
         ...(openClawAgentTimeoutSeconds ? { timeoutSeconds: openClawAgentTimeoutSeconds } : {}),
         ...(openClawAgentLocal ? { local: true } : {}),
+        onLog: (message) => {
+          console.log(`[privateclaw-provider] ${message}`);
+        },
       })
     : gatewayChatCompletionsUrl || gatewayBaseUrl
     ? new OpenAICompatibleBridge({

@@ -51,6 +51,19 @@ test("parseOpenClawAgentOutput accepts alternate text-bearing payload fields", (
   });
 });
 
+test("parseOpenClawAgentOutput accepts top-level payload arrays from alternate OpenClaw JSON shapes", () => {
+  const result = parseOpenClawAgentOutput(
+    JSON.stringify({
+      payloads: [{ text: "pong-from-top-level" }],
+      meta: {
+        durationMs: 123,
+      },
+    }),
+  );
+
+  assert.equal(result, "pong-from-top-level");
+});
+
 test("OpenClawAgentBridge invokes openclaw agent with session-aware arguments", async () => {
   let invokedFile = "";
   let invokedArgs: string[] = [];
@@ -189,6 +202,62 @@ test("OpenClawAgentBridge converts side-effect-only slash commands into a friend
     result,
     "OpenClaw completed /tts, but it did not return a text reply through the agent bridge. If the command generated audio, the current PrivateClaw bridge does not surface that audio back into the chat yet.",
   );
+});
+
+test("OpenClawAgentBridge recovers assistant text from the session log when agent stdout is incomplete", async (t) => {
+  const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "privateclaw-openclaw-state-"));
+  const workspaceDir = path.join(stateDir, "workspace");
+  const sessionLogPath = path.join(
+    stateDir,
+    "agents",
+    "main",
+    "sessions",
+    "privateclaw-session.jsonl",
+  );
+  await fs.mkdir(workspaceDir, { recursive: true });
+  t.after(async () => {
+    await fs.rm(stateDir, { recursive: true, force: true });
+  });
+
+  const bridge = new OpenClawAgentBridge({
+    stateDir,
+    workspaceDir,
+    execFileImpl: (_file, _args, _options, callback) => {
+      void (async () => {
+        await fs.mkdir(path.dirname(sessionLogPath), { recursive: true });
+        await fs.writeFile(
+          sessionLogPath,
+          `${JSON.stringify({
+            type: "message",
+            message: {
+              role: "assistant",
+              content: [{ type: "text", text: "pixel.png" }],
+              isError: false,
+            },
+          })}\n`,
+          "utf8",
+        );
+        callback(
+          null,
+          JSON.stringify({
+            result: {
+              payloads: [],
+            },
+          }),
+          "",
+        );
+      })().catch((error) => {
+        callback(error instanceof Error ? error : new Error(String(error)), "", "");
+      });
+    },
+  });
+
+  const result = await bridge.handleUserMessage({
+    sessionId: "privateclaw-session",
+    message: "Reply with the exact filename.",
+  });
+
+  assert.equal(result, "pixel.png");
 });
 
 test("OpenClawAgentBridge bridges TTS audio artifacts from the session log", async (t) => {

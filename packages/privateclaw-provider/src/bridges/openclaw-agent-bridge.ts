@@ -32,6 +32,8 @@ interface OpenClawAgentPayload {
 interface OpenClawAgentJsonResult {
   status?: string;
   summary?: string;
+  payloads?: OpenClawAgentPayload[];
+  meta?: Record<string, unknown>;
   result?: {
     payloads?: OpenClawAgentPayload[];
   };
@@ -63,6 +65,11 @@ interface NormalizedBridgeMessage {
   readonly attachments?: PrivateClawAttachment[];
 }
 
+interface CollectedSessionMessages {
+  readonly assistantMessages: NormalizedBridgeMessage[];
+  readonly artifactMessages: NormalizedBridgeMessage[];
+}
+
 class OpenClawAgentNoDisplayPayloadError extends Error {
   constructor(readonly parsed: OpenClawAgentJsonResult) {
     super("OpenClaw agent bridge returned no displayable payloads.");
@@ -90,6 +97,7 @@ export interface OpenClawAgentBridgeOptions {
   timeoutSeconds?: number;
   stateDir?: string;
   workspaceDir?: string;
+  onLog?: (message: string) => void;
   execFileImpl?: OpenClawAgentExecFile;
 }
 
@@ -168,21 +176,27 @@ function parseOpenClawAgentResult(parsed: OpenClawAgentJsonResult): BridgeRespon
 }
 
 function extractDisplayMessages(parsed: OpenClawAgentJsonResult): NormalizedBridgeMessage[] {
-  if (parsed.status !== "ok") {
+  const payloads = parsed.result?.payloads ?? parsed.payloads ?? [];
+  const hasAlternatePayloadShape = !parsed.status && payloads.length > 0;
+  if (parsed.status && parsed.status !== "ok") {
+    throw new Error(
+      `OpenClaw agent bridge returned status ${parsed.status ?? "unknown"}${parsed.summary ? ` (${parsed.summary})` : ""}.`,
+    );
+  }
+  if (!parsed.status && !hasAlternatePayloadShape) {
     throw new Error(
       `OpenClaw agent bridge returned status ${parsed.status ?? "unknown"}${parsed.summary ? ` (${parsed.summary})` : ""}.`,
     );
   }
 
   const messages =
-    parsed.result?.payloads
-      ?.flatMap((payload) =>
-        [payload.text, payload.message, payload.summary].flatMap((candidate) =>
-          typeof candidate === "string" && candidate.trim() !== ""
-            ? [{ text: candidate }]
-            : [],
-        ),
-      ) ?? [];
+    payloads.flatMap((payload) =>
+      [payload.text, payload.message, payload.summary].flatMap((candidate) =>
+        typeof candidate === "string" && candidate.trim() !== ""
+          ? [{ text: candidate }]
+          : [],
+      ),
+    ) ?? [];
 
   if (messages.length === 0) {
     throw new OpenClawAgentNoDisplayPayloadError(parsed);
@@ -211,6 +225,10 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
     this.workspaceDir = options.workspaceDir ?? path.join(this.stateDir, "workspace");
   }
 
+  private log(message: string): void {
+    this.options.onLog?.(`[bridge] ${message}`);
+  }
+
   async handleUserMessage(params: {
     sessionId: string;
     message: string;
@@ -221,22 +239,55 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
       params.message,
       params.attachments,
     );
+    this.log(
+      `handle_user_message session=${params.sessionId} textChars=${params.message.length} attachments=${params.attachments?.length ?? 0} promptChars=${promptMessage.length}`,
+    );
     const args = this.buildArgs(params.sessionId, promptMessage);
     const sessionLogCursor = await this.captureSessionLogCursor(params.sessionId);
     const stdout = await this.execOpenClaw(args);
-    const parsed = parseOpenClawAgentJson(stdout);
-    const artifactMessages = await this.collectArtifactMessages(
-      params.sessionId,
-      sessionLogCursor,
-    );
+    let parsed: OpenClawAgentJsonResult | undefined;
+    let parseError: unknown;
+    try {
+      parsed = parseOpenClawAgentJson(stdout);
+      this.log(
+        `openclaw_agent_complete session=${params.sessionId} status=${parsed.status ?? "unknown"} summary=${JSON.stringify(parsed.summary ?? "")}`,
+      );
+      if (!parsed.status) {
+        this.log(
+          `openclaw_agent_missing_status session=${params.sessionId} topLevelKeys=${Object.keys(parsed).join(",") || "none"}`,
+        );
+      }
+    } catch (error) {
+      parseError = error;
+      this.log(
+        `openclaw_agent_parse_failed session=${params.sessionId} stdoutChars=${stdout.length} stdoutPreview=${JSON.stringify(stdout.slice(0, 400))}`,
+      );
+    }
+    const collectedMessages = await this.collectSessionMessages(params.sessionId, sessionLogCursor);
+    const recoveredMessages = [
+      ...collectedMessages.assistantMessages,
+      ...collectedMessages.artifactMessages,
+    ];
+    if (!parsed) {
+      if (recoveredMessages.length > 0) {
+        this.log(
+          `session_log_fallback session=${params.sessionId} reason=parse_failed recoveredMessages=${recoveredMessages.length}`,
+        );
+        return toBridgeResponse(recoveredMessages);
+      }
+      throw parseError;
+    }
     try {
       const response = parseOpenClawAgentResult(parsed);
-      return mergeBridgeResponses(response, artifactMessages);
+      return mergeBridgeResponses(response, collectedMessages.artifactMessages);
     } catch (error) {
+      if (recoveredMessages.length > 0) {
+        this.log(
+          `session_log_fallback session=${params.sessionId} reason=${JSON.stringify(error instanceof Error ? error.message : String(error))} recoveredMessages=${recoveredMessages.length}`,
+        );
+        return toBridgeResponse(recoveredMessages);
+      }
       if (error instanceof OpenClawAgentNoDisplayPayloadError) {
-        if (artifactMessages.length > 0) {
-          return toBridgeResponse(artifactMessages);
-        }
         return buildNoDisplayPayloadNotice(params.message, error.parsed);
       }
       throw error;
@@ -256,13 +307,17 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
     };
   }
 
-  private async collectArtifactMessages(
+  private async collectSessionMessages(
     sessionId: string,
     cursor: OpenClawSessionLogCursor,
-  ): Promise<NormalizedBridgeMessage[]> {
+  ): Promise<CollectedSessionMessages> {
     const sessionLogPath = cursor.path ?? (await this.resolveSessionLogPath(sessionId));
     if (!sessionLogPath) {
-      return [];
+      this.log(`artifact_log_missing session=${sessionId}`);
+      return {
+        assistantMessages: [],
+        artifactMessages: [],
+      };
     }
 
     const sessionLogBuffer = await fs.readFile(sessionLogPath);
@@ -271,7 +326,10 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
         ? sessionLogBuffer.subarray(Math.min(cursor.sizeBytes, sessionLogBuffer.length))
         : sessionLogBuffer;
     if (deltaBuffer.length === 0) {
-      return [];
+      return {
+        assistantMessages: [],
+        artifactMessages: [],
+      };
     }
 
     const entries = deltaBuffer
@@ -281,6 +339,11 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
       .filter((line) => line !== "")
       .map((line) => JSON.parse(line) as OpenClawSessionLogEntry);
 
+    const assistantMessages = entries.flatMap((entry) => {
+      const text = extractAssistantDisplayText(entry);
+      return text ? [{ text }] : [];
+    });
+
     const seenPaths = new Set<string>();
     const attachments: PrivateClawAttachment[] = [];
     for (const entry of entries) {
@@ -289,16 +352,37 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
         if (seenPaths.has(normalizedPath)) {
           continue;
         }
-        attachments.push(await buildAttachmentFromMediaPath(normalizedPath));
+        const attachment = await buildAttachmentFromMediaPath(normalizedPath);
+        this.log(
+          `artifact_recovered session=${sessionId} mediaPath=${JSON.stringify(mediaPath)} normalizedPath=${JSON.stringify(normalizedPath)} name=${JSON.stringify(attachment.name)} mimeType=${attachment.mimeType} sizeBytes=${attachment.sizeBytes}`,
+        );
+        attachments.push(attachment);
         seenPaths.add(normalizedPath);
       }
     }
 
+    const artifactMessages =
+      attachments.length > 0
+        ? [{ text: "", attachments } satisfies NormalizedBridgeMessage]
+        : [];
+
     if (attachments.length === 0) {
-      return [];
+      this.log(
+        `artifact_scan_complete session=${sessionId} entries=${entries.length} assistantRecovered=${assistantMessages.length} recovered=0 logPath=${JSON.stringify(sessionLogPath)}`,
+      );
+      return {
+        assistantMessages,
+        artifactMessages,
+      };
     }
 
-    return [{ text: "", attachments }];
+    this.log(
+      `artifact_scan_complete session=${sessionId} entries=${entries.length} assistantRecovered=${assistantMessages.length} recovered=${attachments.length} logPath=${JSON.stringify(sessionLogPath)}`,
+    );
+    return {
+      assistantMessages,
+      artifactMessages,
+    };
   }
 
   private async resolveSessionLogPath(sessionId: string): Promise<string | undefined> {
@@ -337,6 +421,9 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
   ): Promise<string> {
     const trimmed = message.trim();
     const stagedAttachments = await this.stageAttachments(sessionId, attachments);
+    this.log(
+      `prompt_ready session=${sessionId} stagedAttachments=${stagedAttachments.length} textChars=${trimmed.length}`,
+    );
 
     if (stagedAttachments.length === 0) {
       return trimmed;
@@ -377,22 +464,28 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
 
     const sessionDir = path.join(this.workspaceDir, "privateclaw", sessionId);
     await fs.mkdir(sessionDir, { recursive: true });
+    this.log(
+      `stage_start session=${sessionId} count=${attachments.length} sessionDir=${JSON.stringify(sessionDir)}`,
+    );
 
     const staged: StagedAttachment[] = [];
     for (const attachment of attachments) {
       const dataBase64 = attachment.dataBase64?.trim();
       if (!dataBase64) {
+        this.log(
+          `stage_skip_missing_data session=${sessionId} name=${JSON.stringify(attachment.name)} mimeType=${attachment.mimeType} sizeBytes=${attachment.sizeBytes}`,
+        );
         continue;
       }
 
       const effectiveMimeType = resolveAttachmentMimeType(attachment);
+      const kind = classifyAttachmentKind(attachment.name, effectiveMimeType);
       const uniqueFileName = `${Date.now()}-${randomUUID().slice(0, 8)}-${sanitizeFileName(attachment.name)}`;
       const absolutePath = path.join(sessionDir, uniqueFileName);
       const rawBytes = Buffer.from(dataBase64, "base64");
       await fs.writeFile(absolutePath, rawBytes);
 
       const workspacePath = toWorkspacePath(this.workspaceDir, absolutePath);
-      const kind = classifyAttachmentKind(attachment.name, effectiveMimeType);
       let extractedTextAbsolutePath: string | undefined;
       let extractedTextWorkspacePath: string | undefined;
 
@@ -406,9 +499,12 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
             extractedTextAbsolutePath,
           );
         }
+        this.log(
+          `stage_docx_extraction session=${sessionId} name=${JSON.stringify(attachment.name)} extracted=${Boolean(extractedTextWorkspacePath)} extractedChars=${extractedText.length}`,
+        );
       }
 
-      staged.push({
+      const stagedAttachment = {
         name: attachment.name,
         effectiveMimeType,
         kind,
@@ -422,9 +518,14 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
           workspacePath,
           ...(extractedTextWorkspacePath ? { extractedTextWorkspacePath } : {}),
         }),
-      });
+      } satisfies StagedAttachment;
+      this.log(
+        `stage_complete session=${sessionId} name=${JSON.stringify(stagedAttachment.name)} kind=${stagedAttachment.kind} mimeType=${stagedAttachment.effectiveMimeType} sizeBytes=${stagedAttachment.sizeBytes} absolutePath=${JSON.stringify(stagedAttachment.absolutePath)} workspacePath=${JSON.stringify(stagedAttachment.workspacePath)}${stagedAttachment.extractedTextWorkspacePath ? ` extractedTextPath=${JSON.stringify(stagedAttachment.extractedTextWorkspacePath)}` : ""}`,
+      );
+      staged.push(stagedAttachment);
     }
 
+    this.log(`stage_summary session=${sessionId} staged=${staged.length}`);
     return staged;
   }
 
@@ -667,6 +768,26 @@ function extractMediaPaths(entry: OpenClawSessionLogEntry): string[] {
   }
 
   return [...mediaPaths];
+}
+
+function extractAssistantDisplayText(entry: OpenClawSessionLogEntry): string | undefined {
+  if (entry.type !== "message" || entry.message?.role !== "assistant" || entry.message.isError) {
+    return undefined;
+  }
+
+  const parts = (entry.message.content ?? [])
+    .flatMap((contentItem) =>
+      contentItem.type === "text" && typeof contentItem.text === "string"
+        ? [contentItem.text.trim()]
+        : [],
+    )
+    .filter((text) => text !== "");
+
+  if (parts.length === 0) {
+    return undefined;
+  }
+
+  return parts.join("\n\n");
 }
 
 async function buildAttachmentFromMediaPath(mediaPath: string): Promise<PrivateClawAttachment> {

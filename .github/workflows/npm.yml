@@ -1,4 +1,4 @@
-name: Publish Package
+name: Publish Packages
 
 on:
   push:
@@ -24,4 +24,37 @@ jobs:
       - run: npm run build --workspace @privateclaw/privateclaw
       - run: npm run test --workspace @privateclaw/protocol
       - run: npm run test --workspace @privateclaw/privateclaw
-      - run: npm publish --workspace @privateclaw/privateclaw --access public
+      - name: Check protocol release version
+        id: protocol-release
+        shell: bash
+        run: |
+          package_name=$(node -p "require('./packages/privateclaw-protocol/package.json').name")
+          package_version=$(node -p "require('./packages/privateclaw-protocol/package.json').version")
+          echo "name=${package_name}" >> "$GITHUB_OUTPUT"
+          echo "version=${package_version}" >> "$GITHUB_OUTPUT"
+          if npm view "${package_name}@${package_version}" version --registry=https://registry.npmjs.org >/dev/null 2>&1; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "${package_name}@${package_version} already exists on npm; skipping publish."
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Publish protocol package
+        if: steps.protocol-release.outputs.publish == 'true'
+        run: npm publish --workspace @privateclaw/protocol --access public
+      - name: Check provider release version
+        id: provider-release
+        shell: bash
+        run: |
+          package_name=$(node -p "require('./packages/privateclaw-provider/package.json').name")
+          package_version=$(node -p "require('./packages/privateclaw-provider/package.json').version")
+          echo "name=${package_name}" >> "$GITHUB_OUTPUT"
+          echo "version=${package_version}" >> "$GITHUB_OUTPUT"
+          if npm view "${package_name}@${package_version}" version --registry=https://registry.npmjs.org >/dev/null 2>&1; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "${package_name}@${package_version} already exists on npm; skipping publish."
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Publish provider package
+        if: steps.provider-release.outputs.publish == 'true'
+        run: npm publish --workspace @privateclaw/privateclaw --access public

@@ -17,6 +17,27 @@ export interface EncryptedFrameCache {
   close(): Promise<void>;
 }
 
+export interface RedisFrameCacheMultiLike {
+  lpush(key: string, value: string): RedisFrameCacheMultiLike;
+  ltrim(key: string, start: number, stop: number): RedisFrameCacheMultiLike;
+  expire(key: string, seconds: number): RedisFrameCacheMultiLike;
+  exec(): Promise<unknown>;
+}
+
+export interface RedisFrameCacheClientLike {
+  multi(): RedisFrameCacheMultiLike;
+  eval(script: string, numKeys: number, ...keysAndArgs: string[]): Promise<unknown>;
+  scan(
+    cursor: string,
+    matchToken: string,
+    pattern: string,
+    countToken: string,
+    count: number,
+  ): Promise<[string, string[]]>;
+  del(...keys: string[]): Promise<number>;
+  quit(): Promise<unknown>;
+}
+
 export class InMemoryEncryptedFrameCache implements EncryptedFrameCache {
   private readonly frames = new Map<string, EncryptedEnvelope[]>();
 
@@ -77,10 +98,16 @@ export class InMemoryEncryptedFrameCache implements EncryptedFrameCache {
 }
 
 export class RedisEncryptedFrameCache implements EncryptedFrameCache {
-  private readonly redis: Redis;
+  private readonly redis: RedisFrameCacheClientLike;
 
-  constructor(redisUrl: string, private readonly maxFrames: number) {
-    this.redis = new Redis(redisUrl, { lazyConnect: false, maxRetriesPerRequest: 1 });
+  constructor(
+    redisUrl: string,
+    private readonly maxFrames: number,
+    redisClient?: RedisFrameCacheClientLike,
+  ) {
+    this.redis =
+      redisClient ??
+      new Redis(redisUrl, { lazyConnect: false, maxRetriesPerRequest: 1 });
   }
 
   private key(
@@ -89,6 +116,32 @@ export class RedisEncryptedFrameCache implements EncryptedFrameCache {
     appId?: string,
   ): string {
     return `privateclaw:frames:${sessionId}:${target}:${appId ?? "*"}`;
+  }
+
+  private normalizeRawFrameValue(value: unknown): string {
+    if (typeof value === "string") {
+      return value;
+    }
+    if (value instanceof Uint8Array) {
+      return Buffer.from(value).toString("utf8");
+    }
+    return String(value);
+  }
+
+  private async drainSerializedFrames(key: string): Promise<string[]> {
+    const values = await this.redis.eval(
+      `
+        local values = redis.call("lrange", KEYS[1], 0, -1)
+        redis.call("del", KEYS[1])
+        return values
+      `,
+      1,
+      key,
+    );
+    if (!Array.isArray(values)) {
+      return [];
+    }
+    return values.map((value: unknown) => this.normalizeRawFrameValue(value)).reverse();
   }
 
   async push(params: {
@@ -113,35 +166,15 @@ export class RedisEncryptedFrameCache implements EncryptedFrameCache {
   }): Promise<EncryptedEnvelope[]> {
     const globalKey = this.key(params.sessionId, params.target);
     if (params.target !== "app" || !params.appId) {
-      const values = (await this.redis.eval(
-        `
-          local values = redis.call("lrange", KEYS[1], 0, -1)
-          redis.call("del", KEYS[1])
-          return values
-        `,
-        1,
-        globalKey,
-      )) as string[];
-      return values
-        .reverse()
+      return (await this.drainSerializedFrames(globalKey))
         .map((value: string) => JSON.parse(value) as EncryptedEnvelope);
     }
 
     const targetedKey = this.key(params.sessionId, params.target, params.appId);
-    const [globalValuesJson, targetedValuesJson] = (await this.redis.eval(
-      `
-        local globalValues = redis.call("lrange", KEYS[1], 0, -1)
-        local targetedValues = redis.call("lrange", KEYS[2], 0, -1)
-        redis.call("del", KEYS[1], KEYS[2])
-        return { cjson.encode(globalValues), cjson.encode(targetedValues) }
-      `,
-      2,
-      globalKey,
-      targetedKey,
-    )) as [string, string];
-
-    const globalValues = (JSON.parse(globalValuesJson) as string[]).reverse();
-    const targetedValues = (JSON.parse(targetedValuesJson) as string[]).reverse();
+    const [globalValues, targetedValues] = await Promise.all([
+      this.drainSerializedFrames(globalKey),
+      this.drainSerializedFrames(targetedKey),
+    ]);
     return [...globalValues, ...targetedValues].map(
       (value: string) => JSON.parse(value) as EncryptedEnvelope,
     );

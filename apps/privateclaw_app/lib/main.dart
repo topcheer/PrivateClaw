@@ -123,24 +123,16 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
   bool get _hasDraftContent =>
       _messageController.text.trim().isNotEmpty ||
       _selectedAttachments.isNotEmpty;
-  bool get _canCollapsePairingPanel =>
-      _invite != null &&
-      (_sessionStatus == PrivateClawSessionStatus.active ||
-          (_hasConnectedSession &&
-              (_sessionStatus == PrivateClawSessionStatus.reconnecting ||
-                  _sessionStatus == PrivateClawSessionStatus.relayAttached)));
-  bool get _canShowSessionQr =>
+  bool get _hasSessionSetup => _invite != null;
+  bool get _hasManagedSessionContext =>
       _invite != null &&
       (_hasConnectedSession ||
           _sessionStatus == PrivateClawSessionStatus.active ||
           _sessionStatus == PrivateClawSessionStatus.reconnecting ||
           _sessionStatus == PrivateClawSessionStatus.relayAttached);
+  bool get _canCollapsePairingPanel => _hasManagedSessionContext;
+  bool get _canShowSessionQr => _hasManagedSessionContext;
   bool get _isPreviewMode => widget.previewData != null;
-  bool get _showsDisconnectAction =>
-      _client != null ||
-      (_isPreviewMode &&
-          _invite != null &&
-          _sessionStatus != PrivateClawSessionStatus.idle);
   bool get _hasLiveSessionContext =>
       _invite != null &&
       (_hasConnectedSession ||
@@ -276,6 +268,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     setState(() {
       _sessionStatus = PrivateClawSessionStatus.reconnecting;
       _statusText = l10n.relayConnecting;
+      _isPairingPanelCollapsed = true;
       _isRenewingSession = false;
     });
     await _disposeClient(reason: 'app_backgrounded', notifyRemote: false);
@@ -412,7 +405,9 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
         .listen(_handleClientEvent);
 
     setState(() {
-      _hasConnectedSession = !resetConversationState && _hasConnectedSession;
+      _hasConnectedSession =
+          (!resetConversationState && _hasConnectedSession) ||
+          collapsePairingPanel;
       _identity = identity;
       _invite = invite;
       _client = client;
@@ -464,6 +459,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
         invite: record.invite,
         identity: record.identity,
         inviteInput: encodePrivateClawInviteUri(record.invite),
+        collapsePairingPanel: true,
       );
     } catch (error, stackTrace) {
       debugPrint('[privateclaw-app] failed to restore session: $error');
@@ -473,11 +469,12 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       }
       final AppLocalizations l10n = AppLocalizations.of(context)!;
       setState(() {
+        _hasConnectedSession = true;
         _identity = record.identity;
         _invite = record.invite;
         _sessionStatus = PrivateClawSessionStatus.error;
         _statusText = l10n.connectFailed(error.toString());
-        _isPairingPanelCollapsed = false;
+        _isPairingPanelCollapsed = true;
       });
     }
   }
@@ -598,7 +595,6 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
               _sessionStatus == PrivateClawSessionStatus.idle) {
             _hasConnectedSession = false;
           }
-          _isPairingPanelCollapsed = false;
         }
       }
     });
@@ -885,6 +881,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     setState(() {
       _hasConnectedSession = false;
       _invite = null;
+      _inviteController.clear();
       _participants.clear();
       _messages.clear();
       _availableCommands.clear();
@@ -1113,17 +1110,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
 
     return Scaffold(
       resizeToAvoidBottomInset: false,
-      appBar: AppBar(
-        title: Text(l10n.appTitle),
-        actions: <Widget>[
-          if (_showsDisconnectAction)
-            IconButton(
-              tooltip: l10n.disconnectTooltip,
-              onPressed: _disconnect,
-              icon: const Icon(Icons.link_off),
-            ),
-        ],
-      ),
+      appBar: AppBar(title: Text(l10n.appTitle)),
       body: GestureDetector(
         onTap: () => FocusScope.of(context).unfocus(),
         child: SafeArea(
@@ -1260,17 +1247,19 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
                     ),
                 ],
               ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _inviteController,
-                minLines: 2,
-                maxLines: 4,
-                decoration: InputDecoration(
-                  labelText: l10n.inviteInputLabel,
-                  hintText: l10n.inviteInputHint,
-                  border: const OutlineInputBorder(),
+              if (!_hasManagedSessionContext) ...<Widget>[
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _inviteController,
+                  minLines: 2,
+                  maxLines: 4,
+                  decoration: InputDecoration(
+                    labelText: l10n.inviteInputLabel,
+                    hintText: l10n.inviteInputHint,
+                    border: const OutlineInputBorder(),
+                  ),
                 ),
-              ),
+              ],
               const SizedBox(height: 12),
               Wrap(
                 spacing: 12,
@@ -1281,13 +1270,21 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
                     icon: const Icon(Icons.qr_code_scanner),
                     label: Text(l10n.scanQrButton),
                   ),
-                  FilledButton.tonalIcon(
-                    onPressed: () {
-                      unawaited(_connectFromInput(_inviteController.text));
-                    },
-                    icon: const Icon(Icons.login),
-                    label: Text(l10n.connectSessionButton),
-                  ),
+                  if (_hasManagedSessionContext)
+                    FilledButton.tonalIcon(
+                      key: const ValueKey<String>('session-disconnect-button'),
+                      onPressed: _disconnect,
+                      icon: const Icon(Icons.link_off),
+                      label: Text(l10n.disconnectTooltip),
+                    )
+                  else
+                    FilledButton.tonalIcon(
+                      onPressed: () {
+                        unawaited(_connectFromInput(_inviteController.text));
+                      },
+                      icon: const Icon(Icons.login),
+                      label: Text(l10n.connectSessionButton),
+                    ),
                   if (_canShowSessionQr)
                     FilledButton.tonalIcon(
                       key: const ValueKey<String>('session-qr-trigger'),

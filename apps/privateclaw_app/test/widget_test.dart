@@ -25,6 +25,49 @@ void main() {
   });
 
   testWidgets(
+    'active session preview hides manual join controls and shows scan plus disconnect actions',
+    (WidgetTester tester) async {
+      final DateTime now = DateTime.now().toUtc();
+      final PrivateClawInvite invite = PrivateClawInvite(
+        version: 1,
+        sessionId: 'session-active',
+        sessionKey: 'test-session-key',
+        appWsUrl: 'wss://relay.privateclaw.us/ws/app?sessionId=session-active',
+        expiresAt: now.add(const Duration(hours: 1)),
+      );
+
+      await tester.pumpWidget(
+        PrivateClawApp(
+          screenshotConfig: StoreScreenshotConfig(
+            previewData: PrivateClawPreviewData(
+              invite: invite,
+              identity: PrivateClawIdentity(
+                appId: 'app-active',
+                createdAt: now.subtract(const Duration(days: 1)),
+                displayName: 'Preview',
+              ),
+              status: PrivateClawSessionStatus.active,
+              statusText: 'Connected.',
+              isPairingPanelCollapsed: false,
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      expect(find.text('Invite link or QR payload'), findsNothing);
+      expect(find.text('Join session'), findsNothing);
+      expect(find.text('Scan QR code'), findsOneWidget);
+      expect(find.text('Disconnect'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('session-disconnect-button')),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
     'reconnecting preview keeps the pairing panel collapsed and can reshow the QR',
     (WidgetTester tester) async {
       final PrivateClawInvite invite = PrivateClawInvite(

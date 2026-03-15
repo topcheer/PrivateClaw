@@ -1,6 +1,6 @@
 {
   "name": "@privateclaw/privateclaw",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "PrivateClaw provider runtime and OpenClaw-compatible plugin adapter",
   "type": "module",
   "main": "./dist/index.js",

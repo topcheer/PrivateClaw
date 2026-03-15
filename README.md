@@ -12,6 +12,8 @@ PrivateClaw is a lightweight, end-to-end encrypted private channel for OpenClaw.
 
 Sessions can stay one-to-one by default, or opt into a small group mode where multiple paired apps share the same encrypted OpenClaw conversation while keeping stable per-install display names inside the chat UI.
 
+Join the community on Telegram: [PrivateClaw Telegram group](https://t.me/+W3RUKxEO9kIxMmZl)
+
 The repository contains:
 
 - `services/relay-server`: a blind WebSocket relay for encrypted session traffic.

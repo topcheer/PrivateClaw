@@ -13,6 +13,8 @@ It is responsible for:
 - forwarding user messages into an upstream bridge,
 - and sending assistant replies back through the relay.
 
+Join the community on Telegram: [PrivateClaw Telegram group](https://t.me/+W3RUKxEO9kIxMmZl)
+
 ## Provider control flow
 
 ```mermaid

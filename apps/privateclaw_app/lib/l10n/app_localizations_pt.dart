@@ -84,16 +84,33 @@ class AppLocalizationsPt extends AppLocalizations {
       'Se o simulador não puder escanear, cole o link de convite.';
 
   @override
+  String get scanSheetPickPhoto => 'Ler a partir de uma foto';
+
+  @override
+  String get scanSheetPickPhotoLoading => 'Lendo foto…';
+
+  @override
+  String get scanSheetNoQrInPhoto =>
+      'Nenhum código QR foi encontrado na foto selecionada.';
+
+  @override
+  String get scanSheetPhotoUnsupported =>
+      'Este dispositivo ainda não consegue ler códigos QR de fotos salvas. Cole o link de convite.';
+
+  @override
+  String get scanSheetPhotoFailed => 'Não foi possível ler a foto selecionada.';
+
+  @override
   String get scannerPermissionDenied =>
-      'É necessário acesso à câmera para escanear o QR de convite.';
+      'O acesso à câmera é necessário para leitura QR ao vivo. Você também pode escolher uma foto.';
 
   @override
   String get scannerUnsupported =>
-      'Este dispositivo ou simulador não oferece leitura pela câmera. Cole o link de convite.';
+      'A leitura ao vivo pela câmera não está disponível aqui. Escolha uma foto ou cole o link de convite.';
 
   @override
   String get scannerUnavailable =>
-      'A leitura de QR está temporariamente indisponível. Cole o link de convite.';
+      'A leitura de QR está temporariamente indisponível. Escolha uma foto ou cole o link de convite.';
 
   @override
   String get scannerLoading => 'Iniciando câmera…';
@@ -265,16 +282,33 @@ class AppLocalizationsPtBr extends AppLocalizationsPt {
       'Se o simulador não puder escanear, cole o link de convite.';
 
   @override
+  String get scanSheetPickPhoto => 'Ler a partir de uma foto';
+
+  @override
+  String get scanSheetPickPhotoLoading => 'Lendo foto…';
+
+  @override
+  String get scanSheetNoQrInPhoto =>
+      'Nenhum código QR foi encontrado na foto selecionada.';
+
+  @override
+  String get scanSheetPhotoUnsupported =>
+      'Este dispositivo ainda não consegue ler códigos QR de fotos salvas. Cole o link de convite.';
+
+  @override
+  String get scanSheetPhotoFailed => 'Não foi possível ler a foto selecionada.';
+
+  @override
   String get scannerPermissionDenied =>
-      'É necessário acesso à câmera para escanear o QR de convite.';
+      'O acesso à câmera é necessário para leitura QR ao vivo. Você também pode escolher uma foto.';
 
   @override
   String get scannerUnsupported =>
-      'Este dispositivo ou simulador não oferece leitura pela câmera. Cole o link de convite.';
+      'A leitura ao vivo pela câmera não está disponível aqui. Escolha uma foto ou cole o link de convite.';
 
   @override
   String get scannerUnavailable =>
-      'A leitura de QR está temporariamente indisponível. Cole o link de convite.';
+      'A leitura de QR está temporariamente indisponível. Escolha uma foto ou cole o link de convite.';
 
   @override
   String get scannerLoading => 'Iniciando câmera…';

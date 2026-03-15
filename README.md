@@ -190,6 +190,8 @@ cd apps/privateclaw_app && flutter pub get
 cd ../..
 ```
 
+To enable the repo-managed Git hooks that block accidental commits/pushes of local-only Firebase, relay, and signing credentials, run `npm run hooks:install` once in your clone.
+
 ### 2. Start a local relay
 
 For local Docker development:

@@ -83,16 +83,33 @@ class AppLocalizationsAr extends AppLocalizations {
       'إذا تعذر المسح في المحاكي، الصق رابط الدعوة بدلًا من ذلك.';
 
   @override
+  String get scanSheetPickPhoto => 'القراءة من صورة';
+
+  @override
+  String get scanSheetPickPhotoLoading => 'جارٍ قراءة الصورة…';
+
+  @override
+  String get scanSheetNoQrInPhoto =>
+      'لم يتم العثور على رمز QR في الصورة المحددة.';
+
+  @override
+  String get scanSheetPhotoUnsupported =>
+      'هذا الجهاز لا يستطيع بعد قراءة رموز QR من الصور المحفوظة. الصق رابط الدعوة بدلًا من ذلك.';
+
+  @override
+  String get scanSheetPhotoFailed => 'تعذر قراءة الصورة المحددة.';
+
+  @override
   String get scannerPermissionDenied =>
-      'يلزم الوصول إلى الكاميرا لمسح رمز الدعوة QR.';
+      'يلزم الوصول إلى الكاميرا للمسح المباشر لرمز QR. ويمكنك أيضًا اختيار صورة بدلًا من ذلك.';
 
   @override
   String get scannerUnsupported =>
-      'هذا الجهاز أو المحاكي لا يدعم المسح بالكاميرا. الصق رابط الدعوة بدلًا من ذلك.';
+      'المسح المباشر بالكاميرا غير متاح هنا. اختر صورة أو الصق رابط الدعوة.';
 
   @override
   String get scannerUnavailable =>
-      'مسح QR غير متاح مؤقتًا. الصق رابط الدعوة بدلًا من ذلك.';
+      'مسح QR غير متاح مؤقتًا. اختر صورة أو الصق رابط الدعوة.';
 
   @override
   String get scannerLoading => 'جارٍ تشغيل الكاميرا…';

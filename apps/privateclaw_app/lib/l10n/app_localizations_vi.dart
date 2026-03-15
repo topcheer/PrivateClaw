@@ -84,16 +84,32 @@ class AppLocalizationsVi extends AppLocalizations {
       'Nếu trình mô phỏng không thể quét, hãy dán liên kết mời trực tiếp.';
 
   @override
+  String get scanSheetPickPhoto => 'Đọc từ ảnh';
+
+  @override
+  String get scanSheetPickPhotoLoading => 'Đang đọc ảnh…';
+
+  @override
+  String get scanSheetNoQrInPhoto => 'Không tìm thấy mã QR trong ảnh đã chọn.';
+
+  @override
+  String get scanSheetPhotoUnsupported =>
+      'Thiết bị này chưa thể đọc mã QR từ ảnh đã lưu. Hãy dán liên kết mời.';
+
+  @override
+  String get scanSheetPhotoFailed => 'Không thể đọc ảnh đã chọn.';
+
+  @override
   String get scannerPermissionDenied =>
-      'Cần quyền truy cập camera để quét QR mời.';
+      'Cần quyền camera để quét QR trực tiếp. Bạn cũng có thể chọn ảnh thay thế.';
 
   @override
   String get scannerUnsupported =>
-      'Thiết bị hoặc trình mô phỏng này không hỗ trợ quét bằng camera. Hãy dán liên kết mời.';
+      'Không thể quét camera trực tiếp tại đây. Hãy chọn ảnh hoặc dán liên kết mời.';
 
   @override
   String get scannerUnavailable =>
-      'Tạm thời không thể quét QR. Hãy dán liên kết mời.';
+      'Tạm thời không thể quét QR. Hãy chọn ảnh hoặc dán liên kết mời.';
 
   @override
   String get scannerLoading => 'Đang khởi động camera…';

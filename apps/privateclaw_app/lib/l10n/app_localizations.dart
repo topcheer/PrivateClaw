@@ -250,22 +250,52 @@ abstract class AppLocalizations {
   /// **'If scanning is unavailable in the simulator, paste the invite link instead.'**
   String get scanSheetHint;
 
+  /// No description provided for @scanSheetPickPhoto.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan from photo'**
+  String get scanSheetPickPhoto;
+
+  /// No description provided for @scanSheetPickPhotoLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading photo…'**
+  String get scanSheetPickPhotoLoading;
+
+  /// No description provided for @scanSheetNoQrInPhoto.
+  ///
+  /// In en, this message translates to:
+  /// **'No QR code was found in the selected photo.'**
+  String get scanSheetNoQrInPhoto;
+
+  /// No description provided for @scanSheetPhotoUnsupported.
+  ///
+  /// In en, this message translates to:
+  /// **'This device cannot read QR codes from saved photos yet. Paste the invite link instead.'**
+  String get scanSheetPhotoUnsupported;
+
+  /// No description provided for @scanSheetPhotoFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t read the selected photo.'**
+  String get scanSheetPhotoFailed;
+
   /// No description provided for @scannerPermissionDenied.
   ///
   /// In en, this message translates to:
-  /// **'Camera access is required to scan the invite QR code.'**
+  /// **'Camera access is required for live QR scanning. You can also choose a photo instead.'**
   String get scannerPermissionDenied;
 
   /// No description provided for @scannerUnsupported.
   ///
   /// In en, this message translates to:
-  /// **'This device or simulator cannot provide camera scanning. Paste the invite link instead.'**
+  /// **'Live camera scanning is unavailable here. Choose a photo instead, or paste the invite link.'**
   String get scannerUnsupported;
 
   /// No description provided for @scannerUnavailable.
   ///
   /// In en, this message translates to:
-  /// **'QR scanning is temporarily unavailable. Paste the invite link instead.'**
+  /// **'QR scanning is temporarily unavailable. Choose a photo instead, or paste the invite link.'**
   String get scannerUnavailable;
 
   /// No description provided for @scannerLoading.

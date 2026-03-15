@@ -82,14 +82,31 @@ class AppLocalizationsJa extends AppLocalizations {
   String get scanSheetHint => 'シミュレータでスキャンできない場合は、代わりに招待リンクを貼り付けてください。';
 
   @override
-  String get scannerPermissionDenied => '招待 QR コードをスキャンするにはカメラ権限が必要です。';
+  String get scanSheetPickPhoto => '写真から読み取る';
+
+  @override
+  String get scanSheetPickPhotoLoading => '写真を読み取り中…';
+
+  @override
+  String get scanSheetNoQrInPhoto => '選択した写真に QR コードが見つかりませんでした。';
+
+  @override
+  String get scanSheetPhotoUnsupported =>
+      'この端末では保存済み写真から QR コードを読み取れません。招待リンクを貼り付けてください。';
+
+  @override
+  String get scanSheetPhotoFailed => '選択した写真を読み取れませんでした。';
+
+  @override
+  String get scannerPermissionDenied =>
+      'ライブ QR スキャンにはカメラ権限が必要です。代わりに写真を選んで読み取ることもできます。';
 
   @override
   String get scannerUnsupported =>
-      'このデバイスまたはシミュレータではカメラのスキャンを利用できません。代わりに招待リンクを貼り付けてください。';
+      'この環境ではライブカメラスキャンを利用できません。写真を選ぶか、招待リンクを貼り付けてください。';
 
   @override
-  String get scannerUnavailable => 'QR スキャンを現在利用できません。代わりに招待リンクを貼り付けてください。';
+  String get scannerUnavailable => 'QR スキャンは現在利用できません。写真を選ぶか、招待リンクを貼り付けてください。';
 
   @override
   String get scannerLoading => 'カメラを起動しています…';

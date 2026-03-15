@@ -155,6 +155,7 @@ test("privateclaw command writes QR media into the OpenClaw state media director
   assert.equal(reply.isError, undefined);
   assert.ok(reply.text);
   assert.ok(reply.mediaUrl);
+  assert.ok(!reply.text.includes("<qqimg>"));
   assert.match(reply.text, /邀请链接 \/ Invite URI/);
   assert.match(reply.text, /PrivateClaw 会话|PrivateClaw session/);
 
@@ -174,6 +175,73 @@ test("privateclaw command writes QR media into the OpenClaw state media director
   assert.equal(path.basename(mediaPath), `privateclaw-${invite.sessionId}.png`);
 
   const qrPng = await readFile(mediaPath);
+  assert.deepEqual(qrPng.subarray(0, PNG_SIGNATURE.length), PNG_SIGNATURE);
+});
+
+test("privateclaw command embeds qqimg tags for QQ channel replies", async (t) => {
+  const relay = createRelayServer({
+    host: "127.0.0.1",
+    port: 0,
+    sessionTtlMs: 60_000,
+    frameCacheSize: 8,
+  });
+  const { port } = await relay.start();
+
+  const stateDir = await mkdtemp(path.join(os.tmpdir(), "privateclaw-plugin-state-"));
+  t.after(async () => {
+    await rm(stateDir, { recursive: true, force: true });
+    await relay.stop();
+  });
+
+  const plugin = createOpenClawCompatiblePlugin({
+    providerWsUrl: `ws://127.0.0.1:${port}/ws/provider`,
+    appWsUrl: `ws://127.0.0.1:${port}/ws/app`,
+    bridge: new EchoBridge("OpenClaw bridge"),
+    welcomeMessage: "Welcome to PrivateClaw",
+  });
+  const { api, getCommand, getService } = createMockApi();
+  plugin.register(api);
+
+  const service = getService();
+  await service.start({
+    config: {},
+    stateDir,
+    logger: api.logger,
+  });
+  t.after(async () => {
+    await service.stop?.({
+      config: {},
+      stateDir,
+      logger: api.logger,
+    });
+  });
+
+  const command = getCommand();
+  const reply = await command.handler({
+    channel: "qqbot",
+    senderId: "tester",
+    isAuthorizedSender: true,
+    commandBody: "/privateclaw",
+    config: {},
+  });
+
+  assert.equal(reply.isError, undefined);
+  assert.ok(reply.text);
+  assert.equal(reply.mediaUrl, undefined);
+  assert.match(reply.text, /<qqimg>[^<]+<\/qqimg>/);
+
+  const inviteUri = reply.text.match(/privateclaw:\/\/connect\?payload=\S+/)?.[0];
+  assert.ok(inviteUri, "reply text should include a PrivateClaw invite URI");
+  const invite = decodeInviteString(inviteUri);
+
+  const qqImagePath = reply.text.match(/<qqimg>([^<]+)<\/qqimg>/)?.[1];
+  assert.ok(qqImagePath, "QQ reply should embed the QR path inside <qqimg> tags");
+
+  const expectedMediaDir = path.join(stateDir, "media", "privateclaw");
+  assert.equal(path.dirname(qqImagePath), expectedMediaDir);
+  assert.equal(path.basename(qqImagePath), `privateclaw-${invite.sessionId}.png`);
+
+  const qrPng = await readFile(qqImagePath);
   assert.deepEqual(qrPng.subarray(0, PNG_SIGNATURE.length), PNG_SIGNATURE);
 });
 

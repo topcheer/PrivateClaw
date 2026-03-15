@@ -81,14 +81,32 @@ class AppLocalizationsKo extends AppLocalizations {
   String get scanSheetHint => '시뮬레이터에서 스캔할 수 없으면 초대 링크를 직접 붙여 넣으세요.';
 
   @override
-  String get scannerPermissionDenied => '초대 QR 코드를 스캔하려면 카메라 권한이 필요합니다.';
+  String get scanSheetPickPhoto => '사진에서 읽기';
+
+  @override
+  String get scanSheetPickPhotoLoading => '사진을 읽는 중…';
+
+  @override
+  String get scanSheetNoQrInPhoto => '선택한 사진에서 QR 코드를 찾지 못했습니다.';
+
+  @override
+  String get scanSheetPhotoUnsupported =>
+      '이 기기에서는 저장된 사진에서 QR 코드를 읽을 수 없습니다. 초대 링크를 붙여 넣으세요.';
+
+  @override
+  String get scanSheetPhotoFailed => '선택한 사진을 읽을 수 없습니다.';
+
+  @override
+  String get scannerPermissionDenied =>
+      '실시간 QR 스캔에는 카메라 권한이 필요합니다. 대신 사진을 선택해 읽을 수도 있습니다.';
 
   @override
   String get scannerUnsupported =>
-      '이 기기 또는 시뮬레이터에서는 카메라 스캔을 사용할 수 없습니다. 대신 초대 링크를 붙여 넣으세요.';
+      '여기서는 실시간 카메라 스캔을 사용할 수 없습니다. 사진을 선택하거나 초대 링크를 붙여 넣으세요.';
 
   @override
-  String get scannerUnavailable => 'QR 스캔을 현재 사용할 수 없습니다. 대신 초대 링크를 붙여 넣으세요.';
+  String get scannerUnavailable =>
+      'QR 스캔을 지금 사용할 수 없습니다. 사진을 선택하거나 초대 링크를 붙여 넣으세요.';
 
   @override
   String get scannerLoading => '카메라를 시작하는 중…';

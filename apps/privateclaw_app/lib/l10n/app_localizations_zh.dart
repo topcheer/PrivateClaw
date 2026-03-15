@@ -79,13 +79,28 @@ class AppLocalizationsZh extends AppLocalizations {
   String get scanSheetHint => '如果模拟器无法扫码，也可以直接粘贴邀请链接。';
 
   @override
-  String get scannerPermissionDenied => '需要相机权限才能扫描邀请二维码。';
+  String get scanSheetPickPhoto => '识别本地图片';
 
   @override
-  String get scannerUnsupported => '当前设备或模拟器无法提供摄像头扫描，请直接粘贴邀请链接。';
+  String get scanSheetPickPhotoLoading => '正在识别图片…';
 
   @override
-  String get scannerUnavailable => '扫码暂时不可用，请直接粘贴邀请链接。';
+  String get scanSheetNoQrInPhoto => '所选图片中没有识别到二维码。';
+
+  @override
+  String get scanSheetPhotoUnsupported => '当前设备暂不支持从本地图片识别二维码，请直接粘贴邀请链接。';
+
+  @override
+  String get scanSheetPhotoFailed => '无法读取所选图片。';
+
+  @override
+  String get scannerPermissionDenied => '实时扫码需要相机权限。你也可以改为选择本地图片识别。';
+
+  @override
+  String get scannerUnsupported => '当前设备无法使用实时相机扫码。你可以改为选择本地图片，或直接粘贴邀请链接。';
+
+  @override
+  String get scannerUnavailable => '扫码暂时不可用。你可以改为选择本地图片，或直接粘贴邀请链接。';
 
   @override
   String get scannerLoading => '正在启动摄像头…';
@@ -253,13 +268,28 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
   String get scanSheetHint => '如果模擬器無法掃碼，也可以直接貼上邀請連結。';
 
   @override
-  String get scannerPermissionDenied => '需要相機權限才能掃描邀請 QR Code。';
+  String get scanSheetPickPhoto => '辨識本機圖片';
 
   @override
-  String get scannerUnsupported => '此裝置或模擬器無法提供相機掃描，請直接貼上邀請連結。';
+  String get scanSheetPickPhotoLoading => '正在辨識圖片…';
 
   @override
-  String get scannerUnavailable => '掃碼功能暫時不可用，請直接貼上邀請連結。';
+  String get scanSheetNoQrInPhoto => '所選圖片中沒有偵測到 QR Code。';
+
+  @override
+  String get scanSheetPhotoUnsupported => '此裝置暫不支援從本機圖片辨識 QR Code，請直接貼上邀請連結。';
+
+  @override
+  String get scanSheetPhotoFailed => '無法讀取所選圖片。';
+
+  @override
+  String get scannerPermissionDenied => '即時掃碼需要相機權限。你也可以改為選擇本機圖片辨識。';
+
+  @override
+  String get scannerUnsupported => '此裝置無法使用即時相機掃碼。你可以改為選擇本機圖片，或直接貼上邀請連結。';
+
+  @override
+  String get scannerUnavailable => '掃碼功能暫時不可用。你可以改為選擇本機圖片，或直接貼上邀請連結。';
 
   @override
   String get scannerLoading => '正在啟動相機…';

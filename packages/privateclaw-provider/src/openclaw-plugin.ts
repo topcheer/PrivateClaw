@@ -92,6 +92,7 @@ interface PrivateClawPairCliOptions {
 
 const DEFAULT_PROVIDER_LABEL = "PrivateClaw";
 const DEFAULT_BRIDGE_MODE: PrivateClawBridgeMode = "openclaw-agent";
+const QQ_INLINE_IMAGE_REPLY_CHANNELS = new Set(["qqbot", "qq", "qqguild", "qq-guild"]);
 const ALLOWED_THINKING_LEVELS = new Set<OpenClawThinkingLevel>([
   "off",
   "minimal",
@@ -107,6 +108,27 @@ function readString(value: unknown): string | undefined {
 
   const trimmed = value.trim();
   return trimmed === "" ? undefined : trimmed;
+}
+
+function channelRequiresInlineImageReply(channel?: string): boolean {
+  const normalized = readString(channel)?.toLowerCase();
+  return normalized != null && QQ_INLINE_IMAGE_REPLY_CHANNELS.has(normalized);
+}
+
+function buildCommandReplyText(params: {
+  announcementText: string;
+  inviteUri: string;
+  channel: string | undefined;
+  qrImagePath: string;
+}): string {
+  const baseText =
+    `${params.announcementText}\n\n${PRIVATECLAW_INVITE_URI_LABEL}:\n${params.inviteUri}`;
+  if (!channelRequiresInlineImageReply(params.channel)) {
+    return baseText;
+  }
+
+  // QQ command replies expand images from inline <qqimg> tags instead of mediaUrl payloads.
+  return `${baseText}\n\n<qqimg>${params.qrImagePath}</qqimg>`;
 }
 
 function readNumber(value: unknown): number | undefined {
@@ -391,9 +413,21 @@ class PrivateClawPluginRuntime {
     );
   }
 
-  async buildCommandReply(bundle: PrivateClawInviteBundle): Promise<ReplyPayloadCompat> {
-    const text = `${bundle.announcementText}\n\n${PRIVATECLAW_INVITE_URI_LABEL}:\n${bundle.inviteUri}`;
+  async buildCommandReply(
+    bundle: PrivateClawInviteBundle,
+    channel?: string,
+  ): Promise<ReplyPayloadCompat> {
     const qrPng = await writeInviteQrPng(bundle, this.getMediaDir());
+    const text = buildCommandReplyText({
+      announcementText: bundle.announcementText,
+      inviteUri: bundle.inviteUri,
+      channel,
+      qrImagePath: qrPng.pngPath,
+    });
+    if (channelRequiresInlineImageReply(channel)) {
+      return { text };
+    }
+
     return {
       text,
       mediaUrl: process.platform === "win32" ? qrPng.pngFileUrl : qrPng.pngPath,
@@ -475,7 +509,7 @@ function createPluginDefinition(
             api.logger.info(
               `[privateclaw] invite created for session ${bundle.invite.sessionId} on ${ctx.channel}`,
             );
-            const reply = await runtime.buildCommandReply(bundle);
+            const reply = await runtime.buildCommandReply(bundle, ctx.channel);
             api.logger.info(
               `[privateclaw] QR image prepared for session ${bundle.invite.sessionId}`,
             );

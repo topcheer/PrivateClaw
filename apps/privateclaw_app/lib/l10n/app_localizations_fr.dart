@@ -85,16 +85,34 @@ class AppLocalizationsFr extends AppLocalizations {
       'Si le simulateur ne peut pas scanner, collez le lien d’invitation à la place.';
 
   @override
+  String get scanSheetPickPhoto => 'Lire depuis une photo';
+
+  @override
+  String get scanSheetPickPhotoLoading => 'Lecture de la photo…';
+
+  @override
+  String get scanSheetNoQrInPhoto =>
+      'Aucun code QR n’a été trouvé dans la photo sélectionnée.';
+
+  @override
+  String get scanSheetPhotoUnsupported =>
+      'Cet appareil ne peut pas encore lire les QR codes depuis les photos enregistrées. Collez le lien d’invitation.';
+
+  @override
+  String get scanSheetPhotoFailed =>
+      'Impossible de lire la photo sélectionnée.';
+
+  @override
   String get scannerPermissionDenied =>
-      'L’accès à la caméra est requis pour scanner le QR code d’invitation.';
+      'L’accès à la caméra est nécessaire pour le scan QR en direct. Vous pouvez aussi choisir une photo.';
 
   @override
   String get scannerUnsupported =>
-      'Cet appareil ou simulateur ne peut pas utiliser le scan caméra. Collez le lien d’invitation à la place.';
+      'Le scan caméra en direct n’est pas disponible ici. Choisissez une photo ou collez le lien d’invitation.';
 
   @override
   String get scannerUnavailable =>
-      'Le scan QR est temporairement indisponible. Collez le lien d’invitation à la place.';
+      'Le scan QR est temporairement indisponible. Choisissez une photo ou collez le lien d’invitation.';
 
   @override
   String get scannerLoading => 'Démarrage de la caméra…';

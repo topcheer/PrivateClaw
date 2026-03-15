@@ -1,14 +1,25 @@
 import 'dart:async';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../l10n/app_localizations.dart';
+import '../services/privateclaw_invite_image_decoder.dart';
 
 class InviteScannerSheet extends StatefulWidget {
-  const InviteScannerSheet({required this.onDetected, super.key});
+  const InviteScannerSheet({
+    required this.onDetected,
+    super.key,
+    this.pickImagePath,
+    this.analyzeImagePath,
+    this.previewOverride,
+  });
 
   final ValueChanged<String> onDetected;
+  final Future<String?> Function()? pickImagePath;
+  final Future<String?> Function(String path)? analyzeImagePath;
+  final Widget? previewOverride;
 
   @override
   State<InviteScannerSheet> createState() => _InviteScannerSheetState();
@@ -17,11 +28,121 @@ class InviteScannerSheet extends StatefulWidget {
 class _InviteScannerSheetState extends State<InviteScannerSheet> {
   final MobileScannerController _controller = MobileScannerController();
   bool _handled = false;
+  bool _isAnalyzingImage = false;
+  String? _imageFeedback;
 
   @override
   void dispose() {
     unawaited(_controller.dispose());
     super.dispose();
+  }
+
+  Future<String?> _pickImagePath() async {
+    final FilePickerResult? result = await FilePicker.platform.pickFiles(
+      allowMultiple: false,
+      type: FileType.image,
+    );
+    if (result == null || result.files.isEmpty) {
+      return null;
+    }
+
+    final String? path = result.files.single.path;
+    if (path == null || path.isEmpty) {
+      throw UnsupportedError('The selected image is not readable from a file.');
+    }
+    return path;
+  }
+
+  Future<String?> _analyzeImagePath(String path) async {
+    try {
+      final BarcodeCapture? capture = await _controller.analyzeImage(path);
+      return _firstRawValue(capture?.barcodes ?? const <Barcode>[]);
+    } on UnsupportedError {
+      return PrivateClawInviteImageDecoder.decodeImage(path);
+    }
+  }
+
+  Future<void> _handleDetectedValue(String value) async {
+    if (_handled) {
+      return;
+    }
+    _handled = true;
+    await _controller.stop();
+    if (!mounted) {
+      return;
+    }
+    widget.onDetected(value);
+  }
+
+  Future<void> _pickAndAnalyzeImage() async {
+    if (_handled || _isAnalyzingImage) {
+      return;
+    }
+
+    final AppLocalizations l10n = AppLocalizations.of(context)!;
+    final Future<String?> Function() pickImagePath =
+        widget.pickImagePath ?? _pickImagePath;
+    final Future<String?> Function(String path) analyzeImagePath =
+        widget.analyzeImagePath ?? _analyzeImagePath;
+
+    setState(() {
+      _isAnalyzingImage = true;
+      _imageFeedback = null;
+    });
+
+    try {
+      final String? path = await pickImagePath();
+      if (!mounted || path == null) {
+        return;
+      }
+
+      final String? value = await analyzeImagePath(path);
+      if (!mounted) {
+        return;
+      }
+      if (value == null || value.isEmpty) {
+        setState(() {
+          _imageFeedback = l10n.scanSheetNoQrInPhoto;
+        });
+        return;
+      }
+      await _handleDetectedValue(value);
+    } on MobileScannerBarcodeException {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _imageFeedback = l10n.scanSheetNoQrInPhoto;
+      });
+    } on UnsupportedError {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _imageFeedback = l10n.scanSheetPhotoUnsupported;
+      });
+    } on MobileScannerException {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _imageFeedback = l10n.scanSheetPhotoFailed;
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _imageFeedback = l10n.scanSheetPhotoFailed;
+      });
+    } finally {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isAnalyzingImage = false;
+      });
+    }
   }
 
   @override
@@ -49,62 +170,86 @@ class _InviteScannerSheetState extends State<InviteScannerSheet> {
               ),
             ),
             Expanded(
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(24),
-                child: MobileScanner(
-                  controller: _controller,
-                  errorBuilder:
-                      (BuildContext context, MobileScannerException error) {
-                        return _ScannerUnavailableView(error: error);
-                      },
-                  placeholderBuilder: (BuildContext context) {
-                    return ColoredBox(
-                      color: Colors.black,
-                      child: Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: <Widget>[
-                            const CircularProgressIndicator(),
-                            const SizedBox(height: 16),
-                            Text(
-                              l10n.scannerLoading,
-                              style: const TextStyle(color: Colors.white),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(24),
+                  child:
+                      widget.previewOverride ??
+                      MobileScanner(
+                        controller: _controller,
+                        errorBuilder:
+                            (
+                              BuildContext context,
+                              MobileScannerException error,
+                            ) {
+                              return _ScannerUnavailableView(error: error);
+                            },
+                        placeholderBuilder: (BuildContext context) {
+                          return ColoredBox(
+                            color: Colors.black,
+                            child: Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: <Widget>[
+                                  const CircularProgressIndicator(),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    l10n.scannerLoading,
+                                    style: const TextStyle(color: Colors.white),
+                                  ),
+                                ],
+                              ),
                             ),
-                          ],
-                        ),
+                          );
+                        },
+                        onDetect: (BarcodeCapture capture) async {
+                          final String? value = _firstRawValue(
+                            capture.barcodes,
+                          );
+                          if (value == null) {
+                            return;
+                          }
+                          await _handleDetectedValue(value);
+                        },
                       ),
-                    );
-                  },
-                  onDetect: (BarcodeCapture capture) async {
-                    if (_handled) {
-                      return;
-                    }
-                    String? value;
-                    for (final Barcode barcode in capture.barcodes) {
-                      final String? rawValue = barcode.rawValue;
-                      if (rawValue != null && rawValue.isNotEmpty) {
-                        value = rawValue;
-                        break;
-                      }
-                    }
-                    if (value == null) {
-                      return;
-                    }
-                    _handled = true;
-                    await _controller.stop();
-                    if (!mounted) {
-                      return;
-                    }
-                    widget.onDetected(value);
-                  },
                 ),
               ),
             ),
             Padding(
               padding: const EdgeInsets.all(16),
-              child: Text(
-                l10n.scanSheetHint,
-                style: Theme.of(context).textTheme.bodyMedium,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  OutlinedButton.icon(
+                    key: const ValueKey<String>('scan-photo-button'),
+                    onPressed: _isAnalyzingImage ? null : _pickAndAnalyzeImage,
+                    icon: _isAnalyzingImage
+                        ? const SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.photo_library_outlined),
+                    label: Text(
+                      _isAnalyzingImage
+                          ? l10n.scanSheetPickPhotoLoading
+                          : l10n.scanSheetPickPhoto,
+                    ),
+                  ),
+                  if (_imageFeedback case final String feedback)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: Text(
+                        feedback,
+                        key: const ValueKey<String>('scan-photo-feedback'),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
           ],
@@ -112,6 +257,16 @@ class _InviteScannerSheetState extends State<InviteScannerSheet> {
       ),
     );
   }
+}
+
+String? _firstRawValue(Iterable<Barcode> barcodes) {
+  for (final Barcode barcode in barcodes) {
+    final String? rawValue = barcode.rawValue;
+    if (rawValue != null && rawValue.isNotEmpty) {
+      return rawValue;
+    }
+  }
+  return null;
 }
 
 class _ScannerUnavailableView extends StatelessWidget {

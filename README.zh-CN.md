@@ -165,6 +165,8 @@ cd apps/privateclaw_app && flutter pub get
 cd ../..
 ```
 
+如果你希望启用仓库内置的 Git hook，防止把本地 Firebase、relay 或签名凭据误提交 / 误推送出去，请在 clone 后执行一次 `npm run hooks:install`。
+
 ### 2. 启动本地 relay
 
 本地 Docker 开发：

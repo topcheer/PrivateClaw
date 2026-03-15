@@ -84,16 +84,33 @@ class AppLocalizationsId extends AppLocalizations {
       'Jika simulator tidak bisa memindai, tempel tautan undangan secara langsung.';
 
   @override
+  String get scanSheetPickPhoto => 'Baca dari gambar';
+
+  @override
+  String get scanSheetPickPhotoLoading => 'Sedang membaca gambar…';
+
+  @override
+  String get scanSheetNoQrInPhoto =>
+      'Tidak ada kode QR yang ditemukan pada gambar yang dipilih.';
+
+  @override
+  String get scanSheetPhotoUnsupported =>
+      'Perangkat ini belum bisa membaca kode QR dari gambar tersimpan. Tempel tautan undangan.';
+
+  @override
+  String get scanSheetPhotoFailed => 'Gagal membaca gambar yang dipilih.';
+
+  @override
   String get scannerPermissionDenied =>
-      'Akses kamera diperlukan untuk memindai QR undangan.';
+      'Akses kamera diperlukan untuk pemindaian QR langsung. Anda juga bisa memilih gambar sebagai gantinya.';
 
   @override
   String get scannerUnsupported =>
-      'Perangkat atau simulator ini tidak dapat menyediakan pemindaian kamera. Tempel tautan undangan sebagai gantinya.';
+      'Pemindaian kamera langsung tidak tersedia di sini. Pilih gambar atau tempel tautan undangan.';
 
   @override
   String get scannerUnavailable =>
-      'Pemindaian QR sedang tidak tersedia. Tempel tautan undangan sebagai gantinya.';
+      'Pemindaian QR sedang tidak tersedia. Pilih gambar atau tempel tautan undangan.';
 
   @override
   String get scannerLoading => 'Memulai kamera…';

@@ -18,6 +18,8 @@ apps/privateclaw_app/builds/
 apps/privateclaw_app/.dart_tool/
 apps/privateclaw_app/.flutter-plugins
 apps/privateclaw_app/.flutter-plugins-dependencies
+apps/privateclaw_app/android/app/google-services.json
+apps/privateclaw_app/ios/Runner/GoogleService-Info.plist
 services/relay-server/.env
 packages/privateclaw-provider/.env
 apps/privateclaw_app/fastlane.env

@@ -176,6 +176,15 @@ export interface AppFrameMessage {
   envelope: EncryptedEnvelope;
 }
 
+export interface AppRegisterPushMessage {
+  type: "app:register_push";
+  token: string;
+}
+
+export interface AppUnregisterPushMessage {
+  type: "app:unregister_push";
+}
+
 export interface RelayProviderReadyMessage {
   type: "relay:provider_ready";
 }
@@ -226,7 +235,10 @@ export type ProviderToRelayMessage =
   | ProviderCloseSessionMessage
   | ProviderRenewSessionMessage;
 
-export type AppToRelayMessage = AppFrameMessage;
+export type AppToRelayMessage =
+  | AppFrameMessage
+  | AppRegisterPushMessage
+  | AppUnregisterPushMessage;
 
 export type RelayToProviderMessage =
   | RelayProviderReadyMessage

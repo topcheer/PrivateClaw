@@ -169,6 +169,7 @@ export interface RelayClusterClient {
     providerId: string,
     targetNodeId: string,
   ): Promise<void>;
+  hasAppBinding(sessionId: string, appId: string): Promise<boolean>;
   close(): Promise<void>;
 }
 
@@ -404,6 +405,7 @@ abstract class BaseRelayClusterClient implements RelayClusterClient {
   protected abstract subscribeChannel(channel: string): Promise<void>;
   protected abstract unsubscribeChannel(channel: string): Promise<void>;
   protected abstract publish(channel: string, payload: string): Promise<number>;
+  abstract hasAppBinding(sessionId: string, appId: string): Promise<boolean>;
 
   abstract claimProvider(
     providerId: string,
@@ -550,6 +552,10 @@ export class InMemoryRelayClusterClient extends BaseRelayClusterClient {
         this.shared.channelSubscribers.delete(channel);
       }
     }
+  }
+
+  async hasAppBinding(sessionId: string, appId: string): Promise<boolean> {
+    return this.shared.appPresence.has(`${sessionId}:${appId}`);
   }
 }
 
@@ -703,6 +709,10 @@ export class RedisRelayClusterClient extends BaseRelayClusterClient {
   async close(): Promise<void> {
     await this.subscriber.quit();
     await this.redis.quit();
+  }
+
+  async hasAppBinding(sessionId: string, appId: string): Promise<boolean> {
+    return (await this.redis.exists(appPresenceKey(sessionId, appId))) === 1;
   }
 }
 

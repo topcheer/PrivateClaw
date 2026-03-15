@@ -1,0 +1,21 @@
+name: privateclaw_local_notifications
+description: PrivateClaw local notifications bridge
+version: 0.0.1
+publish_to: 'none'
+
+environment:
+  sdk: ^3.10.7
+  flutter: '>=3.27.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: gg.ai.privateclaw_local_notifications
+        pluginClass: PrivateClawLocalNotificationsPlugin
+      ios:
+        pluginClass: PrivateClawLocalNotificationsPlugin

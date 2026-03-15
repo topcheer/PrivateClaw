@@ -5,6 +5,10 @@ export interface RelayServerConfig {
   frameCacheSize: number;
   instanceId?: string;
   redisUrl?: string;
+  fcmServiceAccountJson?: string;
+  fcmProjectId?: string;
+  fcmClientEmail?: string;
+  fcmPrivateKey?: string;
 }
 
 function parsePositiveInteger(
@@ -45,6 +49,11 @@ export function loadRelayConfig(env: NodeJS.ProcessEnv = process.env): RelayServ
     env.PRIVATECLAW_RELAY_INSTANCE_ID?.trim() ||
     env.RAILWAY_REPLICA_ID?.trim();
   const redisUrl = env.PRIVATECLAW_REDIS_URL?.trim() || env.REDIS_URL?.trim();
+  const fcmServiceAccountJson =
+    env.PRIVATECLAW_FCM_SERVICE_ACCOUNT_JSON?.trim();
+  const fcmProjectId = env.PRIVATECLAW_FCM_PROJECT_ID?.trim();
+  const fcmClientEmail = env.PRIVATECLAW_FCM_CLIENT_EMAIL?.trim();
+  const fcmPrivateKey = env.PRIVATECLAW_FCM_PRIVATE_KEY?.trim();
 
   return {
     host,
@@ -53,5 +62,9 @@ export function loadRelayConfig(env: NodeJS.ProcessEnv = process.env): RelayServ
     frameCacheSize,
     ...(instanceId ? { instanceId } : {}),
     ...(redisUrl ? { redisUrl } : {}),
+    ...(fcmServiceAccountJson ? { fcmServiceAccountJson } : {}),
+    ...(fcmProjectId ? { fcmProjectId } : {}),
+    ...(fcmClientEmail ? { fcmClientEmail } : {}),
+    ...(fcmPrivateKey ? { fcmPrivateKey } : {}),
   };
 }

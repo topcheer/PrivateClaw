@@ -8,7 +8,8 @@
   ],
   "scripts": {
     "build": "npm run build --workspace @privateclaw/protocol && npm run build --workspace @privateclaw/relay-server && npm run build --workspace @privateclaw/privateclaw",
-    "docker:relay": "docker compose up --build relay",
+    "docker:relay": "scripts/with-relay-env.sh docker compose up --build relay",
+    "relay:promote": "node scripts/promote-relay-branch.mjs",
     "store:version": "node scripts/resolve-mobile-version.mjs",
     "store:version:shell": "node scripts/resolve-mobile-version.mjs --shell",
     "store:version:json": "node scripts/resolve-mobile-version.mjs --json",

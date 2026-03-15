@@ -170,6 +170,13 @@ cd apps/privateclaw_app
 flutter run
 ```
 
+The mobile app's native Firebase files are intentionally local-only:
+
+- `apps/privateclaw_app/android/app/google-services.json`
+- `apps/privateclaw_app/ios/Runner/GoogleService-Info.plist`
+
+If those files are present on your machine, the app can exercise the full Firebase push/background-wake flow. If they are absent, the app still builds and runs, but push stays disabled until you add your own Firebase project configuration.
+
 Then either scan the QR code returned by `/privateclaw` from your existing channel, or scan the QR code rendered by `openclaw privateclaw pair`.
 If you are pairing on a simulator or desktop, you can also paste either the raw `privateclaw://connect?...` link or the full `Invite URI: ...` / `邀请链接 / Invite URI: ...` line into the app.
 
@@ -190,6 +197,8 @@ For local Docker development:
 ```bash
 npm run docker:relay
 ```
+
+That script auto-loads ignored local overrides from `services/relay-server/.env` when the file exists, which is the recommended place to keep your own FCM relay credentials for local push debugging.
 
 For a direct Node.js run:
 
@@ -226,6 +235,8 @@ If you use your own relay instead of `https://relay.privateclaw.us`, point OpenC
 docker compose up --build relay
 ```
 
+To enable relay-side wake push locally, copy `services/relay-server/.env.example` to the ignored `services/relay-server/.env` and fill in your own FCM credentials first. Public clones can run the relay without that file, but wake notifications stay disabled until they provide their own config.
+
 With the optional Redis profile:
 
 ```bash
@@ -258,6 +269,24 @@ Embedded-Redis Railway deploy:
 2. Deploy.
 
 The embedded-Redis image starts Redis on `127.0.0.1:6379` inside the relay container and wires `PRIVATECLAW_REDIS_URL` automatically. It is convenient for a single relay replica, but it does **not** provide cross-instance HA because each container gets its own private Redis.
+
+### Relay-only deployment branch
+
+If your Railway relay service is pinned to the `railway-relay` branch, you can promote a committed relay change without touching your current worktree:
+
+```bash
+npm run relay:promote
+```
+
+That command cherry-picks the current `HEAD` onto `railway-relay` inside a temporary `git worktree`, then pushes the branch to both `origin` and `upstream`.
+
+To promote specific relay commits instead of `HEAD`:
+
+```bash
+npm run relay:promote -- <commit> [<commit>...]
+```
+
+Set the Railway relay service source branch to `railway-relay`, and keep regular app, site, and provider work on `main`.
 
 ### GitHub-hosted container image
 

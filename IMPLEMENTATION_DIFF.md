@@ -270,7 +270,7 @@ After installation, `~/.openclaw/openclaw.json` will be auto-updated:
     "installs": {
       "privateclaw": {
         "source": "local",
-        "installPath": "/Users/zhanju/ggai/PrivateClaw/packages/privateclaw-provider",
+        "installPath": "$HOME/ggai/PrivateClaw/packages/privateclaw-provider",
         "resolvedName": "@privateclaw/provider",
         "resolvedVersion": "0.1.0",
         "installedAt": "2026-03-12T..."

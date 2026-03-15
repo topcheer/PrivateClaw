@@ -24,6 +24,13 @@ flutter pub get
 flutter run
 ```
 
+The app's Firebase push setup is intentionally local-only by default. Keep your own native Firebase files outside Git at:
+
+- `android/app/google-services.json`
+- `ios/Runner/GoogleService-Info.plist`
+
+When those files are present, device builds can exercise full push/background wake flows. Without them, the app still builds and runs, but Firebase push stays disabled until you add your own configuration.
+
 To join a normal private session, scan a QR code created by `/privateclaw` or `openclaw privateclaw pair`.
 You can also paste the raw `privateclaw://connect?...` link or the full `Invite URI: ...` announcement text.
 

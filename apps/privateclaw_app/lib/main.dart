@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/intl.dart';
@@ -14,7 +15,11 @@ import 'models/privateclaw_identity.dart';
 import 'models/privateclaw_invite.dart';
 import 'models/privateclaw_participant.dart';
 import 'models/privateclaw_slash_command.dart';
+import 'services/privateclaw_active_session_store.dart';
+import 'services/privateclaw_debug_bootstrap.dart';
 import 'services/privateclaw_identity_store.dart';
+import 'services/privateclaw_firebase_options.dart';
+import 'services/privateclaw_notification_service.dart';
 import 'services/privateclaw_session_client.dart';
 import 'store_screenshot_preview.dart';
 import 'widgets/chat_message_bubble.dart';
@@ -25,10 +30,21 @@ const int _maxInlineAttachmentBytes = 5 * 1024 * 1024;
 const Duration _sessionRenewWarningThreshold = Duration(minutes: 30);
 const String _sessionRenewCommandSlash = '/renew-session';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  if (privateClawSupportsFirebasePushOnCurrentPlatform()) {
+    FirebaseMessaging.onBackgroundMessage(privateClawBackgroundMessageHandler);
+  }
+  await PrivateClawNotificationService.instance.bootstrap();
   final StoreScreenshotConfig screenshotConfig =
       StoreScreenshotConfig.fromEnvironment();
   runApp(PrivateClawApp(screenshotConfig: screenshotConfig));
+}
+
+bool privateClawShouldSuspendLiveSession(AppLifecycleState state) {
+  return state == AppLifecycleState.paused ||
+      state == AppLifecycleState.hidden ||
+      state == AppLifecycleState.detached;
 }
 
 class PrivateClawApp extends StatelessWidget {
@@ -71,9 +87,14 @@ class PrivateClawHomePage extends StatefulWidget {
   State<PrivateClawHomePage> createState() => _PrivateClawHomePageState();
 }
 
-class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
+class _PrivateClawHomePageState extends State<PrivateClawHomePage>
+    with WidgetsBindingObserver {
+  final PrivateClawActiveSessionStore _activeSessionStore =
+      const PrivateClawActiveSessionStore();
   final PrivateClawIdentityStore _identityStore =
       const PrivateClawIdentityStore();
+  final PrivateClawNotificationService _notificationService =
+      PrivateClawNotificationService.instance;
   final TextEditingController _inviteController = TextEditingController();
   final TextEditingController _messageController = TextEditingController();
   final FocusNode _composerFocusNode = FocusNode();
@@ -166,6 +187,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     final PrivateClawPreviewData? previewData = widget.previewData;
     if (previewData != null) {
       _applyPreview(previewData);
@@ -173,6 +195,8 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _scheduleScrollToBottom();
       });
+    } else {
+      unawaited(_restoreActiveSessionIfAvailable());
     }
     _messageController.addListener(_handleComposerChanged);
   }
@@ -200,7 +224,8 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
 
   @override
   void dispose() {
-    unawaited(_disposeClient(reason: 'widget_disposed'));
+    WidgetsBinding.instance.removeObserver(this);
+    unawaited(_disposeClient(reason: 'widget_disposed', notifyRemote: false));
     _sessionExpiryRefreshTimer?.cancel();
     _inviteController.dispose();
     _composerFocusNode.dispose();
@@ -209,6 +234,78 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
       ..dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (_isPreviewMode) {
+      return;
+    }
+
+    if (state == AppLifecycleState.resumed) {
+      final PrivateClawSessionClient? client = _client;
+      if (client != null) {
+        unawaited(client.refreshPushRegistration());
+        return;
+      }
+
+      unawaited(_resumeSuspendedSessionIfAvailable());
+      return;
+    }
+
+    if (!privateClawShouldSuspendLiveSession(state)) {
+      return;
+    }
+
+    unawaited(_suspendActiveSessionForBackground());
+  }
+
+  Future<void> _suspendActiveSessionForBackground() async {
+    final PrivateClawSessionClient? client = _client;
+    if (client == null) {
+      return;
+    }
+
+    debugPrint('[privateclaw-app] suspending live session for background');
+    await _persistActiveSessionIfAvailable();
+    if (!mounted) {
+      return;
+    }
+
+    final AppLocalizations l10n = AppLocalizations.of(context)!;
+    setState(() {
+      _sessionStatus = PrivateClawSessionStatus.reconnecting;
+      _statusText = l10n.relayConnecting;
+      _isRenewingSession = false;
+    });
+    await _disposeClient(reason: 'app_backgrounded', notifyRemote: false);
+  }
+
+  Future<void> _resumeSuspendedSessionIfAvailable() async {
+    if (_client != null || _isPreviewMode) {
+      return;
+    }
+
+    final PrivateClawInvite? invite = _invite;
+    final PrivateClawIdentity? identity = _identity;
+    if (invite != null && identity != null && _hasConnectedSession) {
+      debugPrint(
+        '[privateclaw-app] resuming suspended session '
+        'session=${invite.sessionId}',
+      );
+      await _connectToInvite(
+        invite: invite,
+        identity: identity,
+        inviteInput: _inviteController.text.isNotEmpty
+            ? _inviteController.text
+            : encodePrivateClawInviteUri(invite),
+        resetConversationState: false,
+        collapsePairingPanel: true,
+      );
+      return;
+    }
+
+    await _restoreActiveSessionIfAvailable();
   }
 
   void _handleComposerChanged() {
@@ -251,14 +348,17 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
     );
   }
 
-  Future<void> _disposeClient({String reason = 'user_left'}) async {
+  Future<void> _disposeClient({
+    String reason = 'user_left',
+    bool notifyRemote = true,
+  }) async {
     await _clientSubscription?.cancel();
     _clientSubscription = null;
 
     final PrivateClawSessionClient? client = _client;
     _client = null;
     if (client != null) {
-      await client.dispose(reason: reason);
+      await client.dispose(reason: reason, notifyRemote: notifyRemote);
     }
   }
 
@@ -275,37 +375,16 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
     }
 
     await _disposeClient(reason: 'switch_session');
+    await _activeSessionStore.clear();
 
     try {
       final PrivateClawInvite invite = PrivateClawInvite.fromScan(trimmed);
       final PrivateClawIdentity identity = await _ensureIdentity();
-      final PrivateClawSessionClient client = PrivateClawSessionClient(
-        invite,
+      await _connectToInvite(
+        invite: invite,
         identity: identity,
+        inviteInput: trimmed,
       );
-      final StreamSubscription<PrivateClawSessionEvent> subscription = client
-          .events
-          .listen(_handleClientEvent);
-
-      setState(() {
-        _hasConnectedSession = false;
-        _identity = identity;
-        _invite = invite;
-        _client = client;
-        _clientSubscription = subscription;
-        _messages.clear();
-        _availableCommands.clear();
-        _participants.clear();
-        _selectedAttachments.clear();
-        _sessionStatus = PrivateClawSessionStatus.connecting;
-        _statusText = l10n.connectingRelay;
-        _inviteController.text = trimmed;
-        _isPairingPanelCollapsed = false;
-        _isRenewingSession = false;
-      });
-      _scheduleSessionExpiryRefresh();
-
-      await client.connect();
     } catch (error) {
       setState(() {
         _sessionStatus = PrivateClawSessionStatus.error;
@@ -313,6 +392,140 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
         _isPairingPanelCollapsed = false;
       });
     }
+  }
+
+  Future<void> _connectToInvite({
+    required PrivateClawInvite invite,
+    required PrivateClawIdentity identity,
+    required String inviteInput,
+    bool resetConversationState = true,
+    bool collapsePairingPanel = false,
+  }) async {
+    final AppLocalizations l10n = AppLocalizations.of(context)!;
+    final PrivateClawSessionClient client = PrivateClawSessionClient(
+      invite,
+      identity: identity,
+      pushTokenProvider: _notificationService.getPushToken,
+    );
+    final StreamSubscription<PrivateClawSessionEvent> subscription = client
+        .events
+        .listen(_handleClientEvent);
+
+    setState(() {
+      _hasConnectedSession = !resetConversationState && _hasConnectedSession;
+      _identity = identity;
+      _invite = invite;
+      _client = client;
+      _clientSubscription = subscription;
+      if (resetConversationState) {
+        _messages.clear();
+        _availableCommands.clear();
+        _participants.clear();
+        _selectedAttachments.clear();
+      }
+      _sessionStatus = PrivateClawSessionStatus.connecting;
+      _statusText = l10n.connectingRelay;
+      _inviteController.text = inviteInput;
+      _isPairingPanelCollapsed = collapsePairingPanel;
+      _isRenewingSession = false;
+    });
+    _scheduleSessionExpiryRefresh();
+    await _persistActiveSessionIfAvailable();
+
+    try {
+      await _notificationService.prepareForSession();
+    } catch (error, stackTrace) {
+      debugPrint('[privateclaw-app] notification setup failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+
+    await client.connect();
+  }
+
+  Future<void> _restoreActiveSessionIfAvailable() async {
+    if (_isPreviewMode || _client != null) {
+      return;
+    }
+
+    final PrivateClawActiveSessionRecord? record =
+        await _loadDebugBootstrapSessionIfAvailable() ??
+        await _activeSessionStore.load();
+    if (record == null) {
+      return;
+    }
+    if (record.invite.expiresAt.isBefore(DateTime.now().toUtc())) {
+      await _activeSessionStore.clear();
+      return;
+    }
+
+    try {
+      await _identityStore.save(record.identity);
+      await _connectToInvite(
+        invite: record.invite,
+        identity: record.identity,
+        inviteInput: encodePrivateClawInviteUri(record.invite),
+      );
+    } catch (error, stackTrace) {
+      debugPrint('[privateclaw-app] failed to restore session: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (!mounted) {
+        return;
+      }
+      final AppLocalizations l10n = AppLocalizations.of(context)!;
+      setState(() {
+        _identity = record.identity;
+        _invite = record.invite;
+        _sessionStatus = PrivateClawSessionStatus.error;
+        _statusText = l10n.connectFailed(error.toString());
+        _isPairingPanelCollapsed = false;
+      });
+    }
+  }
+
+  Future<PrivateClawActiveSessionRecord?>
+  _loadDebugBootstrapSessionIfAvailable() async {
+    try {
+      final PrivateClawDebugBootstrapData? bootstrap =
+          loadPrivateClawDebugBootstrapFromEnvironment();
+      if (bootstrap == null) {
+        return null;
+      }
+
+      final PrivateClawIdentity identity =
+          bootstrap.identity ?? await _ensureIdentity();
+      final PrivateClawActiveSessionRecord record =
+          PrivateClawActiveSessionRecord(
+            invite: bootstrap.invite,
+            identity: identity,
+            savedAt: DateTime.now().toUtc(),
+          );
+      await _identityStore.save(identity);
+      await _activeSessionStore.save(
+        invite: bootstrap.invite,
+        identity: identity,
+      );
+      debugPrint(
+        '[privateclaw-app] applied debug bootstrap '
+        'session=${bootstrap.invite.sessionId} appId=${identity.appId}',
+      );
+      return record;
+    } catch (error, stackTrace) {
+      debugPrint('[privateclaw-app] failed to apply debug bootstrap: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      return null;
+    }
+  }
+
+  Future<void> _persistActiveSessionIfAvailable() async {
+    if (_isPreviewMode) {
+      return;
+    }
+    final PrivateClawInvite? invite = _invite;
+    final PrivateClawIdentity? identity = _identity;
+    if (invite == null || identity == null) {
+      return;
+    }
+    await _activeSessionStore.save(invite: invite, identity: identity);
   }
 
   void _handleClientEvent(PrivateClawSessionEvent event) {
@@ -390,6 +603,13 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
       }
     });
     _scheduleSessionExpiryRefresh();
+    if (event.updatedInvite != null || event.assignedIdentity != null) {
+      unawaited(_persistActiveSessionIfAvailable());
+    }
+    if (event.connectionStatus == PrivateClawSessionStatus.closed ||
+        event.connectionStatus == PrivateClawSessionStatus.idle) {
+      unawaited(_activeSessionStore.clear());
+    }
     _scheduleScrollToBottom();
   }
 
@@ -653,7 +873,12 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage> {
 
   Future<void> _disconnect() async {
     final AppLocalizations l10n = AppLocalizations.of(context)!;
+    final PrivateClawSessionClient? client = _client;
+    if (client != null) {
+      await client.unregisterPushRegistration();
+    }
     await _disposeClient(reason: 'user_disconnect');
+    await _activeSessionStore.clear();
     if (!mounted) {
       return;
     }

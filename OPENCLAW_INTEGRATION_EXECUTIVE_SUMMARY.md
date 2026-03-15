@@ -95,7 +95,7 @@ This updates `~/.openclaw/openclaw.json` automatically:
     "entries": { "privateclaw": { "enabled": true }, "qqbot": { ... } },
     "installs": {
       "privateclaw": {
-        "installPath": "/Users/zhanju/.openclaw/extensions/privateclaw",
+        "installPath": "$HOME/.openclaw/extensions/privateclaw",
         ...
       }
     }

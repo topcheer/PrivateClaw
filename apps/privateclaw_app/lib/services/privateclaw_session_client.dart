@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/status.dart' as status;
 
@@ -39,6 +40,8 @@ enum PrivateClawSessionNotice {
   welcome,
 }
 
+typedef PrivateClawPushTokenProvider = Future<String?> Function();
+
 class PrivateClawSessionEvent {
   const PrivateClawSessionEvent({
     this.message,
@@ -66,11 +69,15 @@ class PrivateClawSessionEvent {
 }
 
 class PrivateClawSessionClient {
-  PrivateClawSessionClient(this.invite, {required PrivateClawIdentity identity})
-    : _identity = identity;
+  PrivateClawSessionClient(
+    this.invite, {
+    required PrivateClawIdentity identity,
+    this.pushTokenProvider,
+  }) : _identity = identity;
 
   PrivateClawInvite invite;
   PrivateClawIdentity _identity;
+  final PrivateClawPushTokenProvider? pushTokenProvider;
   final StreamController<PrivateClawSessionEvent> _eventsController =
       StreamController<PrivateClawSessionEvent>.broadcast();
 
@@ -86,6 +93,7 @@ class PrivateClawSessionClient {
   int _messageCounter = 0;
   int _connectionGeneration = 0;
   Duration _reconnectDelay = _initialReconnectDelay;
+  String? _registeredPushToken;
 
   PrivateClawIdentity get identity => _identity;
 
@@ -236,6 +244,7 @@ class PrivateClawSessionClient {
             'displayName': _identity.displayName,
           'sentAt': DateTime.now().toUtc().toIso8601String(),
         });
+        unawaited(_registerPushTokenIfAvailable(force: true));
         return;
       case 'relay:frame':
         final Object? envelope = decoded['envelope'];
@@ -283,6 +292,7 @@ class PrivateClawSessionClient {
 
   Future<void> _handlePayload(Map<String, dynamic> payload) async {
     final Object? kind = payload['kind'];
+    _logReceivedPayload(payload);
     switch (kind) {
       case 'server_welcome':
         _emitEvent(
@@ -417,6 +427,39 @@ class PrivateClawSessionClient {
     }
   }
 
+  void _logReceivedPayload(Map<String, dynamic> payload) {
+    final String? kind = payload['kind'] as String?;
+    switch (kind) {
+      case 'participant_message':
+        debugPrint(
+          '[privateclaw-app] received participant_message '
+          'sender=${payload['senderAppId'] ?? 'unknown-app'} '
+          'messageId=${payload['messageId'] ?? 'unknown-message'}',
+        );
+        return;
+      case 'assistant_message':
+        debugPrint(
+          '[privateclaw-app] received assistant_message '
+          'messageId=${payload['messageId'] ?? 'unknown-message'} '
+          'replyTo=${payload['replyTo'] ?? 'none'}',
+        );
+        return;
+      case 'system_message':
+        debugPrint(
+          '[privateclaw-app] received system_message '
+          'messageId=${payload['messageId'] ?? 'unknown-message'} '
+          'severity=${payload['severity'] ?? 'unknown'}',
+        );
+        return;
+      case 'provider_capabilities':
+        debugPrint(
+          '[privateclaw-app] received provider_capabilities '
+          'currentAppId=${payload['currentAppId'] ?? 'none'}',
+        );
+        return;
+    }
+  }
+
   Future<void> sendUserMessage(
     String text, {
     List<ChatAttachment> attachments = const <ChatAttachment>[],
@@ -473,6 +516,15 @@ class PrivateClawSessionClient {
     );
   }
 
+  Future<void> refreshPushRegistration() async {
+    await _registerPushTokenIfAvailable(force: true);
+  }
+
+  Future<void> unregisterPushRegistration() async {
+    _registeredPushToken = null;
+    _sendControl(<String, Object?>{'type': 'app:unregister_push'});
+  }
+
   Future<void> _sendEncrypted(Map<String, Object?> payload) async {
     final PrivateClawCrypto? crypto = _crypto;
     final IOWebSocketChannel? channel = _channel;
@@ -484,6 +536,55 @@ class PrivateClawSessionClient {
     channel.sink.add(
       jsonEncode(<String, Object?>{'type': 'app:frame', 'envelope': envelope}),
     );
+  }
+
+  Future<void> _registerPushTokenIfAvailable({bool force = false}) async {
+    final PrivateClawPushTokenProvider? provider = pushTokenProvider;
+    debugPrint(
+      '[privateclaw-app] attempting push registration '
+      'session=${invite.sessionId} appId=${_identity.appId} hasProvider=${provider != null}',
+    );
+    if (provider == null) {
+      debugPrint('[privateclaw-app] push registration skipped: no provider');
+      return;
+    }
+
+    try {
+      final String? token = (await provider())?.trim();
+      if (token == null || token.isEmpty) {
+        debugPrint(
+          '[privateclaw-app] push registration skipped: token unavailable',
+        );
+        return;
+      }
+      if (!force && token == _registeredPushToken) {
+        debugPrint(
+          '[privateclaw-app] push registration skipped: token unchanged',
+        );
+        return;
+      }
+
+      debugPrint(
+        '[privateclaw-app] registering push token '
+        'session=${invite.sessionId} appId=${_identity.appId} tokenLength=${token.length}',
+      );
+      _sendControl(<String, Object?>{
+        'type': 'app:register_push',
+        'token': token,
+      });
+      _registeredPushToken = token;
+    } catch (error, stackTrace) {
+      debugPrint('[privateclaw-app] push registration failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
+  void _sendControl(Map<String, Object?> payload) {
+    final IOWebSocketChannel? channel = _channel;
+    if (channel == null) {
+      return;
+    }
+    channel.sink.add(jsonEncode(payload));
   }
 
   Future<void> _resetCrypto(String sessionKey) async {

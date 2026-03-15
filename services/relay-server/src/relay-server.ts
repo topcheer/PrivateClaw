@@ -15,6 +15,14 @@ import {
   type EncryptedFrameCache,
 } from "./frame-cache.js";
 import {
+  createRelayPushRegistrationStore,
+  type RelayPushRegistrationStore,
+} from "./push-registration-store.js";
+import {
+  createRelayPushNotifier,
+  type RelayPushNotifier,
+} from "./push-notifier.js";
+import {
   createRedisRelayClusterClient,
   RelayClaimConflictError,
   type RelayClusterAppBinding,
@@ -28,6 +36,7 @@ import {
 } from "./session-store.js";
 
 const HEARTBEAT_INTERVAL_MS = 15_000;
+const PUSH_WAKE_COOLDOWN_MS = 5_000;
 
 class RelayProtocolError extends Error {
   constructor(
@@ -133,6 +142,8 @@ interface SessionHubParams {
   defaultTtlMs: number;
   frameCache: EncryptedFrameCache;
   sessionStore: RelaySessionStore;
+  pushRegistrationStore: RelayPushRegistrationStore;
+  pushNotifier: RelayPushNotifier;
   now?: () => number;
 }
 
@@ -143,6 +154,7 @@ class SessionHub {
   private readonly sessionProviders = new Map<string, string>();
   private readonly sessionApps = new Map<string, Map<string, WebSocket>>();
   private readonly appSessions = new Map<WebSocket, AppSessionBinding>();
+  private readonly recentWakeSentAt = new Map<string, number>();
   private cluster: RelayClusterClient | undefined;
 
   constructor(private readonly params: SessionHubParams) {}
@@ -153,6 +165,23 @@ class SessionHub {
 
   private now(): number {
     return this.params.now?.() ?? Date.now();
+  }
+
+  private wakeKey(sessionId: string, appId: string): string {
+    return `${sessionId}:${appId}`;
+  }
+
+  private clearWakeState(sessionId: string, appId?: string): void {
+    if (appId) {
+      this.recentWakeSentAt.delete(this.wakeKey(sessionId, appId));
+      return;
+    }
+    const prefix = `${sessionId}:`;
+    for (const key of this.recentWakeSentAt.keys()) {
+      if (key.startsWith(prefix)) {
+        this.recentWakeSentAt.delete(key);
+      }
+    }
   }
 
   get usesPersistentSessions(): boolean {
@@ -354,7 +383,147 @@ class SessionHub {
       expiresAt: this.now() + ttlMs,
     };
     await this.params.sessionStore.saveSession(renewedSession);
+    await this.params.pushRegistrationStore.touchSession(
+      sessionId,
+      renewedSession.expiresAt,
+    );
     return renewedSession;
+  }
+
+  async registerAppPushToken(
+    sessionId: string,
+    appId: string,
+    token: string,
+  ): Promise<void> {
+    const session = await this.requireSession(sessionId);
+    const normalizedToken = token.trim();
+    if (normalizedToken === "") {
+      throw new RelayProtocolError(
+        "invalid_push_token",
+        "app:register_push requires a non-empty token.",
+      );
+    }
+    await this.params.pushRegistrationStore.saveRegistration(
+      {
+        sessionId,
+        appId,
+        token: normalizedToken,
+        updatedAt: this.now(),
+      },
+      session.expiresAt,
+    );
+    console.info(
+      `[privateclaw-relay] registered push token session=${sessionId} appId=${appId} tokenLength=${normalizedToken.length}`,
+    );
+  }
+
+  private async bufferAppFrameForReplay(params: {
+    sessionId: string;
+    envelope: EncryptedEnvelope;
+    appId?: string;
+  }): Promise<void> {
+    await this.params.frameCache.push({
+      sessionId: params.sessionId,
+      target: "app",
+      envelope: params.envelope,
+      ...(params.appId ? { appId: params.appId } : {}),
+    });
+    await this.notifyBufferedAppFrames(params.sessionId, params.appId);
+  }
+
+  private async bufferOfflineGroupAppFrames(
+    sessionId: string,
+    envelope: EncryptedEnvelope,
+  ): Promise<number> {
+    const registrations = await this.params.pushRegistrationStore.listRegistrations(
+      sessionId,
+    );
+    const activeLocalAppIds = new Set(this.listActiveLocalAppIds(sessionId));
+    let bufferedCount = 0;
+
+    for (const registration of registrations) {
+      if (activeLocalAppIds.has(registration.appId)) {
+        continue;
+      }
+      if (this.cluster && (await this.cluster.hasAppBinding(sessionId, registration.appId))) {
+        continue;
+      }
+      await this.bufferAppFrameForReplay({
+        sessionId,
+        envelope,
+        appId: registration.appId,
+      });
+      bufferedCount += 1;
+    }
+
+    return bufferedCount;
+  }
+
+  async unregisterAppPushToken(sessionId: string, appId: string): Promise<void> {
+    await this.params.pushRegistrationStore.deleteRegistration(sessionId, appId);
+    this.clearWakeState(sessionId, appId);
+    console.info(
+      `[privateclaw-relay] unregistered push token session=${sessionId} appId=${appId}`,
+    );
+  }
+
+  private async notifyBufferedAppFrames(
+    sessionId: string,
+    targetAppId?: string,
+  ): Promise<void> {
+    if (!this.params.pushNotifier.enabled) {
+      console.info(
+        `[privateclaw-relay] wake skipped: notifier disabled session=${sessionId} targetAppId=${targetAppId ?? "all"}`,
+      );
+      return;
+    }
+
+    const registrations = await this.params.pushRegistrationStore.listRegistrations(
+      sessionId,
+    );
+    const matchingRegistrations = registrations.filter(
+      (registration) => !targetAppId || registration.appId === targetAppId,
+    );
+    if (matchingRegistrations.length === 0) {
+      console.info(
+        `[privateclaw-relay] wake skipped: no push registrations session=${sessionId} targetAppId=${targetAppId ?? "all"}`,
+      );
+      return;
+    }
+    for (const registration of matchingRegistrations) {
+      const wakeKey = this.wakeKey(registration.sessionId, registration.appId);
+      const now = this.now();
+      const lastWakeSentAt = this.recentWakeSentAt.get(wakeKey);
+      if (
+        lastWakeSentAt !== undefined &&
+        now - lastWakeSentAt < PUSH_WAKE_COOLDOWN_MS
+      ) {
+        console.info(
+          `[privateclaw-relay] wake skipped: cooldown session=${registration.sessionId} appId=${registration.appId} sinceMs=${now - lastWakeSentAt}`,
+        );
+        continue;
+      }
+      this.recentWakeSentAt.set(wakeKey, now);
+      try {
+        const result = await this.params.pushNotifier.sendWake(registration);
+        console.info(
+          `[privateclaw-relay] wake sent session=${registration.sessionId} appId=${registration.appId} unregisterToken=${result.unregisterToken}`,
+        );
+        if (result.unregisterToken) {
+          await this.params.pushRegistrationStore.deleteRegistration(
+            registration.sessionId,
+            registration.appId,
+          );
+          this.clearWakeState(registration.sessionId, registration.appId);
+        }
+      } catch (error) {
+        this.clearWakeState(registration.sessionId, registration.appId);
+        console.error(
+          "[privateclaw-relay] failed to send wake notification",
+          error,
+        );
+      }
+    }
   }
 
   private listActiveLocalAppIds(sessionId: string): string[] {
@@ -464,16 +633,34 @@ class SessionHub {
     envelope: EncryptedEnvelope,
     targetAppId?: string,
   ): Promise<void> {
-    await this.assertProviderOwnsSession(providerSocket, sessionId);
+    const session = await this.assertProviderOwnsSession(providerSocket, sessionId);
     const localDelivered = this.deliverLocalToApp(sessionId, envelope, targetAppId);
     const remoteDelivered = this.cluster
       ? await this.cluster.publishFrameToApp(sessionId, envelope, targetAppId)
       : 0;
-    if (targetAppId || localDelivered > 0 || remoteDelivered > 0) {
+    if (targetAppId) {
+      if (localDelivered > 0 || remoteDelivered > 0) {
+        return;
+      }
+      await this.bufferAppFrameForReplay({ sessionId, envelope, appId: targetAppId });
       return;
     }
 
-    await this.params.frameCache.push({ sessionId, target: "app", envelope });
+    if (!session.groupMode) {
+      if (localDelivered > 0 || remoteDelivered > 0) {
+        return;
+      }
+      await this.bufferAppFrameForReplay({ sessionId, envelope });
+      return;
+    }
+
+    const bufferedGroupRecipients = await this.bufferOfflineGroupAppFrames(
+      sessionId,
+      envelope,
+    );
+    if (localDelivered === 0 && remoteDelivered === 0 && bufferedGroupRecipients === 0) {
+      await this.bufferAppFrameForReplay({ sessionId, envelope });
+    }
   }
 
   async forwardToProvider(
@@ -500,8 +687,13 @@ class SessionHub {
     sessionId: string,
     target: "app" | "provider",
     socket: WebSocket,
+    appId?: string,
   ): Promise<void> {
-    const frames = await this.params.frameCache.drain({ sessionId, target });
+    const frames = await this.params.frameCache.drain({
+      sessionId,
+      target,
+      ...(appId ? { appId } : {}),
+    });
     for (const envelope of frames) {
       sendJson(socket, { type: "relay:frame", sessionId, envelope });
     }
@@ -563,6 +755,8 @@ class SessionHub {
 
   async closeSession(sessionId: string, reason: string): Promise<void> {
     await this.params.sessionStore.deleteSession(sessionId);
+    await this.params.pushRegistrationStore.clearSession(sessionId);
+    this.clearWakeState(sessionId);
     if (!this.hasLocalSession(sessionId) && !this.cluster) {
       await this.params.frameCache.clear(sessionId);
       return;
@@ -660,6 +854,7 @@ class SessionHub {
     for (const sessionId of sessionIds) {
       const session = await this.params.sessionStore.getSession(sessionId);
       if (!session) {
+        await this.params.pushRegistrationStore.clearSession(sessionId);
         await this.closeLocalSession(sessionId, "session_expired");
         continue;
       }
@@ -710,8 +905,11 @@ export interface RelayServerInstance {
 export interface RelayServerDependencies {
   frameCache?: EncryptedFrameCache;
   sessionStore?: RelaySessionStore;
+  pushRegistrationStore?: RelayPushRegistrationStore;
+  pushNotifier?: RelayPushNotifier;
   cluster?: RelayClusterClient;
   clusterFactory?: (callbacks: RelayClusterCallbacks) => RelayClusterClient;
+  now?: () => number;
 }
 
 export function createRelayServer(
@@ -733,10 +931,30 @@ export function createRelayServer(
       ...(config.redisUrl ? { redisUrl: config.redisUrl } : {}),
     });
 
+  const ownsPushRegistrationStore = !deps.pushRegistrationStore;
+  const pushRegistrationStore =
+    deps.pushRegistrationStore ??
+    createRelayPushRegistrationStore({
+      ...(config.redisUrl ? { redisUrl: config.redisUrl } : {}),
+    });
+
+  const ownsPushNotifier = !deps.pushNotifier;
+  const pushNotifier =
+    deps.pushNotifier ??
+    createRelayPushNotifier({
+      fcmServiceAccountJson: config.fcmServiceAccountJson,
+      fcmProjectId: config.fcmProjectId,
+      fcmClientEmail: config.fcmClientEmail,
+      fcmPrivateKey: config.fcmPrivateKey,
+    });
+
   const sessionHub = new SessionHub({
     defaultTtlMs: config.sessionTtlMs,
     frameCache,
     sessionStore,
+    pushRegistrationStore,
+    pushNotifier,
+    ...(deps.now ? { now: deps.now } : {}),
   });
 
   const clusterCallbacks: RelayClusterCallbacks = {
@@ -1003,21 +1221,46 @@ export function createRelayServer(
   async function handleAppMessage(
     socket: WebSocket,
     sessionId: string,
+    appId: string,
     raw: string,
   ): Promise<void> {
     try {
       const message = parseJson(raw) as AppToRelayMessage | unknown;
-      if (
-        !isObject(message) ||
-        message.type !== "app:frame" ||
-        !isEncryptedEnvelope(message.envelope)
-      ) {
+      if (!isObject(message) || typeof message.type !== "string") {
         throw new RelayProtocolError(
-          "invalid_frame",
-          "app:frame must include a valid encrypted envelope.",
+          "invalid_message",
+          "App message is missing a type field.",
         );
       }
-      await sessionHub.forwardToProvider(sessionId, message.envelope);
+
+      switch (message.type) {
+        case "app:frame":
+          if (!isEncryptedEnvelope(message.envelope)) {
+            throw new RelayProtocolError(
+              "invalid_frame",
+              "app:frame must include a valid encrypted envelope.",
+            );
+          }
+          await sessionHub.forwardToProvider(sessionId, message.envelope);
+          return;
+        case "app:register_push":
+          if (typeof message.token !== "string") {
+            throw new RelayProtocolError(
+              "invalid_push_token",
+              "app:register_push requires a string token.",
+            );
+          }
+          await sessionHub.registerAppPushToken(sessionId, appId, message.token);
+          return;
+        case "app:unregister_push":
+          await sessionHub.unregisterAppPushToken(sessionId, appId);
+          return;
+        default:
+          throw new RelayProtocolError(
+            "unsupported_message",
+            `Unsupported app message type: ${String(message.type)}`,
+          );
+      }
     } catch (error) {
       const relayError = toRelayProtocolError(error);
       sendJson(socket, {
@@ -1120,7 +1363,7 @@ export function createRelayServer(
         sessionId,
         expiresAt: new Date(session.expiresAt).toISOString(),
       });
-      void sessionHub.replayBufferedFrames(sessionId, "app", socket).catch(
+      void sessionHub.replayBufferedFrames(sessionId, "app", socket, appId).catch(
         (error) => {
           console.error(
             "[privateclaw-relay] failed to replay buffered app frames",
@@ -1130,7 +1373,7 @@ export function createRelayServer(
       );
 
       socket.on("message", (data) => {
-        void handleAppMessage(socket, sessionId, data.toString());
+        void handleAppMessage(socket, sessionId, appId, data.toString());
       });
 
       socket.on("close", () => {
@@ -1174,6 +1417,12 @@ export function createRelayServer(
     }
     if (ownsSessionStore) {
       closes.push(sessionStore.close());
+    }
+    if (ownsPushRegistrationStore) {
+      closes.push(pushRegistrationStore.close());
+    }
+    if (ownsPushNotifier) {
+      closes.push(pushNotifier.close());
     }
     if (ownsFrameCache) {
       closes.push(frameCache.close());

@@ -9,6 +9,11 @@ import {
   type RelayClusterCallbacks,
 } from "./relay-cluster.js";
 import { createInMemoryEncryptedFrameCache } from "./frame-cache.js";
+import { InMemoryRelayPushRegistrationStore } from "./push-registration-store.js";
+import type {
+  RelayPushNotifier,
+  RelayPushSendResult,
+} from "./push-notifier.js";
 import { createRelayServer } from "./relay-server.js";
 import { InMemoryRelaySessionStore } from "./session-store.js";
 
@@ -63,6 +68,47 @@ function waitForClose(socket: WebSocket): Promise<void> {
     }
     socket.once("close", () => resolve());
   });
+}
+
+function waitForCondition(
+  predicate: () => boolean,
+  timeoutMs: number = 1_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  return new Promise((resolve, reject) => {
+    const check = () => {
+      if (predicate()) {
+        resolve();
+        return;
+      }
+      if (Date.now() >= deadline) {
+        reject(new Error("Timed out waiting for condition."));
+        return;
+      }
+      setTimeout(check, 10);
+    };
+    check();
+  });
+}
+
+class TestPushNotifier implements RelayPushNotifier {
+  readonly enabled = true;
+  readonly sent: Array<{ sessionId: string; appId: string; token: string }> = [];
+
+  async sendWake(registration: {
+    sessionId: string;
+    appId: string;
+    token: string;
+  }): Promise<RelayPushSendResult> {
+    this.sent.push({
+      sessionId: registration.sessionId,
+      appId: registration.appId,
+      token: registration.token,
+    });
+    return { unregisterToken: false };
+  }
+
+  async close(): Promise<void> {}
 }
 
 test("relay exposes health endpoints for container platforms", async (t) => {
@@ -244,6 +290,218 @@ test("relay preserves a session after app disconnect and replays buffered frames
   reattachedAppSocket.close();
   providerSocket.close();
   await Promise.all([waitForClose(reattachedAppSocket), waitForClose(providerSocket)]);
+});
+
+test("relay sends a wake push when a provider frame is buffered for an offline app", async (t) => {
+  const pushRegistrationStore = new InMemoryRelayPushRegistrationStore();
+  const pushNotifier = new TestPushNotifier();
+  const relay = createRelayServer(
+    {
+      host: "127.0.0.1",
+      port: 0,
+      sessionTtlMs: 60_000,
+      frameCacheSize: 8,
+    },
+    {
+      pushRegistrationStore,
+      pushNotifier,
+    },
+  );
+  const { port } = await relay.start();
+  t.after(async () => {
+    await relay.stop();
+  });
+
+  const providerSocket = new WebSocket(`ws://127.0.0.1:${port}/ws/provider`);
+  const readyPromise = nextMessage(providerSocket);
+  await waitForOpen(providerSocket);
+  assert.equal((await readyPromise).type, "relay:provider_ready");
+
+  providerSocket.send(
+    JSON.stringify({ type: "provider:create_session", requestId: "req-1", ttlMs: 60_000 }),
+  );
+  const created = await nextMessage(providerSocket);
+  assert.equal(created.type, "relay:session_created");
+  const sessionId = String(created.sessionId);
+
+  const sessionKey = generateSessionKey();
+  const appSocket = new WebSocket(
+    `ws://127.0.0.1:${port}/ws/app?sessionId=${sessionId}&appId=app-one`,
+  );
+  const attachedPromise = nextMessage(appSocket);
+  await waitForOpen(appSocket);
+  assert.equal((await attachedPromise).type, "relay:attached");
+
+  appSocket.send(
+    JSON.stringify({
+      type: "app:register_push",
+      token: "push-token-one",
+    }),
+  );
+  appSocket.close();
+  await waitForClose(appSocket);
+
+  const bufferedEnvelope = encryptPayload({
+    sessionId,
+    sessionKey,
+    payload: {
+      kind: "assistant_message",
+      messageId: "assistant-1",
+      text: "wake the offline app",
+      sentAt: new Date().toISOString(),
+    },
+  });
+  providerSocket.send(
+    JSON.stringify({ type: "provider:frame", sessionId, envelope: bufferedEnvelope }),
+  );
+
+  await waitForCondition(() => pushNotifier.sent.length === 1);
+  assert.deepEqual(pushNotifier.sent, [
+    {
+      sessionId,
+      appId: "app-one",
+      token: "push-token-one",
+    },
+  ]);
+
+  const reattachedAppSocket = new WebSocket(
+    `ws://127.0.0.1:${port}/ws/app?sessionId=${sessionId}&appId=app-one`,
+  );
+  const messagesPromise = nextMessages(reattachedAppSocket, 2);
+  await waitForOpen(reattachedAppSocket);
+  const [attached, replayed] = await messagesPromise;
+  assert.equal(attached.type, "relay:attached");
+  assert.equal(replayed.type, "relay:frame");
+  const decryptedReplay = decryptPayload({
+    sessionId,
+    sessionKey,
+    envelope: replayed.envelope as Parameters<typeof decryptPayload>[0]["envelope"],
+  });
+  assert.equal(decryptedReplay.kind, "assistant_message");
+  assert.equal(decryptedReplay.text, "wake the offline app");
+
+  reattachedAppSocket.close();
+  providerSocket.close();
+  await Promise.all([waitForClose(reattachedAppSocket), waitForClose(providerSocket)]);
+});
+
+test("relay coalesces repeated wake pushes for the same offline app within the cooldown window", async (t) => {
+  const pushRegistrationStore = new InMemoryRelayPushRegistrationStore();
+  const pushNotifier = new TestPushNotifier();
+  let currentTime = Date.now();
+  const relay = createRelayServer(
+    {
+      host: "127.0.0.1",
+      port: 0,
+      sessionTtlMs: 60_000,
+      frameCacheSize: 8,
+    },
+    {
+      pushRegistrationStore,
+      pushNotifier,
+      now: () => currentTime,
+    },
+  );
+  const { port } = await relay.start();
+  t.after(async () => {
+    await relay.stop();
+  });
+
+  const providerSocket = new WebSocket(`ws://127.0.0.1:${port}/ws/provider`);
+  const readyPromise = nextMessage(providerSocket);
+  await waitForOpen(providerSocket);
+  assert.equal((await readyPromise).type, "relay:provider_ready");
+
+  providerSocket.send(
+    JSON.stringify({
+      type: "provider:create_session",
+      requestId: "req-cooldown",
+      ttlMs: 60_000,
+    }),
+  );
+  const created = await nextMessage(providerSocket);
+  assert.equal(created.type, "relay:session_created");
+  const sessionId = String(created.sessionId);
+
+  const sessionKey = generateSessionKey();
+  const appSocket = new WebSocket(
+    `ws://127.0.0.1:${port}/ws/app?sessionId=${sessionId}&appId=app-one`,
+  );
+  const attachedPromise = nextMessage(appSocket);
+  await waitForOpen(appSocket);
+  assert.equal((await attachedPromise).type, "relay:attached");
+
+  appSocket.send(
+    JSON.stringify({
+      type: "app:register_push",
+      token: "push-token-one",
+    }),
+  );
+  appSocket.close();
+  await waitForClose(appSocket);
+
+  const firstEnvelope = encryptPayload({
+    sessionId,
+    sessionKey,
+    payload: {
+      kind: "assistant_message",
+      messageId: "assistant-cooldown-1",
+      text: "first buffered frame",
+      sentAt: new Date(currentTime).toISOString(),
+    },
+  });
+  providerSocket.send(
+    JSON.stringify({ type: "provider:frame", sessionId, envelope: firstEnvelope }),
+  );
+  await waitForCondition(() => pushNotifier.sent.length === 1);
+
+  const secondEnvelope = encryptPayload({
+    sessionId,
+    sessionKey,
+    payload: {
+      kind: "assistant_message",
+      messageId: "assistant-cooldown-2",
+      text: "second buffered frame",
+      sentAt: new Date(currentTime + 1_000).toISOString(),
+    },
+  });
+  providerSocket.send(
+    JSON.stringify({ type: "provider:frame", sessionId, envelope: secondEnvelope }),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(pushNotifier.sent.length, 1);
+
+  currentTime += 6_000;
+  const thirdEnvelope = encryptPayload({
+    sessionId,
+    sessionKey,
+    payload: {
+      kind: "assistant_message",
+      messageId: "assistant-cooldown-3",
+      text: "third buffered frame",
+      sentAt: new Date(currentTime).toISOString(),
+    },
+  });
+  providerSocket.send(
+    JSON.stringify({ type: "provider:frame", sessionId, envelope: thirdEnvelope }),
+  );
+  await waitForCondition(() => pushNotifier.sent.length === 2);
+
+  assert.deepEqual(pushNotifier.sent, [
+    {
+      sessionId,
+      appId: "app-one",
+      token: "push-token-one",
+    },
+    {
+      sessionId,
+      appId: "app-one",
+      token: "push-token-one",
+    },
+  ]);
+
+  providerSocket.close();
+  await waitForClose(providerSocket);
 });
 
 test("relay preserves a session after provider disconnect and replays buffered frames on reattach", async (t) => {
@@ -455,6 +713,129 @@ test("relay group sessions allow multiple app clients and broadcast provider fra
   await Promise.all([
     waitForClose(appOne),
     waitForClose(appTwo),
+    waitForClose(providerSocket),
+  ]);
+});
+
+test("relay group sessions replay missed broadcast frames to offline registered apps", async (t) => {
+  const pushRegistrationStore = new InMemoryRelayPushRegistrationStore();
+  const pushNotifier = new TestPushNotifier();
+  const relay = createRelayServer(
+    {
+      host: "127.0.0.1",
+      port: 0,
+      sessionTtlMs: 60_000,
+      frameCacheSize: 8,
+    },
+    {
+      pushRegistrationStore,
+      pushNotifier,
+    },
+  );
+  const { port } = await relay.start();
+  t.after(async () => {
+    await relay.stop();
+  });
+
+  const providerSocket = new WebSocket(`ws://127.0.0.1:${port}/ws/provider`);
+  const readyPromise = nextMessage(providerSocket);
+  await waitForOpen(providerSocket);
+  assert.equal((await readyPromise).type, "relay:provider_ready");
+
+  providerSocket.send(
+    JSON.stringify({
+      type: "provider:create_session",
+      requestId: "group-offline-req-1",
+      ttlMs: 60_000,
+      groupMode: true,
+    }),
+  );
+  const created = await nextMessage(providerSocket);
+  assert.equal(created.type, "relay:session_created");
+  const sessionId = String(created.sessionId);
+
+  const appOne = new WebSocket(
+    `ws://127.0.0.1:${port}/ws/app?sessionId=${sessionId}&appId=app-one`,
+  );
+  const appOneAttached = nextMessage(appOne);
+  await waitForOpen(appOne);
+  assert.equal((await appOneAttached).type, "relay:attached");
+
+  const appTwo = new WebSocket(
+    `ws://127.0.0.1:${port}/ws/app?sessionId=${sessionId}&appId=app-two`,
+  );
+  const appTwoAttached = nextMessage(appTwo);
+  await waitForOpen(appTwo);
+  assert.equal((await appTwoAttached).type, "relay:attached");
+
+  appTwo.send(
+    JSON.stringify({
+      type: "app:register_push",
+      token: "push-token-two",
+    }),
+  );
+  appTwo.close();
+  await waitForClose(appTwo);
+
+  const sessionKey = generateSessionKey();
+  const envelope = encryptPayload({
+    sessionId,
+    sessionKey,
+    payload: {
+      kind: "assistant_message",
+      messageId: "assistant-offline-1",
+      text: "offline group replay",
+      sentAt: new Date().toISOString(),
+    },
+  });
+  const liveFramePromise = nextMessage(appOne);
+  providerSocket.send(
+    JSON.stringify({ type: "provider:frame", sessionId, envelope }),
+  );
+
+  const liveFrame = await liveFramePromise;
+  assert.equal(liveFrame.type, "relay:frame");
+  assert.equal(
+    decryptPayload({
+      sessionId,
+      sessionKey,
+      envelope: liveFrame.envelope as Parameters<typeof decryptPayload>[0]["envelope"],
+    }).text,
+    "offline group replay",
+  );
+
+  await waitForCondition(() => pushNotifier.sent.length === 1);
+  assert.deepEqual(pushNotifier.sent, [
+    {
+      sessionId,
+      appId: "app-two",
+      token: "push-token-two",
+    },
+  ]);
+
+  const reattachedAppTwo = new WebSocket(
+    `ws://127.0.0.1:${port}/ws/app?sessionId=${sessionId}&appId=app-two`,
+  );
+  const replayedMessagesPromise = nextMessages(reattachedAppTwo, 2);
+  await waitForOpen(reattachedAppTwo);
+  const [attached, replayed] = await replayedMessagesPromise;
+  assert.equal(attached.type, "relay:attached");
+  assert.equal(replayed.type, "relay:frame");
+  assert.equal(
+    decryptPayload({
+      sessionId,
+      sessionKey,
+      envelope: replayed.envelope as Parameters<typeof decryptPayload>[0]["envelope"],
+    }).text,
+    "offline group replay",
+  );
+
+  appOne.close();
+  reattachedAppTwo.close();
+  providerSocket.close();
+  await Promise.all([
+    waitForClose(appOne),
+    waitForClose(reattachedAppTwo),
     waitForClose(providerSocket),
   ]);
 });

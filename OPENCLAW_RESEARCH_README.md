@@ -93,7 +93,7 @@ This investigation:
 
 ### PrivateClaw Repository
 ```
-/Users/zhanju/ggai/PrivateClaw/
+$HOME/ggai/PrivateClaw/
 ├── packages/privateclaw-provider/
 │   ├── src/
 │   │   ├── openclaw-plugin.ts       # ← MAIN FILE TO MODIFY

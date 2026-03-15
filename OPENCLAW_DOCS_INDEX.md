@@ -1,6 +1,6 @@
 # OpenClaw Integration Documentation Index
 
-> Historical note (March 2026): the gap described in these research notes has already been implemented. The current package name is `@privateclaw/privateclaw`, and the current source of truth for setup, relay deployment, and development is the root `README.md` / `README.zh-CN.md`.
+> Historical note (March 2026): the gap described in these research notes has already been implemented. The current package name is `@privateclaw/privateclaw`, and the current source of truth for setup, relay deployment, and development is the current-documents list below, including the standalone push rollout guide.
 
 This directory contains historical research and implementation guides for the early OpenClaw integration work. They remain useful for background context, but they are no longer the day-to-day source of truth for the shipped product.
 
@@ -12,6 +12,7 @@ This directory contains historical research and implementation guides for the ea
 | 中文项目总览 | `README.zh-CN.md` |
 | Provider / plugin package details | `packages/privateclaw-provider/README.md` |
 | Flutter app behavior and store delivery notes | `apps/privateclaw_app/README.md` |
+| Push wake + local notification rollout | `PUSH_WAKE_NOTIFICATIONS.md` |
 
 ## Documents
 

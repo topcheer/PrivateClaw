@@ -28,7 +28,7 @@ PrivateClaw's current `openclaw-plugin.ts` is a **shim/compatibility adapter** t
       "qqbot": {
         "source": "npm",
         "spec": "@sliverp/qqbot@latest",
-        "installPath": "/Users/zhanju/.openclaw/extensions/qqbot",
+        "installPath": "$HOME/.openclaw/extensions/qqbot",
         "version": "1.5.4",
         "resolvedName": "@sliverp/qqbot",
         "resolvedAt": "...",
@@ -462,7 +462,7 @@ capabilities: {
 
 ### 6.1 PrivateClaw Current Implementation
 
-**File:** `/Users/zhanju/ggai/PrivateClaw/packages/privateclaw-provider/src/openclaw-plugin.ts`
+**File:** `$HOME/ggai/PrivateClaw/packages/privateclaw-provider/src/openclaw-plugin.ts`
 
 **Current Code:**
 ```typescript
@@ -501,7 +501,7 @@ export function createOpenClawCompatiblePlugin(
 
 ### 7.1 Fix Type Compatibility Layer
 
-**File:** `/Users/zhanju/ggai/PrivateClaw/packages/privateclaw-provider/src/compat/openclaw.ts`
+**File:** `$HOME/ggai/PrivateClaw/packages/privateclaw-provider/src/compat/openclaw.ts`
 
 Replace the stub interfaces with real ones:
 ```typescript
@@ -525,7 +525,7 @@ export type { OpenClawPluginApi };
 
 ### 7.2 Create Plugin Command Definition
 
-**File:** `/Users/zhanju/ggai/PrivateClaw/packages/privateclaw-provider/src/openclaw-plugin.ts`
+**File:** `$HOME/ggai/PrivateClaw/packages/privateclaw-provider/src/openclaw-plugin.ts`
 
 ```typescript
 import type {
@@ -582,7 +582,7 @@ const privateClawCommand: OpenClawPluginCommandDefinition = {
 
 ### 7.3 Update Plugin Register Function
 
-**File:** `/Users/zhanju/ggai/PrivateClaw/packages/privateclaw-provider/src/openclaw-plugin.ts`
+**File:** `$HOME/ggai/PrivateClaw/packages/privateclaw-provider/src/openclaw-plugin.ts`
 
 ```typescript
 export function createOpenClawCompatiblePlugin(
@@ -643,7 +643,7 @@ export function createOpenClawCompatiblePlugin(
 
 ### 7.4 Create Plugin Manifest
 
-**New file:** `/Users/zhanju/ggai/PrivateClaw/packages/privateclaw-provider/privateclaw.plugin.json`
+**New file:** `$HOME/ggai/PrivateClaw/packages/privateclaw-provider/privateclaw.plugin.json`
 
 ```json
 {
@@ -660,7 +660,7 @@ export function createOpenClawCompatiblePlugin(
 
 ### 7.5 Update Package.json
 
-**File:** `/Users/zhanju/ggai/PrivateClaw/packages/privateclaw-provider/package.json`
+**File:** `$HOME/ggai/PrivateClaw/packages/privateclaw-provider/package.json`
 
 ```json
 {
@@ -712,7 +712,7 @@ This will update `~/.openclaw/openclaw.json`:
       "privateclaw": {
         "source": "npm",
         "spec": "@privateclaw/provider@latest",
-        "installPath": "/Users/zhanju/.openclaw/extensions/privateclaw",
+        "installPath": "$HOME/.openclaw/extensions/privateclaw",
         "version": "0.1.0",
         "resolvedName": "@privateclaw/provider",
         "resolvedVersion": "0.1.0",
@@ -861,6 +861,6 @@ openclaw commands list
 - QQBot extension: `~/.openclaw/extensions/qqbot/`
 
 **PrivateClaw Repo:**
-- Provider package: `/Users/zhanju/ggai/PrivateClaw/packages/privateclaw-provider/`
-- Plugin entry: `/Users/zhanju/ggai/PrivateClaw/packages/privateclaw-provider/src/openclaw-plugin.ts`
-- Compat layer: `/Users/zhanju/ggai/PrivateClaw/packages/privateclaw-provider/src/compat/openclaw.ts`
+- Provider package: `$HOME/ggai/PrivateClaw/packages/privateclaw-provider/`
+- Plugin entry: `$HOME/ggai/PrivateClaw/packages/privateclaw-provider/src/openclaw-plugin.ts`
+- Compat layer: `$HOME/ggai/PrivateClaw/packages/privateclaw-provider/src/compat/openclaw.ts`

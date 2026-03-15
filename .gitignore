@@ -27,6 +27,7 @@ apps/privateclaw_app/android/key.properties
 apps/privateclaw_app/android/fastlane/README.md
 apps/privateclaw_app/ios/fastlane/report.xml
 apps/privateclaw_app/android/fastlane/report.xml
+apps/privateclaw_app/ios/Flutter/PrivateClawLocal.xcconfig
 .DS_Store
 *.aab
 *.apk

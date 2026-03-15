@@ -127,17 +127,12 @@ function decryptRelayPayload(
 }
 
 class GroupBridge {
-  readonly nicknameSessionIds: string[] = [];
   readonly conversationMessages: string[] = [];
 
   async handleUserMessage(params: {
     sessionId: string;
     message: string;
   }): Promise<string> {
-    if (params.message.includes("Generate one playful nickname")) {
-      this.nicknameSessionIds.push(params.sessionId);
-      return "流萤狐";
-    }
     this.conversationMessages.push(params.message);
     return `OpenClaw bridge: ${params.message}`;
   }
@@ -487,7 +482,7 @@ test("provider renews the session key and keeps the chat usable after re-handsha
   await waitForClose(appSocket);
 });
 
-test("provider group sessions broadcast participant messages and assign stable participant labels", async (t) => {
+test("provider group sessions broadcast participant messages and assign unique local participant labels", async (t) => {
   const relay = createRelayServer({
     host: "127.0.0.1",
     port: 0,
@@ -542,14 +537,9 @@ test("provider group sessions broadcast participant messages and assign stable p
   const firstCapabilities = decryptRelayPayload(firstFrames[1]!, invite);
   assert.equal(firstCapabilities.kind, "provider_capabilities");
   assert.equal(firstCapabilities.groupMode, true);
-  assert.equal(firstCapabilities.currentDisplayName, "流萤狐");
-  assert.equal(bridge.nicknameSessionIds.length, 1);
-  assert.match(
-    bridge.nicknameSessionIds[0]!,
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
-  );
-  assert.doesNotMatch(bridge.nicknameSessionIds[0]!, /:participant:/);
-  assert.notEqual(bridge.nicknameSessionIds[0], invite.sessionId);
+  assert.equal(typeof firstCapabilities.currentDisplayName, "string");
+  assert.notEqual(firstCapabilities.currentDisplayName, "");
+  const firstDisplayName = firstCapabilities.currentDisplayName;
 
   const appTwoUrl = new URL(invite.appWsUrl);
   appTwoUrl.searchParams.set("appId", "app-two");
@@ -587,6 +577,15 @@ test("provider group sessions broadcast participant messages and assign stable p
   const appTwoCapabilities = decryptRelayPayload(appTwoFrames[1]!, invite);
   assert.equal(appTwoCapabilities.kind, "provider_capabilities");
   assert.equal(appTwoCapabilities.groupMode, true);
+  assert.equal(typeof appTwoCapabilities.currentDisplayName, "string");
+  assert.notEqual(appTwoCapabilities.currentDisplayName, "");
+  assert.notEqual(appTwoCapabilities.currentDisplayName, firstDisplayName);
+  const secondDisplayName = appTwoCapabilities.currentDisplayName;
+  const participantLabels =
+    appTwoCapabilities.participants?.map((participant) => participant.displayName) ?? [];
+  assert.equal(new Set(participantLabels).size, participantLabels.length);
+  assert.ok(participantLabels.includes(firstDisplayName));
+  assert.ok(participantLabels.includes(secondDisplayName));
 
   const appOnePayloadFramesPromise = nextMessages(appOne, 2);
   const appTwoPayloadFramesPromise = nextMessages(appTwo, 2);
@@ -621,18 +620,181 @@ test("provider group sessions broadcast participant messages and assign stable p
   );
   assert.equal(appOneParticipantFrame.kind, "participant_message");
   assert.equal(appTwoParticipantFrame.kind, "participant_message");
-  assert.equal(appTwoParticipantFrame.senderDisplayName, "流萤狐");
+  assert.equal(appTwoParticipantFrame.senderDisplayName, firstDisplayName);
   assert.equal(appTwoParticipantFrame.text, "hello team");
 
   const appOneAssistant = decryptRelayPayload(appOnePayloadFrames[1]!, invite);
   const appTwoAssistant = decryptRelayPayload(appTwoPayloadFrames[1]!, invite);
   assert.equal(appOneAssistant.kind, "assistant_message");
   assert.equal(appTwoAssistant.kind, "assistant_message");
-  assert.match(appTwoAssistant.text, /流萤狐: hello team/);
+  assert.match(appTwoAssistant.text, new RegExp(`${firstDisplayName}: hello team`, "u"));
 
   appOne.close();
   appTwo.close();
   await Promise.all([waitForClose(appOne), waitForClose(appTwo)]);
+});
+
+test("provider keeps generated participant labels stable across reconnects", async (t) => {
+  const relay = createRelayServer({
+    host: "127.0.0.1",
+    port: 0,
+    sessionTtlMs: 60_000,
+    frameCacheSize: 8,
+  });
+  const { port } = await relay.start();
+  t.after(async () => {
+    await relay.stop();
+  });
+
+  const provider = new PrivateClawProvider({
+    providerWsUrl: `ws://127.0.0.1:${port}/ws/provider`,
+    appWsUrl: `ws://127.0.0.1:${port}/ws/app`,
+    bridge: new GroupBridge(),
+    defaultTtlMs: DEFAULT_SESSION_TTL_MS,
+  });
+  await provider.connect();
+  t.after(async () => {
+    await provider.dispose();
+  });
+
+  const inviteBundle = await provider.createInviteBundle({ groupMode: true });
+  const invite = decodeInviteString(inviteBundle.inviteUri);
+
+  const appOneUrl = new URL(invite.appWsUrl);
+  appOneUrl.searchParams.set("appId", "app-one");
+  const appOne = new WebSocket(appOneUrl.toString());
+  const appOneAttached = nextMessage(appOne);
+  await waitForOpen(appOne);
+  assert.equal((await appOneAttached).type, "relay:attached");
+  const appOneInitialFramesPromise = nextMessages(appOne, 3);
+  appOne.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "client_hello",
+          appId: "app-one",
+          appVersion: "flutter-test",
+          deviceLabel: "Tester One",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+  const appOneInitialCapabilities = decryptRelayPayload(
+    (await appOneInitialFramesPromise)[1]!,
+    invite,
+  );
+  assert.equal(appOneInitialCapabilities.kind, "provider_capabilities");
+  const firstDisplayName = appOneInitialCapabilities.currentDisplayName;
+  assert.equal(typeof firstDisplayName, "string");
+
+  const appTwoUrl = new URL(invite.appWsUrl);
+  appTwoUrl.searchParams.set("appId", "app-two");
+  const appTwo = new WebSocket(appTwoUrl.toString());
+  const appTwoAttached = nextMessage(appTwo);
+  await waitForOpen(appTwo);
+  assert.equal((await appTwoAttached).type, "relay:attached");
+  const appTwoInitialFramesPromise = nextMessages(appTwo, 3);
+  const appOneJoinFramesPromise = nextMessages(appOne, 2);
+  appTwo.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "client_hello",
+          appId: "app-two",
+          appVersion: "flutter-test",
+          deviceLabel: "Tester Two",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+  const [appTwoInitialFrames, appOneJoinFrames] = await Promise.all([
+    appTwoInitialFramesPromise,
+    appOneJoinFramesPromise,
+  ]);
+  const initialJoinNotice = decryptRelayPayload(appOneJoinFrames[0]!, invite);
+  assert.equal(initialJoinNotice.kind, "system_message");
+  const appTwoInitialCapabilities = decryptRelayPayload(appTwoInitialFrames[1]!, invite);
+  assert.equal(appTwoInitialCapabilities.kind, "provider_capabilities");
+  const secondDisplayName = appTwoInitialCapabilities.currentDisplayName;
+  assert.equal(typeof secondDisplayName, "string");
+  assert.notEqual(secondDisplayName, firstDisplayName);
+  assert.match(initialJoinNotice.message, new RegExp(`${secondDisplayName} joined the group chat`, "u"));
+
+  const appOneLeaveFramesPromise = nextMessages(appOne, 2);
+  appTwo.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "session_close",
+          reason: "user_disconnect",
+          appId: "app-two",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+  const appOneLeaveFrames = await appOneLeaveFramesPromise;
+  const leaveNotice = decryptRelayPayload(appOneLeaveFrames[0]!, invite);
+  assert.equal(leaveNotice.kind, "system_message");
+  assert.match(leaveNotice.message, new RegExp(`${secondDisplayName} left the group chat`, "u"));
+
+  appTwo.close();
+  await waitForClose(appTwo);
+
+  const appTwoReconnect = new WebSocket(appTwoUrl.toString());
+  const appTwoReconnectAttached = nextMessage(appTwoReconnect);
+  await waitForOpen(appTwoReconnect);
+  assert.equal((await appTwoReconnectAttached).type, "relay:attached");
+  const appTwoReconnectFramesPromise = nextMessages(appTwoReconnect, 5);
+  const appOneRejoinFramesPromise = nextMessages(appOne, 2);
+  appTwoReconnect.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "client_hello",
+          appId: "app-two",
+          appVersion: "flutter-test",
+          deviceLabel: "Tester Two",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+  const [appTwoReconnectFrames, appOneRejoinFrames] = await Promise.all([
+    appTwoReconnectFramesPromise,
+    appOneRejoinFramesPromise,
+  ]);
+  const rejoinNotice = decryptRelayPayload(appOneRejoinFrames[0]!, invite);
+  assert.equal(rejoinNotice.kind, "system_message");
+  assert.match(rejoinNotice.message, new RegExp(`${secondDisplayName} joined the group chat`, "u"));
+  const reconnectPayloads = appTwoReconnectFrames.map((frame) =>
+    decryptRelayPayload(frame, invite),
+  );
+  const reconnectCapabilities = reconnectPayloads.find(
+    (payload) =>
+      payload.kind === "provider_capabilities" &&
+      payload.currentAppId === "app-two",
+  );
+  assert.ok(reconnectCapabilities);
+  assert.equal(reconnectCapabilities.currentDisplayName, secondDisplayName);
+
+  appOne.close();
+  appTwoReconnect.close();
+  await Promise.all([waitForClose(appOne), waitForClose(appTwoReconnect)]);
 });
 
 test("group sessions can mute and unmute bot replies without stopping participant chat", async (t) => {

@@ -35,13 +35,18 @@ dev_dependencies:
     sdk: flutter
 
 dependency_overrides:
-  # Keep iOS on the pre-objective_c PathProvider implementation to avoid the
-  # simulator/runtime dynamic-library failure seen when joining a session.
-  path_provider_foundation: 2.4.2
+  # Keep the vendored pre-objective_c PathProvider implementation, but disable
+  # its iOS plugin registration because some older iOS runtimes crash inside
+  # the Swift registrar path during app launch. Runner provides the matching
+  # iOS Pigeon channels directly.
+  path_provider_foundation:
+    path: plugins/path_provider_foundation
 
 flutter:
   generate: true
   uses-material-design: true
+  assets:
+    - assets/branding/privateclaw_app_icon.png
 
 flutter_launcher_icons:
   android: true

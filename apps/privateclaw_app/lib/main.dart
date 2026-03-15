@@ -29,6 +29,7 @@ import 'widgets/session_qr_sheet.dart';
 const int _maxInlineAttachmentBytes = 5 * 1024 * 1024;
 const Duration _sessionRenewWarningThreshold = Duration(minutes: 30);
 const String _sessionRenewCommandSlash = '/renew-session';
+const String _appBarIconAsset = 'assets/branding/privateclaw_app_icon.png';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -902,28 +903,11 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     final PrivateClawSlashCommand? command =
         await showModalBottomSheet<PrivateClawSlashCommand>(
           context: context,
+          isScrollControlled: true,
           useSafeArea: true,
           showDragHandle: true,
           builder: (BuildContext context) {
-            return ListView.separated(
-              shrinkWrap: true,
-              itemCount: _availableCommands.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
-              itemBuilder: (BuildContext context, int index) {
-                final PrivateClawSlashCommand item = _availableCommands[index];
-                return ListTile(
-                  leading: const Icon(Icons.terminal),
-                  title: Text(item.slash),
-                  subtitle: Text(item.description),
-                  trailing: item.acceptsArgs
-                      ? const Icon(Icons.edit_outlined)
-                      : null,
-                  onTap: () {
-                    Navigator.of(context).pop(item);
-                  },
-                );
-              },
-            );
+            return _SlashCommandsSheet(commands: _availableCommands);
           },
         );
 
@@ -1110,20 +1094,214 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
 
     return Scaffold(
       resizeToAvoidBottomInset: false,
-      appBar: AppBar(title: Text(l10n.appTitle)),
+      appBar: AppBar(
+        automaticallyImplyLeading: false,
+        centerTitle: true,
+        title: const _PrivateClawAppBarIcon(),
+      ),
       body: GestureDetector(
         onTap: () => FocusScope.of(context).unfocus(),
         child: SafeArea(
           bottom: false,
-          child: AnimatedPadding(
-            duration: const Duration(milliseconds: 180),
-            curve: Curves.easeOut,
-            padding: EdgeInsets.only(bottom: keyboardInset),
+          child: Stack(
+            children: <Widget>[
+              AnimatedPadding(
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOut,
+                padding: EdgeInsets.only(bottom: keyboardInset),
+                child: Column(
+                  children: <Widget>[
+                    if (!_canCollapsePairingPanel)
+                      _buildPairingSection(context, l10n),
+                    Expanded(child: _buildMessageList(l10n)),
+                    _buildComposer(l10n),
+                  ],
+                ),
+              ),
+              if (_canCollapsePairingPanel)
+                _buildManagedSessionOverlay(context, l10n),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildManagedSessionOverlay(
+    BuildContext context,
+    AppLocalizations l10n,
+  ) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme colorScheme = theme.colorScheme;
+    if (_isPairingPanelCollapsed) {
+      return Positioned(
+        top: 20,
+        right: 0,
+        child: Tooltip(
+          message: l10n.sessionLabel,
+          child: Material(
+            color: colorScheme.primaryContainer,
+            elevation: 4,
+            borderRadius: const BorderRadius.horizontal(
+              left: Radius.circular(18),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              key: const ValueKey<String>('session-panel-handle'),
+              onTap: () {
+                setState(() {
+                  _isPairingPanelCollapsed = false;
+                });
+              },
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 10, vertical: 16),
+                child: Icon(Icons.chevron_left),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final double overlayWidth = MediaQuery.sizeOf(context).width > 420
+        ? 360
+        : MediaQuery.sizeOf(context).width - 32;
+    return Positioned(
+      top: 16,
+      right: 16,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: overlayWidth,
+          maxHeight: MediaQuery.sizeOf(context).height * 0.72,
+        ),
+        child: Material(
+          key: const ValueKey<String>('session-panel-overlay'),
+          color: colorScheme.surface,
+          elevation: 6,
+          borderRadius: BorderRadius.circular(24),
+          clipBehavior: Clip.antiAlias,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                _buildPairingSection(context, l10n),
-                Expanded(child: _buildMessageList(l10n)),
-                _buildComposer(l10n),
+                Row(
+                  children: <Widget>[
+                    const Icon(Icons.lock_clock_outlined),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        l10n.sessionLabel,
+                        style: theme.textTheme.titleMedium,
+                      ),
+                    ),
+                    IconButton(
+                      key: const ValueKey<String>('session-panel-close'),
+                      tooltip: MaterialLocalizations.of(
+                        context,
+                      ).closeButtonTooltip,
+                      onPressed: () {
+                        setState(() {
+                          _isPairingPanelCollapsed = true;
+                        });
+                      },
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+                if (_invite?.groupMode == true) ...<Widget>[
+                  const SizedBox(height: 8),
+                  Text(
+                    l10n.groupChatSummary(_participants.length),
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                ],
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: <Widget>[
+                    FilledButton.icon(
+                      onPressed: _openScanner,
+                      icon: const Icon(Icons.qr_code_scanner),
+                      label: Text(l10n.scanQrButton),
+                    ),
+                    FilledButton.tonalIcon(
+                      key: const ValueKey<String>('session-disconnect-button'),
+                      onPressed: _disconnect,
+                      icon: const Icon(Icons.link_off),
+                      label: Text(l10n.disconnectTooltip),
+                    ),
+                    if (_canShowSessionQr)
+                      FilledButton.tonalIcon(
+                        key: const ValueKey<String>('session-qr-trigger'),
+                        onPressed: _showSessionQrSheet,
+                        icon: const Icon(Icons.qr_code_2),
+                        label: Text(l10n.showSessionQrButton),
+                      ),
+                  ],
+                ),
+                if (_invite != null) ...<Widget>[
+                  const SizedBox(height: 12),
+                  Text(
+                    '${l10n.sessionLabel}: ${_invite!.sessionId}',
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                  Text(
+                    '${l10n.expiresLabel}: ${_formatDateTime(_invite!.expiresAt)}',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ],
+                if (_identity != null) ...<Widget>[
+                  const SizedBox(height: 8),
+                  Text(
+                    l10n.currentAppLabel(
+                      _identity!.displayName ?? _identity!.appId,
+                    ),
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ],
+                if (_invite?.groupMode == true &&
+                    _participants.isNotEmpty) ...<Widget>[
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: _participants
+                        .map(
+                          (PrivateClawParticipant participant) => Chip(
+                            avatar: Icon(
+                              participant.appId == _identity?.appId
+                                  ? Icons.person
+                                  : Icons.group,
+                              size: 18,
+                            ),
+                            label: Text(participant.displayName),
+                          ),
+                        )
+                        .toList(growable: false),
+                  ),
+                ],
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: _statusColor(context),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: <Widget>[
+                      Icon(_statusIcon()),
+                      const SizedBox(width: 12),
+                      Expanded(child: Text(_statusText)),
+                    ],
+                  ),
+                ),
+                if (_showsSessionRenewPrompt) ...<Widget>[
+                  const SizedBox(height: 12),
+                  _buildSessionRenewPrompt(context, l10n),
+                ],
               ],
             ),
           ),
@@ -1150,76 +1328,6 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
   }
 
   Widget _buildPairingSection(BuildContext context, AppLocalizations l10n) {
-    if (_canCollapsePairingPanel && _isPairingPanelCollapsed) {
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Row(
-              children: <Widget>[
-                Expanded(
-                  child: FilledButton.tonal(
-                    onPressed: () {
-                      setState(() {
-                        _isPairingPanelCollapsed = false;
-                      });
-                    },
-                    child: Row(
-                      children: <Widget>[
-                        Icon(_statusIcon()),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: <Widget>[
-                              if (_invite?.groupMode == true)
-                                Text(
-                                  l10n.groupChatSummary(_participants.length),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              Text(
-                                _statusText,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              if (_invite != null)
-                                Text(
-                                  _invite!.sessionId,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                            ],
-                          ),
-                        ),
-                        const Icon(Icons.expand_more),
-                      ],
-                    ),
-                  ),
-                ),
-                if (_canShowSessionQr)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 8),
-                    child: IconButton.filledTonal(
-                      key: const ValueKey<String>('session-qr-trigger'),
-                      tooltip: l10n.showSessionQrButton,
-                      onPressed: _showSessionQrSheet,
-                      icon: const Icon(Icons.qr_code_2),
-                    ),
-                  ),
-              ],
-            ),
-            if (_showsSessionRenewPrompt) ...<Widget>[
-              const SizedBox(height: 12),
-              _buildSessionRenewPrompt(context, l10n),
-            ],
-          ],
-        ),
-      );
-    }
-
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       child: Card(
@@ -1236,15 +1344,6 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
                   ),
-                  if (_canCollapsePairingPanel)
-                    IconButton(
-                      onPressed: () {
-                        setState(() {
-                          _isPairingPanelCollapsed = true;
-                        });
-                      },
-                      icon: const Icon(Icons.expand_less),
-                    ),
                 ],
               ),
               if (!_hasManagedSessionContext) ...<Widget>[
@@ -1513,5 +1612,115 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
 
   String _nextSystemMessageId(String label) {
     return '$label-${DateTime.now().microsecondsSinceEpoch}';
+  }
+}
+
+class _PrivateClawAppBarIcon extends StatelessWidget {
+  const _PrivateClawAppBarIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      key: const ValueKey<String>('app-bar-icon'),
+      borderRadius: BorderRadius.circular(8),
+      child: Image.asset(
+        _appBarIconAsset,
+        width: 28,
+        height: 28,
+        fit: BoxFit.cover,
+      ),
+    );
+  }
+}
+
+class _SlashCommandsSheet extends StatefulWidget {
+  const _SlashCommandsSheet({required this.commands});
+
+  final List<PrivateClawSlashCommand> commands;
+
+  @override
+  State<_SlashCommandsSheet> createState() => _SlashCommandsSheetState();
+}
+
+class _SlashCommandsSheetState extends State<_SlashCommandsSheet> {
+  final TextEditingController _searchController = TextEditingController();
+
+  List<PrivateClawSlashCommand> get _filteredCommands {
+    final String query = _searchController.text.trim().toLowerCase();
+    if (query.isEmpty) {
+      return widget.commands;
+    }
+    return widget.commands
+        .where((PrivateClawSlashCommand command) {
+          final String haystack = '${command.slash} ${command.description}'
+              .toLowerCase();
+          return haystack.contains(query);
+        })
+        .toList(growable: false);
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final List<PrivateClawSlashCommand> commands = _filteredCommands;
+    final double keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+    final double screenHeight = MediaQuery.sizeOf(context).height;
+    final double sheetHeight = screenHeight > 700 ? 520 : screenHeight * 0.72;
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOut,
+      padding: EdgeInsets.only(bottom: keyboardInset),
+      child: SizedBox(
+        height: sheetHeight,
+        child: Column(
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: TextField(
+                key: const ValueKey<String>('slash-command-search'),
+                controller: _searchController,
+                autofocus: true,
+                onChanged: (_) {
+                  setState(() {});
+                },
+                decoration: InputDecoration(
+                  prefixIcon: const Icon(Icons.search),
+                  hintText: MaterialLocalizations.of(context).searchFieldLabel,
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+            ),
+            Expanded(
+              child: commands.isEmpty
+                  ? const Center(child: Icon(Icons.search_off))
+                  : ListView.separated(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      itemCount: commands.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (BuildContext context, int index) {
+                        final PrivateClawSlashCommand item = commands[index];
+                        return ListTile(
+                          leading: const Icon(Icons.terminal),
+                          title: Text(item.slash),
+                          subtitle: Text(item.description),
+                          trailing: item.acceptsArgs
+                              ? const Icon(Icons.edit_outlined)
+                              : null,
+                          onTap: () {
+                            Navigator.of(context).pop(item);
+                          },
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

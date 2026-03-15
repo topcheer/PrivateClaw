@@ -17,5 +17,3 @@ flutter:
       android:
         package: gg.ai.privateclaw_local_notifications
         pluginClass: PrivateClawLocalNotificationsPlugin
-      ios:
-        pluginClass: PrivateClawLocalNotificationsPlugin

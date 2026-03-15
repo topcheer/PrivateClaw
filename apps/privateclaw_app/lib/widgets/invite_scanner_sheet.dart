@@ -1,7 +1,9 @@
 import 'dart:async';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../l10n/app_localizations.dart';
@@ -13,12 +15,18 @@ class InviteScannerSheet extends StatefulWidget {
     super.key,
     this.pickImagePath,
     this.analyzeImagePath,
+    this.captureInviteFromCamera,
+    this.useNativeIosCapture,
+    this.autoStartNativeIosCapture,
     this.previewOverride,
   });
 
   final ValueChanged<String> onDetected;
   final Future<String?> Function()? pickImagePath;
   final Future<String?> Function(String path)? analyzeImagePath;
+  final Future<String?> Function()? captureInviteFromCamera;
+  final bool? useNativeIosCapture;
+  final bool? autoStartNativeIosCapture;
   final Widget? previewOverride;
 
   @override
@@ -27,9 +35,17 @@ class InviteScannerSheet extends StatefulWidget {
 
 class _InviteScannerSheetState extends State<InviteScannerSheet> {
   final MobileScannerController _controller = MobileScannerController();
+  bool _isCapturingCamera = false;
   bool _handled = false;
   bool _isAnalyzingImage = false;
+  bool _scheduledNativeIosAutoStart = false;
   String? _imageFeedback;
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleNativeIosAutoStartIfNeeded();
+  }
 
   @override
   void dispose() {
@@ -54,12 +70,40 @@ class _InviteScannerSheetState extends State<InviteScannerSheet> {
   }
 
   Future<String?> _analyzeImagePath(String path) async {
+    if (_usesNativeIosCapture) {
+      return PrivateClawInviteImageDecoder.decodeImage(path);
+    }
+
     try {
       final BarcodeCapture? capture = await _controller.analyzeImage(path);
       return _firstRawValue(capture?.barcodes ?? const <Barcode>[]);
+    } on MissingPluginException {
+      return PrivateClawInviteImageDecoder.decodeImage(path);
     } on UnsupportedError {
       return PrivateClawInviteImageDecoder.decodeImage(path);
     }
+  }
+
+  bool get _usesNativeIosCapture =>
+      widget.useNativeIosCapture ??
+      (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS);
+
+  bool get _shouldAutoStartNativeIosCapture =>
+      widget.autoStartNativeIosCapture ?? _usesNativeIosCapture;
+
+  void _scheduleNativeIosAutoStartIfNeeded() {
+    if (!_usesNativeIosCapture ||
+        !_shouldAutoStartNativeIosCapture ||
+        _scheduledNativeIosAutoStart) {
+      return;
+    }
+    _scheduledNativeIosAutoStart = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _handled) {
+        return;
+      }
+      unawaited(_captureFromCamera());
+    });
   }
 
   Future<void> _handleDetectedValue(String value) async {
@@ -72,6 +116,60 @@ class _InviteScannerSheetState extends State<InviteScannerSheet> {
       return;
     }
     widget.onDetected(value);
+  }
+
+  Future<void> _captureFromCamera() async {
+    if (_handled || _isCapturingCamera) {
+      return;
+    }
+
+    final AppLocalizations l10n = AppLocalizations.of(context)!;
+    final Future<String?> Function() captureInviteFromCamera =
+        widget.captureInviteFromCamera ??
+        PrivateClawInviteImageDecoder.captureInviteFromCamera;
+
+    setState(() {
+      _isCapturingCamera = true;
+      _imageFeedback = null;
+    });
+
+    try {
+      final String? value = await captureInviteFromCamera();
+      if (!mounted || value == null || value.isEmpty) {
+        return;
+      }
+      await _handleDetectedValue(value);
+    } on PrivateClawInviteCameraCancelled {
+      return;
+    } on PrivateClawInviteCameraPermissionDenied {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _imageFeedback = l10n.scannerPermissionDenied;
+      });
+    } on UnsupportedError {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _imageFeedback = l10n.scannerUnsupported;
+      });
+    } on StateError {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _imageFeedback = l10n.scannerUnavailable;
+      });
+    } finally {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isCapturingCamera = false;
+      });
+    }
   }
 
   Future<void> _pickAndAnalyzeImage() async {
@@ -174,45 +272,97 @@ class _InviteScannerSheetState extends State<InviteScannerSheet> {
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(24),
-                  child:
-                      widget.previewOverride ??
-                      MobileScanner(
-                        controller: _controller,
-                        errorBuilder:
-                            (
-                              BuildContext context,
-                              MobileScannerException error,
-                            ) {
-                              return _ScannerUnavailableView(error: error);
-                            },
-                        placeholderBuilder: (BuildContext context) {
-                          return ColoredBox(
-                            color: Colors.black,
-                            child: Center(
+                  child: _usesNativeIosCapture
+                      ? ColoredBox(
+                          color: Colors.black,
+                          child: Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(24),
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: <Widget>[
-                                  const CircularProgressIndicator(),
+                                  const Icon(
+                                    Icons.qr_code_scanner,
+                                    color: Colors.white,
+                                    size: 48,
+                                  ),
                                   const SizedBox(height: 16),
                                   Text(
-                                    l10n.scannerLoading,
+                                    _isCapturingCamera
+                                        ? l10n.scannerLoading
+                                        : l10n.scanSheetTitle,
+                                    textAlign: TextAlign.center,
                                     style: const TextStyle(color: Colors.white),
+                                  ),
+                                  const SizedBox(height: 24),
+                                  FilledButton.icon(
+                                    key: const ValueKey<String>(
+                                      'scan-camera-button',
+                                    ),
+                                    onPressed: _isCapturingCamera
+                                        ? null
+                                        : _captureFromCamera,
+                                    icon: _isCapturingCamera
+                                        ? const SizedBox.square(
+                                            dimension: 18,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          )
+                                        : const Icon(Icons.camera_alt_outlined),
+                                    label: Text(
+                                      _isCapturingCamera
+                                          ? l10n.scannerLoading
+                                          : l10n.scanQrButton,
+                                    ),
                                   ),
                                 ],
                               ),
                             ),
-                          );
-                        },
-                        onDetect: (BarcodeCapture capture) async {
-                          final String? value = _firstRawValue(
-                            capture.barcodes,
-                          );
-                          if (value == null) {
-                            return;
-                          }
-                          await _handleDetectedValue(value);
-                        },
-                      ),
+                          ),
+                        )
+                      : widget.previewOverride ??
+                            MobileScanner(
+                              controller: _controller,
+                              errorBuilder:
+                                  (
+                                    BuildContext context,
+                                    MobileScannerException error,
+                                  ) {
+                                    return _ScannerUnavailableView(
+                                      error: error,
+                                    );
+                                  },
+                              placeholderBuilder: (BuildContext context) {
+                                return ColoredBox(
+                                  color: Colors.black,
+                                  child: Center(
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: <Widget>[
+                                        const CircularProgressIndicator(),
+                                        const SizedBox(height: 16),
+                                        Text(
+                                          l10n.scannerLoading,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                              onDetect: (BarcodeCapture capture) async {
+                                final String? value = _firstRawValue(
+                                  capture.barcodes,
+                                );
+                                if (value == null) {
+                                  return;
+                                }
+                                await _handleDetectedValue(value);
+                              },
+                            ),
                 ),
               ),
             ),

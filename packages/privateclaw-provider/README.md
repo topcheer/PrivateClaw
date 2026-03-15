@@ -147,7 +147,7 @@ For a multi-app group session, use:
 openclaw privateclaw pair --group
 ```
 
-When the provider needs to ask the upstream bridge for a first-time participant nickname, it now uses a deterministic derived bridge session ID that remains UUID-shaped, which avoids leaking malformed `sessionId:participant:...` values into stricter bridge backends.
+When a first-time participant joins a group session without providing a name, the provider now assigns a local animal-style nickname. The label is chosen deterministically from the session/app identity, avoids collisions with other participants already in the same session, and stays stable when that same app reconnects later.
 
 ## Relay deployment
 

@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import {
   decodeInviteString,
   decryptPayload,
@@ -116,33 +116,50 @@ function deterministicHash(input: string): number {
   return hash;
 }
 
-function buildFallbackParticipantLabel(appId: string): string {
-  const prefix =
-    PARTICIPANT_FALLBACK_PREFIXES[
-      deterministicHash(`prefix:${appId}`) % PARTICIPANT_FALLBACK_PREFIXES.length
-    ];
+function buildParticipantLabelCandidate(
+  index: number,
+): string {
+  const normalizedIndex =
+    ((index % PARTICIPANT_FALLBACK_PREFIXES.length) +
+      PARTICIPANT_FALLBACK_PREFIXES.length) %
+    PARTICIPANT_FALLBACK_PREFIXES.length;
+  const normalizedSuffixIndex =
+    Math.floor(index / PARTICIPANT_FALLBACK_PREFIXES.length) %
+    PARTICIPANT_FALLBACK_SUFFIXES.length;
+  const prefix = PARTICIPANT_FALLBACK_PREFIXES[normalizedIndex];
   const suffix =
     PARTICIPANT_FALLBACK_SUFFIXES[
-      deterministicHash(`suffix:${appId}`) % PARTICIPANT_FALLBACK_SUFFIXES.length
+      (normalizedSuffixIndex + PARTICIPANT_FALLBACK_SUFFIXES.length) %
+        PARTICIPANT_FALLBACK_SUFFIXES.length
     ];
   return `${prefix}${suffix}`;
 }
 
-function buildDerivedBridgeSessionId(
+function buildGeneratedParticipantLabel(
   sessionId: string,
-  scope: string,
+  appId: string,
+  usedLabels: ReadonlySet<string>,
 ): string {
-  const hex = createHash("sha256")
-    .update(`${sessionId}:${scope}`)
-    .digest("hex")
-    .slice(0, 32)
-    .split("");
+  const totalCandidates =
+    PARTICIPANT_FALLBACK_PREFIXES.length *
+    PARTICIPANT_FALLBACK_SUFFIXES.length;
+  const baseIndex =
+    deterministicHash(`participant:${sessionId}:${appId}`) % totalCandidates;
 
-  hex[12] = "5";
-  const variant = Number.parseInt(hex[16]!, 16);
-  hex[16] = ((variant & 0x3) | 0x8).toString(16);
+  for (let offset = 0; offset < totalCandidates; offset += 1) {
+    const candidate = buildParticipantLabelCandidate(baseIndex + offset);
+    if (!usedLabels.has(candidate)) {
+      return candidate;
+    }
+  }
 
-  return `${hex.slice(0, 8).join("")}-${hex.slice(8, 12).join("")}-${hex.slice(12, 16).join("")}-${hex.slice(16, 20).join("")}-${hex.slice(20, 32).join("")}`;
+  const overflowBase = buildParticipantLabelCandidate(baseIndex);
+  for (let duplicateNumber = 2; ; duplicateNumber += 1) {
+    const candidate = `${overflowBase}${duplicateNumber}`;
+    if (!usedLabels.has(candidate)) {
+      return candidate;
+    }
+  }
 }
 
 function buildRenewalReminderMessage(session: ProviderSessionState): string {
@@ -180,18 +197,6 @@ function buildSessionQrFailureMessage(details: string): string {
   );
 }
 
-function normalizeBridgeText(response: BridgeResponse): string {
-  if (typeof response === "string") {
-    return response;
-  }
-
-  return response.messages
-    .map((message: BridgeMessage) =>
-      typeof message === "string" ? message : message.text,
-    )
-    .find((message) => message.trim() !== "") ?? "";
-}
-
 function formatBridgeHistoryTurn(
   turn: PrivateClawConversationTurn,
 ): PrivateClawConversationTurn {
@@ -214,20 +219,6 @@ function toParticipantSnapshot(
     ...(participant.deviceLabel ? { deviceLabel: participant.deviceLabel } : {}),
     joinedAt: participant.joinedAt,
   };
-}
-
-function buildParticipantNamingPrompt(deviceLabel?: string): string {
-  return [
-    "Generate one playful nickname for a PrivateClaw group participant.",
-    "Rules:",
-    "- return the nickname only",
-    "- no quotes, emoji, punctuation, or explanation",
-    "- maximum 6 Chinese characters or 12 ASCII characters",
-    "- make it short, memorable, and cute",
-    ...(deviceLabel
-      ? [`The participant's device label is: ${deviceLabel}`]
-      : []),
-  ].join("\n");
 }
 
 function buildWelcomeMessage(): string {
@@ -521,41 +512,6 @@ export class PrivateClawProvider {
     );
   }
 
-  private async generateParticipantLabel(
-    sessionId: string,
-    appId: string,
-    deviceLabel?: string,
-  ): Promise<string> {
-    const session = this.requireSession(sessionId);
-    const bridgeSessionId = buildDerivedBridgeSessionId(
-      sessionId,
-      `participant:${appId}`,
-    );
-    try {
-      const bridgeResponse = await this.options.bridge.handleUserMessage({
-        sessionId: bridgeSessionId,
-        invite: {
-          ...session.invite,
-          sessionId: bridgeSessionId,
-        },
-        message: buildParticipantNamingPrompt(deviceLabel),
-        history: [],
-      });
-      const generated = sanitizeParticipantLabel(
-        normalizeBridgeText(bridgeResponse),
-      );
-      if (generated) {
-        return generated;
-      }
-      throw new Error("nickname generation returned an empty label");
-    } catch (error) {
-      this.options.onLog?.(
-        `[provider] participant nickname fallback for ${appId}: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      return buildFallbackParticipantLabel(appId);
-    }
-  }
-
   private async upsertParticipant(
     sessionId: string,
     params: {
@@ -569,6 +525,9 @@ export class PrivateClawProvider {
     const normalizedAppId = params.appId?.trim() || "legacy-app";
     const existing = session.participants.get(normalizedAppId);
     const requestedDisplayName = sanitizeParticipantLabel(params.displayName);
+    const usedLabels = new Set(
+      [...session.participants.values()].map((participant) => participant.displayName),
+    );
 
     if (existing) {
       const participant: ProviderParticipantState = {
@@ -585,11 +544,11 @@ export class PrivateClawProvider {
       appId: normalizedAppId,
       displayName:
         requestedDisplayName ??
-        (await this.generateParticipantLabel(
+        buildGeneratedParticipantLabel(
           sessionId,
           normalizedAppId,
-          params.deviceLabel,
-        )),
+          usedLabels,
+        ),
       ...(params.deviceLabel ? { deviceLabel: params.deviceLabel } : {}),
       joinedAt: params.sentAt,
       lastSeenAt: params.sentAt,

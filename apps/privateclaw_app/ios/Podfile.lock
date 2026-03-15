@@ -98,19 +98,11 @@ PODS:
   - just_audio (0.0.1):
     - Flutter
     - FlutterMacOS
-  - mobile_scanner (7.0.0):
-    - Flutter
-    - FlutterMacOS
   - nanopb (3.30910.0):
     - nanopb/decode (= 3.30910.0)
     - nanopb/encode (= 3.30910.0)
   - nanopb/decode (3.30910.0)
   - nanopb/encode (3.30910.0)
-  - path_provider_foundation (0.0.1):
-    - Flutter
-    - FlutterMacOS
-  - privateclaw_local_notifications (0.0.1):
-    - Flutter
   - PromisesObjC (2.4.0)
   - SDWebImage (5.21.5):
     - SDWebImage/Core (= 5.21.5)
@@ -127,9 +119,6 @@ DEPENDENCIES:
   - firebase_messaging (from `.symlinks/plugins/firebase_messaging/ios`)
   - Flutter (from `Flutter`)
   - just_audio (from `.symlinks/plugins/just_audio/darwin`)
-  - mobile_scanner (from `.symlinks/plugins/mobile_scanner/darwin`)
-  - path_provider_foundation (from `.symlinks/plugins/path_provider_foundation/darwin`)
-  - privateclaw_local_notifications (from `.symlinks/plugins/privateclaw_local_notifications/ios`)
   - video_player_avfoundation (from `.symlinks/plugins/video_player_avfoundation/darwin`)
 
 SPEC REPOS:
@@ -161,12 +150,6 @@ EXTERNAL SOURCES:
     :path: Flutter
   just_audio:
     :path: ".symlinks/plugins/just_audio/darwin"
-  mobile_scanner:
-    :path: ".symlinks/plugins/mobile_scanner/darwin"
-  path_provider_foundation:
-    :path: ".symlinks/plugins/path_provider_foundation/darwin"
-  privateclaw_local_notifications:
-    :path: ".symlinks/plugins/privateclaw_local_notifications/ios"
   video_player_avfoundation:
     :path: ".symlinks/plugins/video_player_avfoundation/darwin"
 
@@ -186,10 +169,7 @@ SPEC CHECKSUMS:
   GoogleDataTransport: aae35b7ea0c09004c3797d53c8c41f66f219d6a7
   GoogleUtilities: 00c88b9a86066ef77f0da2fab05f65d7768ed8e1
   just_audio: 4e391f57b79cad2b0674030a00453ca5ce817eed
-  mobile_scanner: 9157936403f5a0644ca3779a38ff8404c5434a93
   nanopb: fad817b59e0457d11a5dfbde799381cd727c1275
-  path_provider_foundation: 080d55be775b7414fd5a5ef3ac137b97b097e564
-  privateclaw_local_notifications: 256a887008087a57ae652e431234b06668ea464b
   PromisesObjC: f5707f49cb48b9636751c5b2e7d227e43fba9f47
   SDWebImage: e9c98383c7572d713c1a0d7dd2783b10599b9838
   SwiftyGif: 706c60cf65fa2bc5ee0313beece843c8eb8194d4

@@ -36,9 +36,6 @@ flutter:
       android:
         package: dev.steenbakker.mobile_scanner
         pluginClass: MobileScannerPlugin
-      ios:
-        pluginClass: MobileScannerPlugin
-        sharedDarwinSource: true
       macos:
         pluginClass: MobileScannerPlugin
         sharedDarwinSource: true

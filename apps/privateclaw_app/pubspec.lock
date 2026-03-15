@@ -415,10 +415,9 @@ packages:
   path_provider_foundation:
     dependency: "direct overridden"
     description:
-      name: path_provider_foundation
-      sha256: "16eef174aacb07e09c351502740fa6254c165757638eba1e9116b0a781201bbd"
-      url: "https://pub.dev"
-    source: hosted
+      path: "plugins/path_provider_foundation"
+      relative: true
+    source: path
     version: "2.4.2"
   path_provider_linux:
     dependency: transitive

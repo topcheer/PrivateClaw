@@ -54,7 +54,12 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    expect(find.byType(Image), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (Widget widget) => widget is Image && widget.image is MemoryImage,
+      ),
+      findsOneWidget,
+    );
     expect(find.text('release-checklist.pdf'), findsOneWidget);
     expect(
       find.text('/tts Draft a 15 second encrypted handoff summary'),

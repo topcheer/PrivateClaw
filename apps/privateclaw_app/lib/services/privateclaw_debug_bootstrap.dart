@@ -10,12 +10,36 @@ const String _privateClawBootstrapPayloadEnv = 'PRIVATECLAW_BOOTSTRAP_PAYLOAD';
 const String _privateClawBootstrapPayloadDefine = String.fromEnvironment(
   _privateClawBootstrapPayloadEnv,
 );
+const String _privateClawDebugInviteInputEnv = 'PRIVATECLAW_DEBUG_INVITE_INPUT';
+const String _privateClawDebugInviteInputDefine = String.fromEnvironment(
+  _privateClawDebugInviteInputEnv,
+);
+const String _privateClawDebugAcceptRelayWarningEnv =
+    'PRIVATECLAW_DEBUG_ACCEPT_RELAY_WARNING';
+const String _privateClawDebugAcceptRelayWarningDefine = String.fromEnvironment(
+  _privateClawDebugAcceptRelayWarningEnv,
+);
+const String _privateClawDebugSkipNotificationsEnv =
+    'PRIVATECLAW_DEBUG_SKIP_NOTIFICATIONS';
+const String _privateClawDebugSkipNotificationsDefine = String.fromEnvironment(
+  _privateClawDebugSkipNotificationsEnv,
+);
 
 class PrivateClawDebugBootstrapData {
   const PrivateClawDebugBootstrapData({required this.invite, this.identity});
 
   final PrivateClawInvite invite;
   final PrivateClawIdentity? identity;
+}
+
+class PrivateClawDebugPendingInviteData {
+  const PrivateClawDebugPendingInviteData({
+    required this.inviteInput,
+    required this.autoApproveRelayWarning,
+  });
+
+  final String inviteInput;
+  final bool autoApproveRelayWarning;
 }
 
 PrivateClawDebugBootstrapData? loadPrivateClawDebugBootstrapFromEnvironment({
@@ -36,6 +60,35 @@ PrivateClawDebugBootstrapData? loadPrivateClawDebugBootstrapFromEnvironment({
   }
 
   return parsePrivateClawDebugBootstrapPayload(payload);
+}
+
+PrivateClawDebugPendingInviteData?
+loadPrivateClawDebugPendingInviteFromEnvironment({
+  Map<String, String>? environment,
+}) {
+  if (kReleaseMode) {
+    return null;
+  }
+
+  final Map<String, String> resolvedEnvironment = environment ?? Platform.environment;
+  final String? inviteInput =
+      (_privateClawDebugInviteInputDefine.isNotEmpty
+              ? _privateClawDebugInviteInputDefine
+              : resolvedEnvironment[_privateClawDebugInviteInputEnv])
+          ?.trim();
+  if (inviteInput == null || inviteInput.isEmpty) {
+    return null;
+  }
+
+  final String? autoApproveValue =
+      (_privateClawDebugAcceptRelayWarningDefine.isNotEmpty
+              ? _privateClawDebugAcceptRelayWarningDefine
+              : resolvedEnvironment[_privateClawDebugAcceptRelayWarningEnv])
+          ?.trim();
+  return PrivateClawDebugPendingInviteData(
+    inviteInput: inviteInput,
+    autoApproveRelayWarning: _parseDebugBool(autoApproveValue),
+  );
 }
 
 PrivateClawDebugBootstrapData parsePrivateClawDebugBootstrapPayload(
@@ -84,4 +137,31 @@ List<int> _decodeBase64UrlPayload(String value) {
       .replaceAll('_', '/')
       .padRight((value.length + 3) & ~3, '=');
   return base64Decode(normalized);
+}
+
+bool _parseDebugBool(String? value) {
+  if (value == null || value.isEmpty) {
+    return false;
+  }
+  final String normalized = value.trim().toLowerCase();
+  return normalized == '1' ||
+      normalized == 'true' ||
+      normalized == 'yes' ||
+      normalized == 'on';
+}
+
+bool loadPrivateClawDebugSkipNotificationsFromEnvironment({
+  Map<String, String>? environment,
+}) {
+  if (kReleaseMode) {
+    return false;
+  }
+
+  final Map<String, String> resolvedEnvironment = environment ?? Platform.environment;
+  final String? rawValue =
+      (_privateClawDebugSkipNotificationsDefine.isNotEmpty
+              ? _privateClawDebugSkipNotificationsDefine
+              : resolvedEnvironment[_privateClawDebugSkipNotificationsEnv])
+          ?.trim();
+  return _parseDebugBool(rawValue);
 }

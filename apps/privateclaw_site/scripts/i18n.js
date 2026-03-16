@@ -21,9 +21,11 @@ const BUNDLES = {
         "On phones, the mobile web chat button appears here so you can jump in right away.",
       heroMobileHint:
         "You are on a mobile device, so you can open the PrivateClaw web chat right now.",
-      appComingSoon: "iOS public beta available",
+      appComingSoon: "iOS public beta + Android closed alpha",
       iosComingSoon: "Join iOS public beta",
-      androidComingSoon: "Android app coming soon",
+      androidComingSoon: "Join Android closed alpha",
+      androidBetaNote:
+        "Android closed alpha is delivered through Google Play. Join the Google Group first or Play will say the test is unavailable.",
       previewStatus: "Live preview",
       previewTitle: "A room that feels personal, not public.",
       previewBody:
@@ -147,10 +149,11 @@ const BUNDLES = {
       betaKicker: "Early access",
       betaTitle: "Join the PrivateClaw beta circle.",
       betaBody:
-        "We are collecting feedback from early users who care about private mobile experiences, secure sharing, and creative ways to enjoy OpenClaw together.",
+        "iOS public beta is live on TestFlight, and Android closed alpha is live on Google Play. Join the Google Group first so Google Play will admit you to the Android test.",
       betaPrimaryCta: "Join the Google Group",
       betaTelegramCta: "Join the Telegram chat",
-      betaFootnote: "Google Group and Telegram are both open for the early community.",
+      betaFootnote:
+        "Android closed alpha requires Google Group membership first. iOS public beta is open through TestFlight, and Telegram stays open for the early community.",
       footerLine: "Private rooms, shared OpenClaw, and a calmer way to chat.",
       footerDisclaimer: "PrivateClaw is independent and not affiliated with OpenClaw.",
       footerPrivacy: "Privacy",
@@ -191,6 +194,7 @@ const BUNDLES = {
       providerLabel: "Provider",
       expiresLabel: "Expires",
       modeLabel: "Mode",
+      relayLabel: "Relay",
       identityLabel: "Identity",
       participantsLabel: "Participants",
       betaGroupButton: "Join the beta Google Group",
@@ -205,6 +209,7 @@ const BUNDLES = {
       commandButtonAria: "Open slash commands",
       attachButtonAria: "Attach files",
       providerUnknown: "PrivateClaw",
+      relayUnknown: "Default relay",
       identityUnknown: "Private guest",
       modePrivate: "1:1 room",
       modeGroup: "Shared room",
@@ -225,6 +230,9 @@ const BUNDLES = {
       relayUnknownEvent: "Unexpected relay event: {reason}",
       relayUnknownPayload: "Unexpected encrypted payload: {reason}",
       welcomeFallback: "PrivateClaw connected.",
+      customRelayWarningTitle: "Custom relay server",
+      customRelayWarningBody:
+        "This invite points to {relayLabel} instead of the default PrivateClaw relay. Continue only if you trust this server.",
       sessionDisconnected:
         "Session disconnected. Paste a new invite when you want to start again.",
       sessionRenewedNotice: "Session renewed until {time}.",
@@ -292,9 +300,11 @@ const BUNDLES = {
       heroSecondaryCta: "加入内测群组",
       heroDesktopHint: "在手机上访问时，这里会直接显示移动网页聊天入口。",
       heroMobileHint: "你正在使用移动设备，可以立即打开 PrivateClaw 网页聊天。",
-      appComingSoon: "iOS 公开测试已开放",
+      appComingSoon: "iOS 公开测试 + Android 封闭 alpha",
       iosComingSoon: "加入 iOS 公开测试",
-      androidComingSoon: "Android App Coming Soon",
+      androidComingSoon: "加入 Android 封闭 alpha",
+      androidBetaNote:
+        "Android 封闭 alpha 通过 Google Play 分发。请先加入 Google 群组，否则 Google Play 会提示你暂时无法参与测试。",
       previewStatus: "实时预览",
       previewTitle: "像私人聊天室，而不是公共社交软件。",
       previewBody:
@@ -416,10 +426,12 @@ const BUNDLES = {
       ],
       betaKicker: "抢先体验",
       betaTitle: "加入 PrivateClaw 内测圈。",
-      betaBody: "如果你关心移动端私密体验、共享 OpenClaw，以及更舒服的小群沟通方式，欢迎加入我们。",
+      betaBody:
+        "iOS 公开测试已经在 TestFlight 开放，Android 封闭 alpha 也已经在 Google Play 上线。想参与 Android 测试的话，请先加入 Google 群组。",
       betaPrimaryCta: "加入 Google 群组",
       betaTelegramCta: "加入 Telegram 群聊",
-      betaFootnote: "Google Group 和 Telegram 都已经向早期社区开放。",
+      betaFootnote:
+        "Android 封闭 alpha 需要先加入 Google Group；iOS 公开测试可以直接通过 TestFlight 参与，Telegram 交流群也持续开放。",
       footerLine: "私密房间、共享 OpenClaw、更安静的聊天方式。",
       footerDisclaimer: "PrivateClaw 与 OpenClaw 没有附属关系。",
       footerPrivacy: "隐私",
@@ -455,6 +467,7 @@ const BUNDLES = {
       providerLabel: "提供方",
       expiresLabel: "过期时间",
       modeLabel: "模式",
+      relayLabel: "Relay",
       identityLabel: "身份",
       participantsLabel: "成员",
       betaGroupButton: "加入 Google 内测群组",
@@ -468,6 +481,7 @@ const BUNDLES = {
       commandButtonAria: "打开斜杠命令",
       attachButtonAria: "添加文件",
       providerUnknown: "PrivateClaw",
+      relayUnknown: "默认 relay",
       identityUnknown: "Private guest",
       modePrivate: "单聊房间",
       modeGroup: "共享房间",
@@ -488,6 +502,9 @@ const BUNDLES = {
       relayUnknownEvent: "收到未知中继事件：{reason}",
       relayUnknownPayload: "收到未知加密载荷：{reason}",
       welcomeFallback: "PrivateClaw 已连接。",
+      customRelayWarningTitle: "自定义 relay 服务器",
+      customRelayWarningBody:
+        "这个邀请使用的是 {relayLabel}，而不是默认的 PrivateClaw relay。只有在你信任这台服务器时才继续。",
       sessionDisconnected: "会话已断开。需要继续时，请重新粘贴新的邀请。",
       sessionRenewedNotice: "会话已续期至 {time}。",
       connectFailed: "无法解析这条邀请。",
@@ -549,9 +566,11 @@ const BUNDLES = {
       heroSecondaryCta: "加入內測群組",
       heroDesktopHint: "在手機上打開時，這裡會直接顯示行動網頁聊天入口。",
       heroMobileHint: "你正在使用行動裝置，可以立即開啟 PrivateClaw 網頁聊天。",
-      appComingSoon: "iOS 公開測試已開放",
+      appComingSoon: "iOS 公開測試 + Android 封閉 alpha",
       iosComingSoon: "加入 iOS 公開測試",
-      androidComingSoon: "Android App Coming Soon",
+      androidComingSoon: "加入 Android 封閉 alpha",
+      androidBetaNote:
+        "Android 封閉 alpha 透過 Google Play 發放。請先加入 Google 群組，否則 Google Play 會顯示你目前無法參與測試。",
       previewStatus: "即時預覽",
       previewTitle: "像私人聊天室，而不是公開社群軟體。",
       previewBody:
@@ -673,10 +692,12 @@ const BUNDLES = {
       ],
       betaKicker: "搶先體驗",
       betaTitle: "加入 PrivateClaw 內測圈。",
-      betaBody: "如果你在意行動端私密體驗、共享 OpenClaw，以及更舒服的小群溝通方式，歡迎加入我們。",
+      betaBody:
+        "iOS 公開測試已經在 TestFlight 開放，Android 封閉 alpha 也已經在 Google Play 上線。想參與 Android 測試的話，請先加入 Google 群組。",
       betaPrimaryCta: "加入 Google 群組",
       betaTelegramCta: "加入 Telegram 群聊",
-      betaFootnote: "Google Group 和 Telegram 都已經向早期社群開放。",
+      betaFootnote:
+        "Android 封閉 alpha 需要先加入 Google Group；iOS 公開測試可以直接透過 TestFlight 參與，Telegram 群聊也持續開放。",
       footerLine: "私密房間、共享 OpenClaw、更安靜的聊天方式。",
       footerDisclaimer: "PrivateClaw 與 OpenClaw 沒有附屬關係。",
       footerPrivacy: "隱私",
@@ -712,6 +733,7 @@ const BUNDLES = {
       providerLabel: "提供方",
       expiresLabel: "到期時間",
       modeLabel: "模式",
+      relayLabel: "Relay",
       identityLabel: "身份",
       participantsLabel: "成員",
       betaGroupButton: "加入 Google 內測群組",
@@ -725,6 +747,7 @@ const BUNDLES = {
       commandButtonAria: "打開斜槓命令",
       attachButtonAria: "加入檔案",
       providerUnknown: "PrivateClaw",
+      relayUnknown: "預設 relay",
       identityUnknown: "Private guest",
       modePrivate: "單聊房間",
       modeGroup: "共享房間",
@@ -745,6 +768,9 @@ const BUNDLES = {
       relayUnknownEvent: "收到未知中繼事件：{reason}",
       relayUnknownPayload: "收到未知加密載荷：{reason}",
       welcomeFallback: "PrivateClaw 已連線。",
+      customRelayWarningTitle: "自訂 relay 伺服器",
+      customRelayWarningBody:
+        "這個邀請使用的是 {relayLabel}，而不是預設的 PrivateClaw relay。只有在你信任這台伺服器時才繼續。",
       sessionDisconnected: "會話已中斷。需要繼續時，請重新貼上新的邀請。",
       sessionRenewedNotice: "會話已續期至 {time}。",
       connectFailed: "無法解析這條邀請。",

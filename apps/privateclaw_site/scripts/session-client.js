@@ -1,4 +1,4 @@
-import { createCryptoContext, createMessageId } from "./protocol-web.js?v=20260314-1";
+import { createCryptoContext, createMessageId } from "./protocol-web.js?v=20260316-1";
 
 const CONNECT_TIMEOUT_MS = 15000;
 const INITIAL_RECONNECT_DELAY_MS = 1000;

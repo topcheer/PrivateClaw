@@ -95,6 +95,18 @@
       }
     }
   },
+  "nonDefaultRelayWarningTitle": "自定义 relay 服务器",
+  "nonDefaultRelayWarningBody": "这个邀请使用的是 {relayLabel}，而不是默认的 PrivateClaw relay。只有在你信任这台服务器时才继续。",
+  "@nonDefaultRelayWarningBody": {
+    "placeholders": {
+      "relayLabel": {
+        "type": "String",
+        "example": "relay.example.com"
+      }
+    }
+  },
+  "relayWarningCancelButton": "取消",
+  "relayWarningContinueButton": "继续",
   "sessionQrTitle": "当前会话二维码",
   "sessionQrHint": "请在会话过期前当面分享这个二维码。",
   "copyInviteLinkButton": "复制邀请链接",

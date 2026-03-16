@@ -1,7 +1,7 @@
 ---
 name: privateclaw-plugin-setup
-description: Install, enable, verify, and pair the PrivateClaw OpenClaw plugin, preferably returning the invite QR to the current Telegram, Discord, or QQ conversation via /privateclaw.
-version: 1.0.0
+description: Install, enable, verify, pair, and manage PrivateClaw OpenClaw sessions, preferring same-conversation /privateclaw QR replies and falling back to the local CLI when needed.
+version: 1.1.1
 metadata:
   openclaw:
     requires:
@@ -25,21 +25,34 @@ This skill is especially relevant for requests like:
 - return the pairing QR to the current Telegram, Discord, or QQ chat
 - configure a custom PrivateClaw relay
 - use `/privateclaw`, `/privateclaw group`, `/session-qr`, or `openclaw privateclaw pair`
+- inspect active local sessions with `openclaw privateclaw sessions`
+- remove one participant with `openclaw privateclaw kick <sessionId> <appId>`
+- use the standalone `privateclaw-provider` CLI instead of the OpenClaw alias
+- pause or resume group-bot replies with `/mute-bot` or `/unmute-bot`
 - renew or re-share an existing PrivateClaw session
 - 安装 PrivateClaw 插件
 - 启用 PrivateClaw
 - 配置 PrivateClaw relay
 - 启动二维码配对
 - 把配对二维码发回当前 Telegram / Discord / QQ 对话
+- 查看当前本地会话或踢出群组成员
 
 ## Core facts
 
 - The production plugin package is `@privateclaw/privateclaw`.
 - The production install path is `openclaw plugins install @privateclaw/privateclaw@latest`.
 - The plugin id is `privateclaw`.
+- The standalone npm binary is `privateclaw-provider`.
 - The default public relay is `https://relay.privateclaw.us`.
+- The iOS public beta is available at `https://testflight.apple.com/join/XvgJ9c33`.
+- The Android closed alpha lives at `https://play.google.com/store/apps/details?id=gg.ai.privateclaw`, but Google Play only grants access after the tester joins `https://groups.google.com/g/gg-studio-ai-products`.
 - If the user is happy with the default public relay, do **not** set `relayBaseUrl`.
 - PrivateClaw is an **OpenClaw plugin**, not an OpenClaw channel. Do **not** run `openclaw channels add privateclaw`.
+- The public local CLI surface is `pair`, `sessions`, and `kick`, available as either `openclaw privateclaw <subcommand>` or `privateclaw-provider <subcommand>`.
+- `pair` now defaults to returning after printing the QR while the session stays alive in a background daemon until expiry.
+- `pair --foreground` keeps the session in the current terminal; on supported runtimes, `Ctrl+D` hands the live session off to the detached background daemon without invalidating the QR.
+- `pair --print-only` prints the invite and QR, then immediately closes the session instead of keeping it alive.
+- Active sessions expose `/session-qr` and `/renew-session`; active group sessions also expose `/mute-bot` and `/unmute-bot`.
 - After `openclaw plugins install`, `openclaw plugins enable`, or any `openclaw config set plugins.entries.privateclaw.config...` change, the running OpenClaw gateway or service must be restarted before testing.
 
 ## Preferred behavior
@@ -64,6 +77,20 @@ If there is no suitable active OpenClaw chat channel available, fall back to the
 - `openclaw privateclaw pair`
 - `openclaw privateclaw pair --group`
 - `openclaw privateclaw pair --open`
+- `openclaw privateclaw sessions`
+- `openclaw privateclaw kick <sessionId> <appId>`
+
+If the user does not have the OpenClaw alias available but does have the standalone npm binary installed, use the equivalent `privateclaw-provider ...` commands.
+
+## Mobile beta app access
+
+When a user asks where to get the mobile client builds, point them at:
+
+- iOS public beta (TestFlight): `https://testflight.apple.com/join/XvgJ9c33`
+- Android closed alpha tester group: `https://groups.google.com/g/gg-studio-ai-products`
+- Android closed alpha (Google Play): `https://play.google.com/store/apps/details?id=gg.ai.privateclaw`
+
+Be explicit that Android testers must join the Google Group before Google Play will admit them to the closed alpha.
 
 ## Recommended execution flow
 
@@ -147,13 +174,30 @@ Useful variants:
 ```bash
 openclaw privateclaw pair --group
 openclaw privateclaw pair --open
+openclaw privateclaw pair --group --foreground
+openclaw privateclaw sessions
+openclaw privateclaw kick <sessionId> <appId>
 ```
 
 `--group` creates a multi-participant room.
 
 `--open` opens a local browser preview page for the QR, which is useful when terminal rendering alone is inconvenient.
 
-### Flow C: re-share an active session QR from inside PrivateClaw
+By default, `pair` prints the invite and then returns while a background daemon keeps the session alive until expiry.
+
+Use `--foreground` when the user explicitly wants to keep the session attached to the current terminal. On supported runtimes, `Ctrl+D` hands that live foreground session off to the background daemon without replacing the QR.
+
+Do **not** recommend `--print-only` unless the user only wants a one-shot QR printout, because that mode closes the session immediately after printing.
+
+The same public subcommands also exist on the standalone npm binary:
+
+```bash
+privateclaw-provider pair --group --foreground
+privateclaw-provider sessions
+privateclaw-provider kick <sessionId> <appId>
+```
+
+### Flow C: active-session commands inside PrivateClaw
 
 Once a PrivateClaw session is already active, the participant can request the current pairing QR again from inside that encrypted session:
 
@@ -168,6 +212,15 @@ If the user needs to extend the session lifetime without replacing the whole set
 ```text
 /renew-session
 ```
+
+In active group sessions, participants can also pause or resume assistant replies without interrupting participant-to-participant chat:
+
+```text
+/mute-bot
+/unmute-bot
+```
+
+Use those only for group sessions where the user specifically wants the chat room to stay open while temporarily muting or restoring bot replies.
 
 ## Local checkout / development flow
 
@@ -188,6 +241,8 @@ Then restart the running OpenClaw gateway or service before testing.
 - Do not default to the `--link` development install unless the user is working from a local checkout.
 - Do not say setup succeeded until the gateway or service has been restarted and `openclaw commands list` shows `privateclaw`.
 - If the user's goal is to receive the QR in the current Telegram, Discord, or QQ conversation, prefer `/privateclaw` over `openclaw privateclaw pair`.
+- Do not recommend `--print-only` when the user expects the QR to remain usable after the command exits.
+- If the OpenClaw alias is unavailable but the standalone binary exists, use `privateclaw-provider ...` rather than inventing a different command surface.
 - After a successful pairing flow, remind the user to scan the returned QR with the PrivateClaw app.
 
 ## Troubleshooting
@@ -214,6 +269,35 @@ openclaw config set plugins.entries.privateclaw.config.relayBaseUrl <relay-base-
 
 Then restart the running OpenClaw gateway or service before testing again.
 
+### `openclaw privateclaw pair` returns immediately and the user thinks the session stopped
+
+That is expected with the current default behavior. Local pairing now returns after printing while a background daemon keeps the session alive.
+
+If the user wants the session to stay attached to the current shell, use:
+
+```bash
+openclaw privateclaw pair --foreground
+```
+
+If the user already started a foreground session and wants to hand it off without stopping it, `Ctrl+D` is the preferred path on supported runtimes.
+
+### The user printed a QR but nobody can join anymore
+
+Check whether they used `--print-only`. That mode prints the invite and QR, then immediately closes the session.
+
+If they need a live reusable session, have them use normal `pair`, `pair --group`, or `pair --foreground` instead.
+
+### The user needs to inspect or moderate a locally managed group session
+
+Use:
+
+```bash
+openclaw privateclaw sessions
+openclaw privateclaw kick <sessionId> <appId>
+```
+
+Use the standalone `privateclaw-provider sessions` / `privateclaw-provider kick ...` forms when the user is working outside the OpenClaw alias.
+
 ## Completion checklist
 
 The setup should usually end with all of the following being true:
@@ -224,4 +308,5 @@ The setup should usually end with all of the following being true:
 - `openclaw commands list` shows `privateclaw`
 - the user has either:
   - received a `/privateclaw` QR reply in the original channel conversation, or
-  - received a local `openclaw privateclaw pair` QR and invite URI
+  - received a local `openclaw privateclaw pair` or `privateclaw-provider pair` QR and invite URI
+- if the user expects a local CLI session to stay alive after the command returns, `sessions` shows the active session instead of the session having been created with `--print-only`

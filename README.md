@@ -14,6 +14,14 @@ Sessions can stay one-to-one by default, or opt into a small group mode where mu
 
 Join the community on Telegram: [PrivateClaw Telegram group](https://t.me/+W3RUKxEO9kIxMmZl)
 
+Mobile beta access:
+
+- iOS public beta (TestFlight): https://testflight.apple.com/join/XvgJ9c33
+- Android closed alpha tester group: https://groups.google.com/g/gg-studio-ai-products
+- Android closed alpha (Google Play): https://play.google.com/store/apps/details?id=gg.ai.privateclaw
+
+For Android closed alpha, Google Play only grants access after the tester has joined the Google Group above.
+
 The repository contains:
 
 - `services/relay-server`: a blind WebSocket relay for encrypted session traffic.
@@ -117,7 +125,7 @@ openclaw plugins enable privateclaw
 
 `openclaw plugins install` is the correct production entrypoint here. Its built-in help explicitly says it installs a plugin from a `path, archive, or npm spec`, so `@privateclaw/privateclaw@latest` is a first-class npm install path rather than a local-only shortcut.
 
-If you are using the default public relay at `https://relay.privateclaw.us`, the `relayBaseUrl` config step is optional and can be skipped. Only run `openclaw config set plugins.entries.privateclaw.config.relayBaseUrl ...` when you want to override the relay and point PrivateClaw at your own deployment.
+If you are using the default public relay at `https://relay.privateclaw.us`, the `relayBaseUrl` config step is optional and can be skipped. Only run `openclaw config set plugins.entries.privateclaw.config.relayBaseUrl ...` when you want to change the default relay for the whole plugin. For one-off invites, you can now override the relay per command instead of changing persistent config.
 
 PrivateClaw is an OpenClaw plugin command provider, not a built-in chat transport. That means you do **not** configure it with `openclaw channels add privateclaw`. Instead:
 
@@ -149,13 +157,22 @@ Then send `/privateclaw` from that chat surface and scan the returned QR code in
 
 If you want the session to behave like an encrypted group chat, use `/privateclaw group` instead. That keeps one OpenClaw conversation state for the session while allowing multiple app clients to join with distinct participant labels. Individual participants can leave and later rejoin the same invite until the session TTL expires, any connected participant can run `/session-qr` to re-share the current invite QR, and once less than 30 minutes remain the provider emits a reminder to run `/renew-session`. While the group is active, any participant can also use `/mute-bot` and `/unmute-bot` to pause or resume assistant replies without stopping participant-to-participant chat delivery.
 
+If you want just one invite to use a different relay, pass the relay on the slash command itself. Both forms below work:
+
+```text
+/privateclaw relay=https://your-relay.example.com
+/privateclaw group --relay https://your-relay.example.com
+```
+
+The mobile app and web chat both warn before connecting when the QR/invite points at a non-default relay.
+
 #### Path B: local pairing directly from the OpenClaw CLI
 
 If you want to start a session without another chat app, use the provider CLI that the plugin adds to OpenClaw. The same public subcommands also exist on the standalone npm binary as `privateclaw-provider <subcommand>`; the examples below use the OpenClaw alias:
 
 | Command | Purpose | Notes |
 | --- | --- | --- |
-| `openclaw privateclaw pair` | Create a local PrivateClaw session and render the pairing QR in the terminal. | By default the command returns to the shell after printing while the provider keeps the session alive in a background daemon until expiry. |
+| `openclaw privateclaw pair` | Create a local PrivateClaw session and render the pairing QR in the terminal. | By default the command returns to the shell after printing while the provider keeps the session alive in a background daemon until expiry. Use `--relay <url>` to override the relay just for this session. |
 | `openclaw privateclaw sessions` | List locally managed active sessions. | The output includes the total count plus each session's `type`, `participants`, `state`, `expires`, `host`, and optional `label`. `host` is one of `plugin-service`, `pair-foreground`, or `pair-daemon`. |
 | `openclaw privateclaw kick <sessionId> <appId>` | Remove one participant from a group session. | This closes that app's relay connection and blocks the same `appId` from rejoining the current session. |
 
@@ -165,6 +182,7 @@ If you want to start a session without another chat app, use the provider CLI th
 | --- | --- |
 | `--ttl-ms <ms>` | Override the session TTL. The default remains 8 hours. |
 | `--label <label>` | Attach an optional relay-side label that also appears in session-management output. |
+| `--relay <url>` | Override the relay base URL just for this command without changing plugin config. |
 | `--group` | Allow multiple PrivateClaw app clients to join the same session. |
 | `--print-only` | Print the invite URI and QR, then exit immediately. This also closes the session instead of leaving it alive. |
 | `--open` | Open a local browser preview page for the generated QR. |
@@ -174,6 +192,8 @@ For example, to start a local group session and keep it in the foreground until 
 
 ```bash
 openclaw privateclaw pair --group --foreground
+openclaw privateclaw pair --relay https://your-relay.example.com
+privateclaw-provider pair --relay https://your-relay.example.com --foreground
 ```
 
 ### 3. Run the app
@@ -192,6 +212,7 @@ If those files are present on your machine, the app can exercise the full Fireba
 
 Then either scan the QR code returned by `/privateclaw` from your existing channel, or scan the QR code rendered by `openclaw privateclaw pair`.
 After the session attaches, the app session panel also shows the current relay server so users can confirm which relay endpoint they are connected to.
+If the scanned or pasted invite targets a non-default relay, the app now shows a confirmation warning before it connects.
 If you are pairing on a simulator or desktop, you can also paste either the raw `privateclaw://connect?...` link or the full `Invite URI: ...` / `邀请链接 / Invite URI: ...` line into the app.
 
 ## Development and testing deployment

@@ -1,4 +1,5 @@
 export const PRIVATECLAW_INVITE_SCHEME = "privateclaw://connect";
+export const DEFAULT_PRIVATECLAW_RELAY_HOST = "relay.privateclaw.us";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -109,6 +110,48 @@ export function encodeInviteToUri(invite) {
   assertInviteShape(invite);
   const payload = bytesToBase64Url(encodeUtf8(JSON.stringify(invite)));
   return `${PRIVATECLAW_INVITE_SCHEME}?payload=${payload}`;
+}
+
+export function getInviteRelayLabel(invite) {
+  const explicitLabel =
+    typeof invite?.relayLabel === "string" ? invite.relayLabel.trim() : "";
+  if (explicitLabel) {
+    return explicitLabel;
+  }
+
+  try {
+    const relayUrl = new URL(String(invite?.appWsUrl || ""));
+    if (!relayUrl.host) {
+      return null;
+    }
+    const useDefaultPort =
+      relayUrl.port === "" ||
+      (relayUrl.protocol === "wss:" && relayUrl.port === "443") ||
+      (relayUrl.protocol === "ws:" && relayUrl.port === "80");
+    return useDefaultPort ? relayUrl.host : `${relayUrl.hostname}:${relayUrl.port}`;
+  } catch {
+    return null;
+  }
+}
+
+export function inviteUsesDefaultRelay(invite) {
+  try {
+    const relayUrl = new URL(String(invite?.appWsUrl || ""));
+    if (!relayUrl.host) {
+      return getInviteRelayLabel(invite) === DEFAULT_PRIVATECLAW_RELAY_HOST;
+    }
+    const useDefaultPort =
+      relayUrl.port === "" ||
+      (relayUrl.protocol === "wss:" && relayUrl.port === "443") ||
+      (relayUrl.protocol === "ws:" && relayUrl.port === "80");
+    return relayUrl.hostname === DEFAULT_PRIVATECLAW_RELAY_HOST && useDefaultPort;
+  } catch {
+    return getInviteRelayLabel(invite) === DEFAULT_PRIVATECLAW_RELAY_HOST;
+  }
+}
+
+export function inviteUsesNonDefaultRelay(invite) {
+  return !inviteUsesDefaultRelay(invite);
 }
 
 export function createMessageId(prefix = "client") {

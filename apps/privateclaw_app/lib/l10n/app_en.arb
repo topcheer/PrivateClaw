@@ -95,6 +95,18 @@
       }
     }
   },
+  "nonDefaultRelayWarningTitle": "Custom relay server",
+  "nonDefaultRelayWarningBody": "This invite points to {relayLabel} instead of the default PrivateClaw relay. Continue only if you trust this server.",
+  "@nonDefaultRelayWarningBody": {
+    "placeholders": {
+      "relayLabel": {
+        "type": "String",
+        "example": "relay.example.com"
+      }
+    }
+  },
+  "relayWarningCancelButton": "Cancel",
+  "relayWarningContinueButton": "Continue",
   "sessionQrTitle": "Current session QR",
   "sessionQrHint": "Share this QR in person before the session expires.",
   "copyInviteLinkButton": "Copy invite link",

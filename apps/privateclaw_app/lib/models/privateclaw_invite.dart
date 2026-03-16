@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+const String defaultPrivateClawRelayHost = 'relay.privateclaw.us';
+
 class PrivateClawInvite {
   const PrivateClawInvite({
     required this.version,
@@ -129,6 +131,36 @@ class PrivateClawInvite {
           : relayLabel as String?,
     );
   }
+
+  String? get relayDisplayLabel {
+    final String? explicitLabel = relayLabel?.trim();
+    if (explicitLabel != null && explicitLabel.isNotEmpty) {
+      return explicitLabel;
+    }
+    final Uri? relayUri = _tryParseRelayUri(appWsUrl);
+    if (relayUri == null || relayUri.host.isEmpty) {
+      return null;
+    }
+    final bool useDefaultPort =
+        relayUri.port == 0 ||
+        (relayUri.scheme == 'wss' && relayUri.port == 443) ||
+        (relayUri.scheme == 'ws' && relayUri.port == 80);
+    return useDefaultPort ? relayUri.host : '${relayUri.host}:${relayUri.port}';
+  }
+
+  bool get usesDefaultRelay {
+    final Uri? relayUri = _tryParseRelayUri(appWsUrl);
+    if (relayUri != null && relayUri.host.isNotEmpty) {
+      final bool usesDefaultPort =
+          relayUri.port == 0 ||
+          (relayUri.scheme == 'wss' && relayUri.port == 443) ||
+          (relayUri.scheme == 'ws' && relayUri.port == 80);
+      return relayUri.host == defaultPrivateClawRelayHost && usesDefaultPort;
+    }
+    return relayDisplayLabel == defaultPrivateClawRelayHost;
+  }
+
+  bool get usesNonDefaultRelay => !usesDefaultRelay;
 }
 
 String encodePrivateClawInviteUri(PrivateClawInvite invite) {
@@ -139,3 +171,11 @@ String encodePrivateClawInviteUri(PrivateClawInvite invite) {
 }
 
 const Object _noValue = Object();
+
+Uri? _tryParseRelayUri(String rawUrl) {
+  try {
+    return Uri.parse(rawUrl);
+  } catch (_) {
+    return null;
+  }
+}

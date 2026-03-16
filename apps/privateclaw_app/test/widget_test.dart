@@ -259,4 +259,48 @@ void main() {
     expect(find.text('/renew-session'), findsOneWidget);
     expect(find.text('/mute-bot'), findsNothing);
   });
+
+  testWidgets('non-default relay invites require confirmation before joining', (
+    WidgetTester tester,
+  ) async {
+    final PrivateClawInvite invite = PrivateClawInvite(
+      version: 1,
+      sessionId: 'session-custom-relay',
+      sessionKey: 'c2Vzc2lvbl9rZXlfZm9yX2N1c3RvbV9yZWxheV8xMjM0NTY3ODk',
+      appWsUrl: 'ws://127.0.0.1:8787/ws/app?sessionId=session-custom-relay',
+      expiresAt: DateTime.utc(2030, 1, 1),
+    );
+
+    await tester.pumpWidget(
+      const PrivateClawApp(
+        screenshotConfig: StoreScreenshotConfig(
+          localeOverride: Locale('en'),
+        ),
+      ),
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('invite-input-field')),
+      encodePrivateClawInviteUri(invite),
+    );
+    await tester.tap(find.byKey(const ValueKey<String>('connect-session-button')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('relay-warning-dialog')),
+      findsOneWidget,
+    );
+    expect(find.text('Custom relay server'), findsOneWidget);
+    expect(find.textContaining('127.0.0.1:8787'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('relay-warning-cancel-button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('relay-warning-dialog')),
+      findsNothing,
+    );
+  });
 }

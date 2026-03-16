@@ -33,8 +33,8 @@ export const PRIVATECLAW_PLUGIN_DESCRIPTION = formatBilingualInline(
 );
 
 export const PRIVATECLAW_COMMAND_DESCRIPTION = formatBilingualInline(
-  "创建一次性加密的 PrivateClaw 会话二维码；传入 `group` 可启用群聊模式。",
-  "Create a one-time encrypted PrivateClaw session QR code; pass `group` to enable group chat.",
+  "创建一次性加密的 PrivateClaw 会话二维码；传入 `group` 可启用群聊模式，传入 `relay=<url>` 或 `--relay <url>` 可临时覆盖 relay。",
+  "Create a one-time encrypted PrivateClaw session QR code; pass `group` to enable group chat, and `relay=<url>` or `--relay <url>` to override the relay for this invite.",
 );
 
 export const PRIVATECLAW_CLI_ROOT_DESCRIPTION = formatBilingualInline(
@@ -65,6 +65,11 @@ export const PRIVATECLAW_CLI_TTL_OPTION_DESCRIPTION = formatBilingualInline(
 export const PRIVATECLAW_CLI_LABEL_OPTION_DESCRIPTION = formatBilingualInline(
   "可选的中继会话标签。",
   "Optional relay session label.",
+);
+
+export const PRIVATECLAW_CLI_RELAY_OPTION_DESCRIPTION = formatBilingualInline(
+  "临时覆盖本次命令使用的 relay base URL。",
+  "Temporarily override the relay base URL for this command.",
 );
 
 export const PRIVATECLAW_CLI_GROUP_OPTION_DESCRIPTION = formatBilingualInline(

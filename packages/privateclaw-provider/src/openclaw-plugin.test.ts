@@ -250,6 +250,119 @@ test("privateclaw command embeds qqimg tags for QQ channel replies", async (t) =
   assert.deepEqual(qrPng.subarray(0, PNG_SIGNATURE.length), PNG_SIGNATURE);
 });
 
+test("privateclaw command can override the relay per invocation", async (t) => {
+  const defaultRelay = createRelayServer({
+    host: "127.0.0.1",
+    port: 0,
+    sessionTtlMs: 60_000,
+    frameCacheSize: 8,
+  });
+  const overrideRelay = createRelayServer({
+    host: "127.0.0.1",
+    port: 0,
+    sessionTtlMs: 60_000,
+    frameCacheSize: 8,
+  });
+  const [{ port: defaultPort }, { port: overridePort }] = await Promise.all([
+    defaultRelay.start(),
+    overrideRelay.start(),
+  ]);
+
+  const stateDir = await mkdtemp(path.join(os.tmpdir(), "privateclaw-plugin-state-"));
+  t.after(async () => {
+    await rm(stateDir, { recursive: true, force: true });
+    await Promise.all([defaultRelay.stop(), overrideRelay.stop()]);
+  });
+
+  const plugin = createOpenClawCompatiblePlugin({
+    providerWsUrl: `ws://127.0.0.1:${defaultPort}/ws/provider`,
+    appWsUrl: `ws://127.0.0.1:${defaultPort}/ws/app`,
+    bridge: new EchoBridge("OpenClaw bridge"),
+    welcomeMessage: "Welcome to PrivateClaw",
+  });
+  const { api, getCli, getCommand, getService } = createMockApi();
+  plugin.register(api);
+
+  const service = getService();
+  await service.start({
+    config: {},
+    stateDir,
+    logger: api.logger,
+  });
+  t.after(async () => {
+    await service.stop?.({
+      config: {},
+      stateDir,
+      logger: api.logger,
+    });
+  });
+
+  const command = getCommand();
+  const defaultReply = await command.handler({
+    channel: "telegram",
+    senderId: "tester",
+    isAuthorizedSender: true,
+    commandBody: "/privateclaw",
+    config: {},
+  });
+  const defaultInviteUri =
+    defaultReply.text?.match(/privateclaw:\/\/connect\?payload=\S+/)?.[0];
+  assert.ok(defaultInviteUri, "default command should print a PrivateClaw invite URI");
+  const defaultInvite = decodeInviteString(defaultInviteUri);
+  assert.match(defaultInvite.appWsUrl, new RegExp(`:${defaultPort}/ws/app`));
+
+  const overrideReply = await command.handler({
+    channel: "telegram",
+    senderId: "tester",
+    isAuthorizedSender: true,
+    commandBody: `/privateclaw relay=ws://127.0.0.1:${overridePort}`,
+    args: `relay=ws://127.0.0.1:${overridePort}`,
+    config: {},
+  });
+  const overrideInviteUri =
+    overrideReply.text?.match(/privateclaw:\/\/connect\?payload=\S+/)?.[0];
+  assert.ok(
+    overrideInviteUri,
+    "override command should print a PrivateClaw invite URI",
+  );
+  const overrideInvite = decodeInviteString(overrideInviteUri);
+  assert.match(overrideInvite.appWsUrl, new RegExp(`:${overridePort}/ws/app`));
+  assert.equal(overrideInvite.relayLabel, `127.0.0.1:${overridePort}`);
+
+  const cli = getCli();
+  const root = new FakeCliCommand("root");
+  await cli.registrar({
+    program: root,
+    config: {},
+    logger: api.logger,
+  });
+  const sessions = root.children.get("privateclaw")?.children.get("sessions");
+  assert.ok(
+    sessions?.actionHandler,
+    "plugin should register the privateclaw sessions subcommand",
+  );
+
+  const printed: string[] = [];
+  const originalLog = console.log;
+  console.log = (message?: unknown, ...optionalParams: unknown[]) => {
+    printed.push([message, ...optionalParams].map(String).join(" "));
+  };
+  t.after(() => {
+    console.log = originalLog;
+  });
+
+  await sessions.actionHandler?.();
+
+  assert.ok(
+    printed.some((line) => line.includes(defaultInvite.sessionId)),
+    "sessions should include the default-relay session",
+  );
+  assert.ok(
+    printed.some((line) => line.includes(overrideInvite.sessionId)),
+    "sessions should include the override-relay session",
+  );
+});
+
 test("privateclaw plugin local pair CLI defaults to the long session TTL", async (t) => {
   const relay = createRelayServer({
     host: "127.0.0.1",
@@ -345,6 +458,85 @@ test("privateclaw plugin local pair CLI defaults to the long session TTL", async
   const qrPath = qrPathLine.replace("二维码 PNG 路径 / QR PNG path: ", "");
   const qrPng = await readFile(qrPath);
   assert.deepEqual(qrPng.subarray(0, PNG_SIGNATURE.length), PNG_SIGNATURE);
+});
+
+test("privateclaw plugin local pair CLI can override the relay per command", async (t) => {
+  const defaultRelay = createRelayServer({
+    host: "127.0.0.1",
+    port: 0,
+    sessionTtlMs: 60_000,
+    frameCacheSize: 8,
+  });
+  const overrideRelay = createRelayServer({
+    host: "127.0.0.1",
+    port: 0,
+    sessionTtlMs: 60_000,
+    frameCacheSize: 8,
+  });
+  const [{ port: defaultPort }, { port: overridePort }] = await Promise.all([
+    defaultRelay.start(),
+    overrideRelay.start(),
+  ]);
+
+  t.after(async () => {
+    await Promise.all([defaultRelay.stop(), overrideRelay.stop()]);
+  });
+
+  const plugin = createOpenClawCompatiblePlugin({
+    providerWsUrl: `ws://127.0.0.1:${defaultPort}/ws/provider`,
+    appWsUrl: `ws://127.0.0.1:${defaultPort}/ws/app`,
+    bridge: new EchoBridge("OpenClaw bridge"),
+  });
+  const { api, getCli } = createMockApi();
+  plugin.register(api);
+
+  const cli = getCli();
+  const root = new FakeCliCommand("root");
+  await cli.registrar({
+    program: root,
+    config: {},
+    logger: api.logger,
+  });
+
+  const pair = root.children.get("privateclaw")?.children.get("pair");
+  assert.ok(pair?.actionHandler, "plugin should register the privateclaw pair subcommand");
+
+  const stateDir = await mkdtemp(path.join(os.tmpdir(), "privateclaw-cli-state-"));
+  const previousStateDir = process.env.OPENCLAW_STATE_DIR;
+  process.env.OPENCLAW_STATE_DIR = stateDir;
+  t.after(async () => {
+    if (previousStateDir == null) {
+      delete process.env.OPENCLAW_STATE_DIR;
+    } else {
+      process.env.OPENCLAW_STATE_DIR = previousStateDir;
+    }
+    await rm(stateDir, { recursive: true, force: true });
+  });
+
+  const printed: string[] = [];
+  const originalLog = console.log;
+  console.log = (message?: unknown, ...optionalParams: unknown[]) => {
+    printed.push([message, ...optionalParams].map(String).join(" "));
+  };
+  t.after(() => {
+    console.log = originalLog;
+  });
+
+  await pair.actionHandler({
+    label: "CLI pairing session",
+    relay: `ws://127.0.0.1:${overridePort}`,
+    printOnly: true,
+  });
+
+  const inviteUri = printed.find((line) =>
+    line.startsWith("邀请链接 / Invite URI: privateclaw://connect?payload="),
+  );
+  assert.ok(inviteUri, "pair command should print a PrivateClaw invite URI");
+  const invite = decodeInviteString(
+    inviteUri.replace("邀请链接 / Invite URI: ", ""),
+  );
+  assert.match(invite.appWsUrl, new RegExp(`:${overridePort}/ws/app`));
+  assert.equal(invite.relayLabel, `127.0.0.1:${overridePort}`);
 });
 
 test("privateclaw CLI can list and remove active group-session participants", async (t) => {

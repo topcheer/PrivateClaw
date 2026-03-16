@@ -153,6 +153,20 @@ class AppLocalizationsFr extends AppLocalizations {
   }
 
   @override
+  String get nonDefaultRelayWarningTitle => 'Custom relay server';
+
+  @override
+  String nonDefaultRelayWarningBody(String relayLabel) {
+    return 'This invite points to $relayLabel instead of the default PrivateClaw relay. Continue only if you trust this server.';
+  }
+
+  @override
+  String get relayWarningCancelButton => 'Cancel';
+
+  @override
+  String get relayWarningContinueButton => 'Continue';
+
+  @override
   String get sessionQrTitle => 'Current session QR';
 
   @override

@@ -46,6 +46,7 @@ import {
   PRIVATECLAW_CLI_OPEN_OPTION_DESCRIPTION,
   PRIVATECLAW_CLI_PAIR_DESCRIPTION,
   PRIVATECLAW_CLI_PRINT_ONLY_OPTION_DESCRIPTION,
+  PRIVATECLAW_CLI_RELAY_OPTION_DESCRIPTION,
   PRIVATECLAW_CLI_ROOT_DESCRIPTION,
   PRIVATECLAW_CLI_SESSIONS_DESCRIPTION,
   PRIVATECLAW_CLI_TTL_OPTION_DESCRIPTION,
@@ -56,6 +57,7 @@ import {
 import type {
   PrivateClawAgentBridge,
   PrivateClawInviteBundle,
+  PrivateClawManagedSession,
   PrivateClawProviderOptions,
 } from "./types.js";
 
@@ -105,6 +107,7 @@ interface ResolvedPrivateClawPluginConfig {
 interface PrivateClawPairCliOptions {
   ttlMs?: string;
   label?: string;
+  relay?: string;
   printOnly?: boolean;
   group?: boolean;
   open?: boolean;
@@ -337,9 +340,11 @@ function normalizePairCliOptions(raw: unknown): PrivateClawPairCliOptions {
   const options = raw as Record<string, unknown>;
   const ttlMs = readString(options.ttlMs);
   const label = readString(options.label);
+  const relay = readString(options.relay);
   return {
     ...(ttlMs ? { ttlMs } : {}),
     ...(label ? { label } : {}),
+    ...(relay ? { relay } : {}),
     ...(typeof options.printOnly === "boolean" ? { printOnly: options.printOnly } : {}),
     ...(typeof options.group === "boolean" ? { group: options.group } : {}),
     ...(typeof options.open === "boolean" ? { open: options.open } : {}),
@@ -351,16 +356,94 @@ function normalizePairCliOptions(raw: unknown): PrivateClawPairCliOptions {
 
 function parsePrivateClawCommandArgs(raw: string | undefined): {
   groupMode?: boolean;
+  relayBaseUrl?: string;
 } {
   const normalizedArgs = (raw ?? "")
     .split(/\s+/)
-    .map((token) => token.trim().toLowerCase())
+    .map((token) => token.trim())
     .filter((token) => token !== "");
-  return normalizedArgs.some(
-    (token) => token === "group" || token === "--group" || token === "-g",
-  )
-    ? { groupMode: true }
-    : {};
+  let groupMode = false;
+  let relayBaseUrl: string | undefined;
+
+  for (let index = 0; index < normalizedArgs.length; index += 1) {
+    const token = normalizedArgs[index];
+    if (!token) {
+      continue;
+    }
+    const normalized = token.toLowerCase();
+    if (normalized === "group" || normalized === "--group" || normalized === "-g") {
+      groupMode = true;
+      continue;
+    }
+
+    if (normalized === "--relay" || normalized === "-r") {
+      const nextToken = normalizedArgs[index + 1]?.trim();
+      if (!nextToken) {
+        throw new Error(
+          formatBilingualInline(
+            "`/privateclaw --relay` 后面需要提供 relay URL。",
+            "`/privateclaw --relay` requires a relay URL.",
+          ),
+        );
+      }
+      relayBaseUrl = nextToken;
+      index += 1;
+      continue;
+    }
+
+    const equalsIndex = token.indexOf("=");
+    if (equalsIndex <= 0) {
+      continue;
+    }
+    const key = token.slice(0, equalsIndex).toLowerCase();
+    if (key !== "relay" && key !== "--relay" && key !== "-r") {
+      continue;
+    }
+    const value = token.slice(equalsIndex + 1).trim();
+    if (!value) {
+      throw new Error(
+        formatBilingualInline(
+          "`relay=` 后面需要提供 relay URL。",
+          "`relay=` requires a relay URL.",
+        ),
+      );
+    }
+    relayBaseUrl = value;
+  }
+
+  return {
+    ...(groupMode ? { groupMode: true } : {}),
+    ...(relayBaseUrl ? { relayBaseUrl } : {}),
+  };
+}
+
+function inferRelayBaseUrlFromAppWsUrl(appWsUrl: string): string {
+  try {
+    const url = new URL(appWsUrl);
+    url.pathname = "/";
+    url.search = "";
+    url.hash = "";
+    return url.origin;
+  } catch {
+    return DEFAULT_RELAY_BASE_URL;
+  }
+}
+
+function mergeDaemonEnvForRelay(
+  baseEnv: NodeJS.ProcessEnv | undefined,
+  relayBaseUrl?: string,
+): NodeJS.ProcessEnv | undefined {
+  if (!baseEnv) {
+    return undefined;
+  }
+  const normalizedRelayBaseUrl = readString(relayBaseUrl);
+  if (!normalizedRelayBaseUrl) {
+    return baseEnv;
+  }
+  return {
+    ...baseEnv,
+    PRIVATECLAW_RELAY_BASE_URL: normalizedRelayBaseUrl,
+  };
 }
 
 function buildProviderOptions(
@@ -446,15 +529,27 @@ function buildDaemonEnvFromPluginConfig(
 }
 
 class PrivateClawPluginRuntime {
-  private provider: PrivateClawProvider | undefined;
+  private readonly providerEntries = new Map<
+    string,
+    {
+      provider?: PrivateClawProvider;
+      providerOptions: PrivateClawProviderOptions;
+    }
+  >();
   private stateDir: string | undefined;
   private controlServer: PrivateClawSessionControlServer | undefined;
+  private readonly defaultRelayBaseUrl: string;
 
   constructor(
     private readonly providerOptions: PrivateClawProviderOptions,
     private readonly defaultTtlMs: number = DEFAULT_SESSION_TTL_MS,
     private readonly daemonEnv?: NodeJS.ProcessEnv,
-  ) {}
+    defaultRelayBaseUrl?: string,
+  ) {
+    this.defaultRelayBaseUrl =
+      readString(defaultRelayBaseUrl) ??
+      inferRelayBaseUrlFromAppWsUrl(providerOptions.appWsUrl);
+  }
 
   setStateDir(stateDir: string): void {
     this.stateDir = stateDir;
@@ -469,12 +564,64 @@ class PrivateClawPluginRuntime {
     return resolvePrivateClawMediaDir(this.ensureStateDir());
   }
 
-  private getProvider(): PrivateClawProvider {
-    if (!this.provider) {
-      this.provider = new PrivateClawProvider(this.providerOptions);
+  private resolveRelayBaseUrl(relayBaseUrl?: string): string {
+    return readString(relayBaseUrl) ?? this.defaultRelayBaseUrl;
+  }
+
+  private getProviderEntry(relayBaseUrl?: string): {
+    provider?: PrivateClawProvider;
+    providerOptions: PrivateClawProviderOptions;
+  } {
+    const resolvedRelayBaseUrl = this.resolveRelayBaseUrl(relayBaseUrl);
+    let entry = this.providerEntries.get(resolvedRelayBaseUrl);
+    if (!entry) {
+      const relay = resolveRelayEndpoints(resolvedRelayBaseUrl);
+      entry = {
+        providerOptions: {
+          ...this.providerOptions,
+          providerWsUrl: relay.providerWsUrl,
+          appWsUrl: relay.appWsUrl,
+        },
+      };
+      this.providerEntries.set(resolvedRelayBaseUrl, entry);
+    }
+    return entry;
+  }
+
+  private getProvider(relayBaseUrl?: string): PrivateClawProvider {
+    const entry = this.getProviderEntry(relayBaseUrl);
+    if (!entry.provider) {
+      entry.provider = new PrivateClawProvider(entry.providerOptions);
     }
 
-    return this.provider;
+    return entry.provider;
+  }
+
+  private listLocalManagedSessions(): PrivateClawManagedSession[] {
+    return [...this.providerEntries.values()].flatMap((entry) =>
+      entry.provider?.listManagedSessions() ?? [],
+    );
+  }
+
+  private async kickLocalManagedParticipant(
+    sessionId: string,
+    appId: string,
+    reason = "participant_removed",
+  ) {
+    for (const entry of this.providerEntries.values()) {
+      const provider = entry.provider;
+      if (!provider) {
+        continue;
+      }
+      if (
+        provider
+          .listManagedSessions()
+          .some((session) => session.sessionId === sessionId)
+      ) {
+        return provider.kickGroupParticipant(sessionId, appId, reason);
+      }
+    }
+    throw new Error(`Unknown PrivateClaw session: ${sessionId}`);
   }
 
   private async ensureControlServer(
@@ -484,7 +631,11 @@ class PrivateClawPluginRuntime {
       return;
     }
     this.controlServer = new PrivateClawSessionControlServer({
-      provider: this.getProvider(),
+      provider: {
+        listManagedSessions: () => this.listLocalManagedSessions(),
+        kickGroupParticipant: (sessionId, appId, reason) =>
+          this.kickLocalManagedParticipant(sessionId, appId, reason),
+      },
       stateDir: this.ensureStateDir(),
       kind,
       ...(this.providerOptions.onLog
@@ -498,9 +649,10 @@ class PrivateClawPluginRuntime {
     ttlMs?: number;
     label?: string;
     groupMode?: boolean;
+    relayBaseUrl?: string;
   }): Promise<PrivateClawInviteBundle> {
     await this.ensureControlServer("plugin-service");
-    return this.getProvider().createInviteBundle(
+    return this.getProvider(params?.relayBaseUrl).createInviteBundle(
       {
         ...(typeof params?.ttlMs === "number"
           ? { ttlMs: params.ttlMs }
@@ -538,6 +690,7 @@ class PrivateClawPluginRuntime {
     ttlMs?: number;
     label?: string;
     groupMode?: boolean;
+    relayBaseUrl?: string;
     openInBrowser?: boolean;
     writeLine?: (line: string) => void;
   }): Promise<PrivateClawInviteBundle> {
@@ -549,6 +702,10 @@ class PrivateClawPluginRuntime {
         ),
       );
     }
+    const daemonEnv = mergeDaemonEnvForRelay(
+      this.daemonEnv,
+      params?.relayBaseUrl,
+    );
 
     const bundle = await spawnBackgroundPairDaemon({
       cliModuleUrl: new URL(
@@ -556,7 +713,7 @@ class PrivateClawPluginRuntime {
         import.meta.url,
       ).href,
       stateDir: this.ensureStateDir(),
-      ...(this.daemonEnv ? { env: this.daemonEnv } : {}),
+      ...(daemonEnv ? { env: daemonEnv } : {}),
       ...(typeof params?.ttlMs === "number" ? { ttlMs: params.ttlMs } : {}),
       ...(params?.label ? { label: params.label } : {}),
       ...(params?.groupMode === true ? { groupMode: true } : {}),
@@ -571,6 +728,7 @@ class PrivateClawPluginRuntime {
     label?: string;
     printOnly?: boolean;
     groupMode?: boolean;
+    relayBaseUrl?: string;
     foreground?: boolean;
     openInBrowser?: boolean;
     writeLine?: (line: string) => void;
@@ -578,7 +736,11 @@ class PrivateClawPluginRuntime {
     if (!params?.printOnly) {
       await this.ensureControlServer("pair-foreground");
     }
-    const provider = this.getProvider();
+    const provider = this.getProvider(params?.relayBaseUrl);
+    const handoffEnv = mergeDaemonEnvForRelay(
+      this.daemonEnv,
+      params?.relayBaseUrl,
+    );
     return runPairSession({
       provider,
       ...(typeof params?.ttlMs === "number"
@@ -600,17 +762,17 @@ class PrivateClawPluginRuntime {
               provider.suppressReconnectsForHandoff();
               try {
                 await handoffForegroundPairToBackground({
-                  cliModuleUrl: new URL(
-                    import.meta.url.endsWith(".ts") ? "./cli.ts" : "./cli.js",
-                    import.meta.url,
-                  ).href,
-                  stateDir: this.ensureStateDir(),
-                  ...(this.daemonEnv ? { env: this.daemonEnv } : {}),
-                  handoffState: provider.exportHandoffState(),
-                });
-                return formatBilingualInline(
-                  "当前 PrivateClaw 会话已转入后台。可使用 `openclaw privateclaw sessions` 查看。",
-                  "The current PrivateClaw session is now running in the background. Use `openclaw privateclaw sessions` to inspect it.",
+                   cliModuleUrl: new URL(
+                     import.meta.url.endsWith(".ts") ? "./cli.ts" : "./cli.js",
+                     import.meta.url,
+                    ).href,
+                    stateDir: this.ensureStateDir(),
+                    ...(handoffEnv ? { env: handoffEnv } : {}),
+                    handoffState: provider.exportHandoffState(),
+                  });
+                 return formatBilingualInline(
+                   "当前 PrivateClaw 会话已转入后台。可使用 `openclaw privateclaw sessions` 查看。",
+                   "The current PrivateClaw session is now running in the background. Use `openclaw privateclaw sessions` to inspect it.",
                 );
               } catch (error) {
                 provider.resumeReconnectsAfterHandoffFailure();
@@ -641,12 +803,13 @@ class PrivateClawPluginRuntime {
       await this.controlServer.stop();
       this.controlServer = undefined;
     }
-    if (!this.provider) {
-      return;
+    const providers = [...this.providerEntries.values()]
+      .map((entry) => entry.provider)
+      .filter((provider): provider is PrivateClawProvider => provider != null);
+    this.providerEntries.clear();
+    for (const provider of providers) {
+      await provider.dispose();
     }
-
-    await this.provider.dispose();
-    this.provider = undefined;
   }
 }
 
@@ -717,24 +880,27 @@ function createPluginDefinition(
           privateclaw
             .command("pair")
             .description(PRIVATECLAW_CLI_PAIR_DESCRIPTION)
-            .option("--ttl-ms <ms>", PRIVATECLAW_CLI_TTL_OPTION_DESCRIPTION)
-            .option("--label <label>", PRIVATECLAW_CLI_LABEL_OPTION_DESCRIPTION)
-            .option("--group", PRIVATECLAW_CLI_GROUP_OPTION_DESCRIPTION)
-            .option("--print-only", PRIVATECLAW_CLI_PRINT_ONLY_OPTION_DESCRIPTION)
-            .option("--open", PRIVATECLAW_CLI_OPEN_OPTION_DESCRIPTION)
-            .option("--foreground", PRIVATECLAW_CLI_FOREGROUND_OPTION_DESCRIPTION)
-            .action(async (rawOptions: unknown) => {
-              const options = normalizePairCliOptions(rawOptions);
-              const ttlMs = parsePositiveIntegerFlag(options.ttlMs, "--ttl-ms");
-              const label = readString(options.label);
-              const pairParams = {
-                ...(typeof ttlMs === "number" ? { ttlMs } : {}),
-                ...(label ? { label } : {}),
-                ...(options.group ? { groupMode: true } : {}),
-                ...(typeof options.printOnly === "boolean"
-                  ? { printOnly: options.printOnly }
-                  : {}),
-                ...(typeof options.open === "boolean"
+              .option("--ttl-ms <ms>", PRIVATECLAW_CLI_TTL_OPTION_DESCRIPTION)
+              .option("--label <label>", PRIVATECLAW_CLI_LABEL_OPTION_DESCRIPTION)
+              .option("-r, --relay <url>", PRIVATECLAW_CLI_RELAY_OPTION_DESCRIPTION)
+              .option("--group", PRIVATECLAW_CLI_GROUP_OPTION_DESCRIPTION)
+              .option("--print-only", PRIVATECLAW_CLI_PRINT_ONLY_OPTION_DESCRIPTION)
+              .option("--open", PRIVATECLAW_CLI_OPEN_OPTION_DESCRIPTION)
+              .option("--foreground", PRIVATECLAW_CLI_FOREGROUND_OPTION_DESCRIPTION)
+              .action(async (rawOptions: unknown) => {
+                const options = normalizePairCliOptions(rawOptions);
+                const ttlMs = parsePositiveIntegerFlag(options.ttlMs, "--ttl-ms");
+                const label = readString(options.label);
+                const relayBaseUrl = readString(options.relay);
+                const pairParams = {
+                  ...(typeof ttlMs === "number" ? { ttlMs } : {}),
+                  ...(label ? { label } : {}),
+                  ...(relayBaseUrl ? { relayBaseUrl } : {}),
+                  ...(options.group ? { groupMode: true } : {}),
+                  ...(typeof options.printOnly === "boolean"
+                    ? { printOnly: options.printOnly }
+                    : {}),
+                  ...(typeof options.open === "boolean"
                   ? { openInBrowser: options.open }
                   : {}),
                 writeLine: (line: string) => {
@@ -796,7 +962,13 @@ export function createOpenClawCompatiblePlugin(
   options: PrivateClawProviderOptions & { defaultTtlMs?: number },
 ): OpenClawExtensionPluginCompat {
   return createPluginDefinition(
-    () => new PrivateClawPluginRuntime(options, options.defaultTtlMs),
+    () =>
+      new PrivateClawPluginRuntime(
+        options,
+        options.defaultTtlMs,
+        undefined,
+        inferRelayBaseUrlFromAppWsUrl(options.appWsUrl),
+      ),
   );
 }
 
@@ -808,6 +980,7 @@ export function createPrivateClawPlugin(): OpenClawExtensionPluginCompat {
       resolved.options,
       resolved.defaultTtlMs,
       buildDaemonEnvFromPluginConfig(pluginConfig),
+      pluginConfig.relayBaseUrl,
     );
   });
 }

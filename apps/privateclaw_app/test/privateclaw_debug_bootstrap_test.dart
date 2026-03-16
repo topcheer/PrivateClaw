@@ -36,4 +36,25 @@ void main() {
     expect(bootstrap.identity?.appId, 'pc-test-ios');
     expect(bootstrap.identity?.displayName, 'TestX');
   });
+
+  test(
+    'loadPrivateClawDebugSkipNotificationsFromEnvironment reads debug flag',
+    () {
+      expect(
+        loadPrivateClawDebugSkipNotificationsFromEnvironment(
+          environment: const <String, String>{},
+        ),
+        isFalse,
+      );
+
+      expect(
+        loadPrivateClawDebugSkipNotificationsFromEnvironment(
+          environment: const <String, String>{
+            'PRIVATECLAW_DEBUG_SKIP_NOTIFICATIONS': 'true',
+          },
+        ),
+        isTrue,
+      );
+    },
+  );
 }

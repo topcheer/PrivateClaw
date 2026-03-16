@@ -352,6 +352,30 @@ abstract class AppLocalizations {
   /// **'Received an unknown encrypted message type: {payloadType}'**
   String relayUnknownPayload(String payloadType);
 
+  /// No description provided for @nonDefaultRelayWarningTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom relay server'**
+  String get nonDefaultRelayWarningTitle;
+
+  /// No description provided for @nonDefaultRelayWarningBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This invite points to {relayLabel} instead of the default PrivateClaw relay. Continue only if you trust this server.'**
+  String nonDefaultRelayWarningBody(String relayLabel);
+
+  /// No description provided for @relayWarningCancelButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get relayWarningCancelButton;
+
+  /// No description provided for @relayWarningContinueButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue'**
+  String get relayWarningContinueButton;
+
   /// No description provided for @sessionQrTitle.
   ///
   /// In en, this message translates to:

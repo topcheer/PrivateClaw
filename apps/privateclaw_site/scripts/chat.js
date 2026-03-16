@@ -1,11 +1,13 @@
-import { applyTranslations, bindLocaleSelect, onLocaleChange, t } from "./i18n.js?v=20260314-1";
+import { applyTranslations, bindLocaleSelect, onLocaleChange, t } from "./i18n.js?v=20260316-1";
 import {
   createIdentity,
   decodeBase64,
   decodeInviteString,
+  getInviteRelayLabel,
+  inviteUsesNonDefaultRelay,
   readFileAsAttachment,
-} from "./protocol-web.js?v=20260314-1";
-import { PrivateClawWebSessionClient } from "./session-client.js?v=20260314-1";
+} from "./protocol-web.js?v=20260316-1";
+import { PrivateClawWebSessionClient } from "./session-client.js?v=20260316-1";
 
 const MAX_INLINE_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 const QR_SCAN_MAX_DIMENSION = 1440;
@@ -28,6 +30,7 @@ const elements = {
   providerLabel: document.getElementById("provider-label"),
   expiresLabel: document.getElementById("expires-label"),
   modeLabel: document.getElementById("mode-label"),
+  relayLabel: document.getElementById("relay-label"),
   identityLabel: document.getElementById("identity-label"),
   participantCount: document.getElementById("participant-count"),
   participantChips: document.getElementById("participant-chips"),
@@ -913,8 +916,21 @@ function renderSessionMeta() {
   } else {
     elements.modeLabel.textContent = t("chat.modePrivate");
   }
+  elements.relayLabel.textContent = getInviteRelayLabel(state.invite) || t("chat.relayUnknown");
   const identityValue = state.identity.displayName || `${t("chat.identityUnknown")} · ${state.identity.appId.slice(0, 8)}`;
   elements.identityLabel.textContent = identityValue;
+}
+
+async function confirmRelayOverride(invite) {
+  if (!inviteUsesNonDefaultRelay(invite)) {
+    return true;
+  }
+  const relayLabel = getInviteRelayLabel(invite) || String(invite?.appWsUrl || "");
+  return window.confirm(
+    `${t("chat.customRelayWarningTitle")}\n\n${t("chat.customRelayWarningBody", {
+      relayLabel,
+    })}`,
+  );
 }
 
 function renderStatus() {
@@ -1058,6 +1074,10 @@ async function connectWithInvite(rawInvite) {
     invite = decodeInviteString(rawInvite);
   } catch (error) {
     showToast(mapClientError(error), { error: true });
+    return;
+  }
+
+  if (!(await confirmRelayOverride(invite))) {
     return;
   }
 

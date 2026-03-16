@@ -15,6 +15,14 @@ It is responsible for:
 
 Join the community on Telegram: [PrivateClaw Telegram group](https://t.me/+W3RUKxEO9kIxMmZl)
 
+Mobile beta access:
+
+- iOS public beta (TestFlight): https://testflight.apple.com/join/XvgJ9c33
+- Android closed alpha tester group: https://groups.google.com/g/gg-studio-ai-products
+- Android closed alpha (Google Play): https://play.google.com/store/apps/details?id=gg.ai.privateclaw
+
+For Android closed alpha, Google Play access only opens after the tester joins the Google Group above.
+
 ## Provider control flow
 
 ```mermaid
@@ -55,7 +63,7 @@ openclaw plugins install @privateclaw/privateclaw@latest
 openclaw plugins enable privateclaw
 ```
 
-If you are using the default public relay at `https://relay.privateclaw.us`, the `relayBaseUrl` override is optional and can be skipped. Only run `openclaw config set plugins.entries.privateclaw.config.relayBaseUrl ...` when you want to point the plugin at your own relay deployment.
+If you are using the default public relay at `https://relay.privateclaw.us`, the `relayBaseUrl` override is optional and can be skipped. Only run `openclaw config set plugins.entries.privateclaw.config.relayBaseUrl ...` when you want to change the default relay for the whole plugin. For one-off invites, you can now override the relay per slash command or per CLI invocation instead of changing persistent config.
 
 If npm is not updated yet but you want the newest GitHub checkout immediately, pack the workspace and install the archive:
 
@@ -122,7 +130,7 @@ The package now ships a real OpenClaw extension entrypoint:
 - the plugin registers a real `/privateclaw` plugin command via `api.registerCommand(...)`
 - the command returns both the invite URI and a PNG QR code through `ReplyPayload`
 
-That means the installed extension can surface `/privateclaw` and `/privateclaw group` in native command menus such as Telegram instead of relying on the old local shim.
+That means the installed extension can surface `/privateclaw`, `/privateclaw group`, and one-off relay overrides such as `/privateclaw relay=https://your-relay.example.com` in native command menus such as Telegram instead of relying on the old local shim.
 
 Capabilities advertise `/renew-session` and `/session-qr` for active sessions, and for group sessions they also advertise `/mute-bot` or `/unmute-bot` depending on the current session state.
 
@@ -143,7 +151,7 @@ Public subcommands:
 
 | Subcommand | Example | Purpose | Notes |
 | --- | --- | --- | --- |
-| `pair` | `privateclaw-provider pair` | Create a local PrivateClaw session and render the pairing QR in the terminal. | The OpenClaw alias is `openclaw privateclaw pair`. |
+| `pair` | `privateclaw-provider pair` | Create a local PrivateClaw session and render the pairing QR in the terminal. | The OpenClaw alias is `openclaw privateclaw pair`, and both support `--relay <url>` for one-off relay overrides. |
 | `sessions` | `privateclaw-provider sessions` | List active locally managed sessions. | The output includes the total count plus each session's `type`, `participants`, `state`, `expires`, `host`, and optional `label`. |
 | `kick <sessionId> <appId>` | `privateclaw-provider kick <sessionId> <appId>` | Remove one participant from a group session. | This also closes that app's relay connection and blocks the same `appId` from rejoining the current session. |
 
@@ -153,6 +161,7 @@ Public subcommands:
 | --- | --- |
 | `--ttl-ms <ms>` | Override the session TTL. Fresh sessions default to 8 hours. |
 | `--label <label>` | Attach an optional relay-side label that also appears in `sessions` output. |
+| `--relay <url>` | Override the relay base URL just for this command without changing plugin config. |
 | `--group` | Allow multiple app clients to join the same session. |
 | `--print-only` | Print the invite URI and QR, then exit immediately. This also closes the session instead of keeping it alive. |
 | `--open` | Open a local browser preview page for the generated QR. |
@@ -163,11 +172,13 @@ Typical examples:
 ```bash
 # Standalone npm binary
 privateclaw-provider pair --group --foreground
+privateclaw-provider pair --relay https://your-relay.example.com
 privateclaw-provider sessions
 privateclaw-provider kick <sessionId> <appId>
 
 # The same commands through the installed OpenClaw plugin
 openclaw privateclaw pair --group --foreground
+openclaw privateclaw pair --relay https://your-relay.example.com
 openclaw privateclaw sessions
 openclaw privateclaw kick <sessionId> <appId>
 ```
@@ -175,6 +186,8 @@ openclaw privateclaw kick <sessionId> <appId>
 When a first-time participant joins a group session without providing a name, the provider assigns a local animal-style nickname. The label is chosen deterministically from the session/app identity, avoids collisions with other participants already in the same session, and stays stable when that same app reconnects later.
 
 Active participants can use `/session-qr` to re-share the current invite QR while a session is live. Once less than 30 minutes remain, the provider emits a reminder so any participant can run `/renew-session`. In group sessions, `/mute-bot` and `/unmute-bot` pause or resume assistant replies without interrupting participant-to-participant chat delivery.
+
+After the app attaches, both the mobile app and the mobile web chat show the resolved relay host. They also warn before connecting when an invite points at a non-default relay.
 
 After the app attaches, the in-app session panel also shows the current relay server so users can verify which relay endpoint the invite resolved to.
 

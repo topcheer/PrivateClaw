@@ -140,6 +140,20 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get nonDefaultRelayWarningTitle => '自定义 relay 服务器';
+
+  @override
+  String nonDefaultRelayWarningBody(String relayLabel) {
+    return '这个邀请使用的是 $relayLabel，而不是默认的 PrivateClaw relay。只有在你信任这台服务器时才继续。';
+  }
+
+  @override
+  String get relayWarningCancelButton => '取消';
+
+  @override
+  String get relayWarningContinueButton => '继续';
+
+  @override
   String get sessionQrTitle => '当前会话二维码';
 
   @override

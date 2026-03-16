@@ -27,7 +27,10 @@ import {
   PrivateClawSessionControlServer,
   resolvePrivateClawStateDir,
 } from "./session-control.js";
-import { formatBilingualInline } from "./text.js";
+import {
+  formatBilingualInline,
+  PRIVATECLAW_CLI_RELAY_OPTION_DESCRIPTION,
+} from "./text.js";
 import type { PrivateClawProviderHandoffState } from "./types.js";
 
 type BridgeMode =
@@ -94,6 +97,7 @@ function detectBridgeMode(): BridgeMode {
 
 function createProvider(params?: {
   providerId?: string;
+  relayBaseUrl?: string;
 }): {
   provider: PrivateClawProvider;
   stateDir: string;
@@ -101,9 +105,11 @@ function createProvider(params?: {
   const providerWsUrl = process.env.PRIVATECLAW_PROVIDER_WS_URL?.trim();
   const appWsUrl = process.env.PRIVATECLAW_APP_WS_URL?.trim();
   const relayBaseUrl =
-    process.env.PRIVATECLAW_RELAY_BASE_URL?.trim() || DEFAULT_RELAY_BASE_URL;
+    params?.relayBaseUrl?.trim() ||
+    process.env.PRIVATECLAW_RELAY_BASE_URL?.trim() ||
+    DEFAULT_RELAY_BASE_URL;
   const relayEndpoints =
-    providerWsUrl && appWsUrl
+    !params?.relayBaseUrl && providerWsUrl && appWsUrl
       ? { providerWsUrl, appWsUrl }
       : resolveRelayEndpoints(relayBaseUrl);
   const bridgeMode = detectBridgeMode();
@@ -236,9 +242,10 @@ async function readHandoffState(
 function printHelp(): void {
   console.log(`privateclaw-provider <pair|sessions|kick>
 
-pair [--ttl-ms <ms>] [--label <label>] [--group] [--print-only] [--open] [--foreground]
+pair [--ttl-ms <ms>] [--label <label>] [--relay <url>] [--group] [--print-only] [--open] [--foreground]
 sessions
 kick <sessionId> <appId>`);
+  console.log(`\n--relay <url>: ${PRIVATECLAW_CLI_RELAY_OPTION_DESCRIPTION}`);
 }
 
 async function runPairCommand(args: string[]): Promise<void> {
@@ -248,6 +255,7 @@ async function runPairCommand(args: string[]): Promise<void> {
     options: {
       "ttl-ms": { type: "string" },
       label: { type: "string" },
+      relay: { type: "string", short: "r" },
       group: { type: "boolean", default: false },
       "print-only": { type: "boolean", default: false },
       open: { type: "boolean", default: parseBooleanFlag(process.env.PRIVATECLAW_OPEN_QR) },
@@ -266,6 +274,7 @@ async function runPairCommand(args: string[]): Promise<void> {
 
   const ttlMs = parsePositiveIntegerFlag(parsed.values["ttl-ms"], "--ttl-ms");
   const label = parsed.values.label?.trim();
+  const relayBaseUrl = parsed.values.relay?.trim();
   const groupMode = parsed.values.group === true;
   const printOnly = parsed.values["print-only"] === true;
   const openInBrowser = parsed.values.open === true;
@@ -285,7 +294,14 @@ async function runPairCommand(args: string[]): Promise<void> {
         ? await readHandoffState(resumeSnapshotFile)
         : undefined;
       const resolved = createProvider(
-        handoffState ? { providerId: handoffState.providerId } : undefined,
+        handoffState
+          ? {
+              providerId: handoffState.providerId,
+              ...(relayBaseUrl ? { relayBaseUrl } : {}),
+            }
+          : relayBaseUrl
+            ? { relayBaseUrl }
+            : undefined,
       );
       provider = resolved.provider;
       if (handoffState) {
@@ -333,7 +349,9 @@ async function runPairCommand(args: string[]): Promise<void> {
   }
 
   if (printOnly || foreground) {
-    const { provider, stateDir } = createProvider();
+    const { provider, stateDir } = createProvider(
+      relayBaseUrl ? { relayBaseUrl } : undefined,
+    );
     const controlServer =
       printOnly
         ? undefined
@@ -364,7 +382,12 @@ async function runPairCommand(args: string[]): Promise<void> {
                   await handoffForegroundPairToBackground({
                     cliModuleUrl: import.meta.url,
                     stateDir,
-                    env: process.env,
+                    env: relayBaseUrl
+                      ? {
+                          ...process.env,
+                          PRIVATECLAW_RELAY_BASE_URL: relayBaseUrl,
+                        }
+                      : process.env,
                     handoffState: provider.exportHandoffState(),
                   });
                   return formatBilingualInline(
@@ -387,7 +410,12 @@ async function runPairCommand(args: string[]): Promise<void> {
   const bundle = await spawnBackgroundPairDaemon({
     cliModuleUrl: import.meta.url,
     stateDir: resolvePrivateClawStateDir(),
-    env: process.env,
+    env: relayBaseUrl
+      ? {
+          ...process.env,
+          PRIVATECLAW_RELAY_BASE_URL: relayBaseUrl,
+        }
+      : process.env,
     ...(typeof ttlMs === "number" ? { ttlMs } : {}),
     ...(label ? { label } : {}),
     ...(groupMode ? { groupMode: true } : {}),

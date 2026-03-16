@@ -51,4 +51,30 @@ Invite URI: privateclaw://connect?payload=$payload
     expect(parsed.appWsUrl, 'wss://privateclaw.ystone.us/ws/app?sessionId=session-embedded');
     expect(parsed.providerLabel, 'PrivateClaw');
   });
+
+  test('PrivateClawInvite derives relay display labels and default-relay detection', () {
+    final PrivateClawInvite defaultInvite = PrivateClawInvite(
+      version: 1,
+      sessionId: 'session-default',
+      sessionKey: 'c2Vzc2lvbl9rZXlfZm9yX2RlZmF1bHRfcmVsYXlfMTIzNDU2Nzg',
+      appWsUrl:
+          'wss://relay.privateclaw.us/ws/app?sessionId=session-default',
+      expiresAt: DateTime.utc(2030, 1, 1),
+    );
+    final PrivateClawInvite customInvite = PrivateClawInvite(
+      version: 1,
+      sessionId: 'session-custom',
+      sessionKey: 'c2Vzc2lvbl9rZXlfZm9yX2N1c3RvbV9yZWxheV8xMjM0NTY3ODk',
+      appWsUrl: 'ws://127.0.0.1:8787/ws/app?sessionId=session-custom',
+      expiresAt: DateTime.utc(2030, 1, 1),
+    );
+
+    expect(defaultInvite.relayDisplayLabel, 'relay.privateclaw.us');
+    expect(defaultInvite.usesDefaultRelay, isTrue);
+    expect(defaultInvite.usesNonDefaultRelay, isFalse);
+
+    expect(customInvite.relayDisplayLabel, '127.0.0.1:8787');
+    expect(customInvite.usesDefaultRelay, isFalse);
+    expect(customInvite.usesNonDefaultRelay, isTrue);
+  });
 }

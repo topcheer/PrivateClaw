@@ -33,13 +33,22 @@ const String _appBarIconAsset = 'assets/branding/privateclaw_app_icon.png';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  final bool skipNotificationsInDebug =
+      loadPrivateClawDebugSkipNotificationsFromEnvironment();
   if (privateClawSupportsFirebasePushOnCurrentPlatform()) {
     FirebaseMessaging.onBackgroundMessage(privateClawBackgroundMessageHandler);
   }
-  await PrivateClawNotificationService.instance.bootstrap();
+  if (!skipNotificationsInDebug) {
+    await PrivateClawNotificationService.instance.bootstrap();
+  }
   final StoreScreenshotConfig screenshotConfig =
       StoreScreenshotConfig.fromEnvironment();
-  runApp(PrivateClawApp(screenshotConfig: screenshotConfig));
+  runApp(
+    PrivateClawApp(
+      screenshotConfig: screenshotConfig,
+      skipNotificationsInDebug: skipNotificationsInDebug,
+    ),
+  );
 }
 
 bool privateClawShouldSuspendLiveSession(AppLifecycleState state) {
@@ -52,9 +61,11 @@ class PrivateClawApp extends StatelessWidget {
   const PrivateClawApp({
     super.key,
     this.screenshotConfig = const StoreScreenshotConfig(),
+    this.skipNotificationsInDebug = false,
   });
 
   final StoreScreenshotConfig screenshotConfig;
+  final bool skipNotificationsInDebug;
 
   @override
   Widget build(BuildContext context) {
@@ -74,15 +85,23 @@ class PrivateClawApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF5D5FEF)),
         useMaterial3: true,
       ),
-      home: PrivateClawHomePage(previewData: screenshotConfig.previewData),
+      home: PrivateClawHomePage(
+        previewData: screenshotConfig.previewData,
+        skipNotificationsInDebug: skipNotificationsInDebug,
+      ),
     );
   }
 }
 
 class PrivateClawHomePage extends StatefulWidget {
-  const PrivateClawHomePage({super.key, this.previewData});
+  const PrivateClawHomePage({
+    super.key,
+    this.previewData,
+    this.skipNotificationsInDebug = false,
+  });
 
   final PrivateClawPreviewData? previewData;
+  final bool skipNotificationsInDebug;
 
   @override
   State<PrivateClawHomePage> createState() => _PrivateClawHomePageState();
@@ -117,6 +136,8 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
   PrivateClawIdentity? _identity;
   Timer? _sessionExpiryRefreshTimer;
   bool _isRenewingSession = false;
+  final PrivateClawDebugPendingInviteData? _debugPendingInvite =
+      loadPrivateClawDebugPendingInviteFromEnvironment();
 
   bool get _canSend => _sessionStatus == PrivateClawSessionStatus.active;
   bool get _hasPendingReply =>
@@ -165,26 +186,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
 
   String? get _currentRelayLabel {
     final PrivateClawInvite? invite = _invite;
-    if (invite == null) {
-      return null;
-    }
-    final String? explicitLabel = invite.relayLabel?.trim();
-    if (explicitLabel != null && explicitLabel.isNotEmpty) {
-      return explicitLabel;
-    }
-    try {
-      final Uri uri = Uri.parse(invite.appWsUrl);
-      if (uri.host.isEmpty) {
-        return null;
-      }
-      final bool useDefaultPort =
-          uri.port == 0 ||
-          (uri.scheme == 'wss' && uri.port == 443) ||
-          (uri.scheme == 'ws' && uri.port == 80);
-      return useDefaultPort ? uri.host : '${uri.host}:${uri.port}';
-    } catch (_) {
-      return null;
-    }
+    return invite?.relayDisplayLabel;
   }
 
   bool get _showsSessionRenewPrompt {
@@ -235,6 +237,22 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       _scheduleSessionExpiryRefresh();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _scheduleScrollToBottom();
+      });
+    } else if (_debugPendingInvite != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final PrivateClawDebugPendingInviteData? pendingInvite =
+            _debugPendingInvite;
+        if (!mounted || pendingInvite == null) {
+          return;
+        }
+        _inviteController.text = pendingInvite.inviteInput;
+        unawaited(
+          _connectFromInput(
+            pendingInvite.inviteInput,
+            autoApproveNonDefaultRelayWarning:
+                pendingInvite.autoApproveRelayWarning,
+          ),
+        );
       });
     } else {
       unawaited(_restoreActiveSessionIfAvailable());
@@ -404,7 +422,46 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     }
   }
 
-  Future<void> _connectFromInput(String rawInvite) async {
+  Future<bool> _confirmRelayOverrideInvite(
+    PrivateClawInvite invite, {
+    bool autoApprove = false,
+  }) async {
+    if (autoApprove || !invite.usesNonDefaultRelay || !mounted) {
+      return true;
+    }
+
+    final AppLocalizations l10n = AppLocalizations.of(context)!;
+    final String relayLabel = invite.relayDisplayLabel ?? invite.appWsUrl;
+    final bool? shouldContinue = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          key: const ValueKey<String>('relay-warning-dialog'),
+          title: Text(l10n.nonDefaultRelayWarningTitle),
+          content: Text(l10n.nonDefaultRelayWarningBody(relayLabel)),
+          actions: <Widget>[
+            TextButton(
+              key: const ValueKey<String>('relay-warning-cancel-button'),
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text(l10n.relayWarningCancelButton),
+            ),
+            FilledButton(
+              key: const ValueKey<String>('relay-warning-continue-button'),
+              onPressed: () => Navigator.of(context).pop(true),
+              child: Text(l10n.relayWarningContinueButton),
+            ),
+          ],
+        );
+      },
+    );
+    return shouldContinue == true;
+  }
+
+  Future<void> _connectFromInput(
+    String rawInvite, {
+    bool autoApproveNonDefaultRelayWarning = false,
+  }) async {
     final AppLocalizations l10n = AppLocalizations.of(context)!;
     final String trimmed = rawInvite.trim();
     if (trimmed.isEmpty) {
@@ -416,11 +473,17 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       return;
     }
 
-    await _disposeClient(reason: 'switch_session');
-    await _activeSessionStore.clear();
-
     try {
       final PrivateClawInvite invite = PrivateClawInvite.fromScan(trimmed);
+      final bool shouldContinue = await _confirmRelayOverrideInvite(
+        invite,
+        autoApprove: autoApproveNonDefaultRelayWarning,
+      );
+      if (!shouldContinue) {
+        return;
+      }
+      await _disposeClient(reason: 'switch_session');
+      await _activeSessionStore.clear();
       final PrivateClawIdentity identity = await _ensureIdentity();
       await _connectToInvite(
         invite: invite,
@@ -447,7 +510,9 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     final PrivateClawSessionClient client = PrivateClawSessionClient(
       invite,
       identity: identity,
-      pushTokenProvider: _notificationService.getPushToken,
+      pushTokenProvider: widget.skipNotificationsInDebug
+          ? null
+          : _notificationService.getPushToken,
     );
     final StreamSubscription<PrivateClawSessionEvent> subscription = client
         .events
@@ -476,11 +541,13 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     _scheduleSessionExpiryRefresh();
     await _persistActiveSessionIfAvailable();
 
-    try {
-      await _notificationService.prepareForSession();
-    } catch (error, stackTrace) {
-      debugPrint('[privateclaw-app] notification setup failed: $error');
-      debugPrintStack(stackTrace: stackTrace);
+    if (!widget.skipNotificationsInDebug) {
+      try {
+        await _notificationService.prepareForSession();
+      } catch (error, stackTrace) {
+        debugPrint('[privateclaw-app] notification setup failed: $error');
+        debugPrintStack(stackTrace: stackTrace);
+      }
     }
 
     await client.connect();
@@ -1398,6 +1465,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
               if (!_hasManagedSessionContext) ...<Widget>[
                 const SizedBox(height: 12),
                 TextField(
+                  key: const ValueKey<String>('invite-input-field'),
                   controller: _inviteController,
                   minLines: 2,
                   maxLines: 4,
@@ -1427,6 +1495,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
                     )
                   else
                     FilledButton.tonalIcon(
+                      key: const ValueKey<String>('connect-session-button'),
                       onPressed: () {
                         unawaited(_connectFromInput(_inviteController.text));
                       },

@@ -1,11 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { type AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { resolvePrivateClawMediaDir } from "./invite-qr-files.js";
 import { formatBilingualInline } from "./text.js";
-import type { PrivateClawManagedSession } from "./types.js";
+import type {
+  PrivateClawInviteBundle,
+  PrivateClawManagedSession,
+} from "./types.js";
 
 export type PrivateClawControlHostKind =
   | "plugin-service"
@@ -35,6 +39,24 @@ export interface PrivateClawDiscoveredSessionListing {
   sessions: PrivateClawManagedSession[];
 }
 
+export interface PrivateClawManagedSessionQrBundleResult {
+  host: PrivateClawDiscoveredSessionHost;
+  session: PrivateClawManagedSession;
+  bundle: PrivateClawInviteBundle;
+  notifyParticipantsSupported: true;
+}
+
+export interface PrivateClawManagedSessionQrLegacyResult {
+  host: PrivateClawDiscoveredSessionHost;
+  session: PrivateClawManagedSession;
+  legacyPngPath: string;
+  notifyParticipantsSupported: false;
+}
+
+export type PrivateClawManagedSessionQrLookupResult =
+  | PrivateClawManagedSessionQrBundleResult
+  | PrivateClawManagedSessionQrLegacyResult;
+
 interface PrivateClawKickResult {
   sessionId: string;
   participant: {
@@ -43,8 +65,25 @@ interface PrivateClawKickResult {
   };
 }
 
+interface PrivateClawSessionCloseResult {
+  sessionId: string;
+}
+
+interface PrivateClawSessionQrResult {
+  sessionId: string;
+  bundle: PrivateClawInviteBundle;
+}
+
 interface PrivateClawSessionControlProvider {
   listManagedSessions(): PrivateClawManagedSession[];
+  getSessionQrBundle(
+    sessionId: string,
+    params?: { notifyParticipants?: boolean },
+  ): Promise<PrivateClawInviteBundle>;
+  closeManagedSession(
+    sessionId: string,
+    reason?: string,
+  ): Promise<PrivateClawManagedSession>;
   kickGroupParticipant(
     sessionId: string,
     appId: string,
@@ -179,12 +218,19 @@ async function requestDescriptorJson<T>(
   );
 
   if (!response.ok) {
-    throw new Error(
-      `Control request failed (${response.status} ${response.statusText})`,
-    );
+    throw new PrivateClawControlRequestError(response.status, response.statusText);
   }
 
   return (await response.json()) as T;
+}
+
+class PrivateClawControlRequestError extends Error {
+  constructor(
+    readonly status: number,
+    readonly statusText: string,
+  ) {
+    super(`Control request failed (${status} ${statusText})`);
+  }
 }
 
 function formatHostKind(kind: PrivateClawControlHostKind): string {
@@ -306,6 +352,28 @@ export class PrivateClawSessionControlServer {
         if (
           request.method === "POST" &&
           url.pathname.startsWith("/sessions/") &&
+          url.pathname.endsWith("/qr")
+        ) {
+          const sessionId = decodeURIComponent(
+            url.pathname.slice("/sessions/".length, -"/qr".length),
+          );
+          const body = (await readJsonBody(request)) as Record<string, unknown>;
+          const bundle = await this.options.provider.getSessionQrBundle(
+            sessionId,
+            {
+              notifyParticipants:
+                body.notify === true || body.notifyParticipants === true,
+            },
+          );
+          writeJson(response, 200, {
+            sessionId,
+            bundle,
+          } satisfies PrivateClawSessionQrResult);
+          return;
+        }
+        if (
+          request.method === "POST" &&
+          url.pathname.startsWith("/sessions/") &&
           url.pathname.endsWith("/kick")
         ) {
           const sessionId = decodeURIComponent(
@@ -326,6 +394,25 @@ export class PrivateClawSessionControlServer {
             sessionId,
             participant,
           } satisfies PrivateClawKickResult);
+          return;
+        }
+        if (
+          request.method === "POST" &&
+          url.pathname.startsWith("/sessions/") &&
+          url.pathname.endsWith("/close")
+        ) {
+          const sessionId = decodeURIComponent(
+            url.pathname.slice("/sessions/".length, -"/close".length),
+          );
+          const body = (await readJsonBody(request)) as Record<string, unknown>;
+          const reason =
+            typeof body.reason === "string" && body.reason.trim() !== ""
+              ? body.reason
+              : undefined;
+          await this.options.provider.closeManagedSession(sessionId, reason);
+          writeJson(response, 200, {
+            sessionId,
+          } satisfies PrivateClawSessionCloseResult);
           return;
         }
 
@@ -419,6 +506,125 @@ export async function listManagedSessionsFromStateDir(
   );
 }
 
+async function resolveManagedSessionDescriptor(params: {
+  stateDir: string;
+  sessionId: string;
+}): Promise<{
+  listing: PrivateClawDiscoveredSessionListing;
+  session: PrivateClawManagedSession;
+  descriptor: PrivateClawSessionControlDescriptor;
+  descriptorPath: string;
+}> {
+  const listings = await listManagedSessionsFromStateDir(params.stateDir);
+  const descriptors = await loadDescriptors(params.stateDir);
+
+  for (const listing of listings) {
+    const session = listing.sessions.find(
+      (candidate) => candidate.sessionId === params.sessionId,
+    );
+    if (!session) {
+      continue;
+    }
+
+    const descriptor = descriptors.find(
+      (candidate) => candidate.descriptor.controlId === listing.host.controlId,
+    );
+    if (!descriptor) {
+      break;
+    }
+
+    return {
+      listing,
+      session,
+      descriptor: descriptor.descriptor,
+      descriptorPath: descriptor.descriptorPath,
+    };
+  }
+
+  throw new Error(
+    `Could not find session ${params.sessionId} in ${resolvePrivateClawStateDir(params.stateDir)}.`,
+  );
+}
+
+async function resolveLegacySessionQrPngPath(params: {
+  stateDir: string;
+  sessionId: string;
+}): Promise<string | undefined> {
+  const pngPath = path.join(
+    resolvePrivateClawMediaDir(resolvePrivateClawStateDir(params.stateDir)),
+    `privateclaw-${params.sessionId}.png`,
+  );
+  try {
+    await access(pngPath);
+    return pngPath;
+  } catch {
+    return undefined;
+  }
+}
+
+export function isManagedSessionQrLegacyResult(
+  result: PrivateClawManagedSessionQrLookupResult,
+): result is PrivateClawManagedSessionQrLegacyResult {
+  return "legacyPngPath" in result;
+}
+
+export function buildManagedSessionQrLegacyLines(params: {
+  result: PrivateClawManagedSessionQrLegacyResult;
+  notifyParticipants?: boolean;
+}): string[] {
+  const lines = [
+    formatBilingualInline(
+      `会话 ${params.result.session.sessionId} 由较旧的 PrivateClaw host 管理，当前 control API 还不能重新导出这张二维码。`,
+      `Session ${params.result.session.sessionId} is managed by an older PrivateClaw host, so its current control API cannot re-export this QR code yet.`,
+    ),
+    formatBilingualInline(
+      `已保留的二维码 PNG 路径: ${params.result.legacyPngPath}`,
+      `Saved QR PNG path: ${params.result.legacyPngPath}`,
+    ),
+  ];
+  if (params.notifyParticipants) {
+    lines.push(
+      formatBilingualInline(
+        "这次没有向参与者推送二维码。请让已连接参与者在会话里运行 /session-qr，或使用当前版本重新建立会话。",
+        "Participants were not notified. Ask a connected participant to run /session-qr inside the session, or recreate the session with the current provider build.",
+      ),
+    );
+  } else {
+    lines.push(
+      formatBilingualInline(
+        "如需直接打开这张已保存的二维码图片，可重试并追加 --open。",
+        "Re-run with --open to open the saved QR image directly.",
+      ),
+    );
+  }
+  return lines;
+}
+
+async function waitForPidExit(params: {
+  pid: number;
+  timeoutMs?: number;
+}): Promise<void> {
+  const timeoutMs = params.timeoutMs ?? 5_000;
+  const startedAt = Date.now();
+  for (;;) {
+    try {
+      process.kill(params.pid, 0);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "ESRCH") {
+        return;
+      }
+      throw error;
+    }
+    if (Date.now() - startedAt >= timeoutMs) {
+      throw new Error(
+        `Timed out waiting for process ${params.pid} to exit after terminating the legacy PrivateClaw host.`,
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+}
+
 export async function kickManagedParticipantFromStateDir(params: {
   stateDir: string;
   sessionId: string;
@@ -432,42 +638,129 @@ export async function kickManagedParticipantFromStateDir(params: {
     displayName: string;
   };
 }> {
-  const listings = await listManagedSessionsFromStateDir(params.stateDir);
-  for (const listing of listings) {
-    const session = listing.sessions.find(
-      (candidate) => candidate.sessionId === params.sessionId,
-    );
-    if (!session) {
-      continue;
-    }
+  const resolved = await resolveManagedSessionDescriptor({
+    stateDir: params.stateDir,
+    sessionId: params.sessionId,
+  });
+  const result = await requestDescriptorJson<PrivateClawKickResult>(
+    resolved.descriptor,
+    `/sessions/${encodeURIComponent(params.sessionId)}/kick`,
+    {
+      method: "POST",
+      body: {
+        appId: params.appId,
+        ...(params.reason ? { reason: params.reason } : {}),
+      },
+    },
+  );
+  return {
+    host: resolved.listing.host,
+    session: resolved.session,
+    participant: result.participant,
+  };
+}
 
-    const descriptors = await loadDescriptors(params.stateDir);
-    const descriptor = descriptors.find(
-      (candidate) => candidate.descriptor.controlId === listing.host.controlId,
-    );
-    if (!descriptor) {
-      break;
-    }
-
-    const result = await requestDescriptorJson<PrivateClawKickResult>(
-      descriptor.descriptor,
-      `/sessions/${encodeURIComponent(params.sessionId)}/kick`,
+export async function closeManagedSessionFromStateDir(params: {
+  stateDir: string;
+  sessionId: string;
+  reason?: string;
+}): Promise<{
+  host: PrivateClawDiscoveredSessionHost;
+  session: PrivateClawManagedSession;
+  terminatedHost: boolean;
+}> {
+  const resolved = await resolveManagedSessionDescriptor({
+    stateDir: params.stateDir,
+    sessionId: params.sessionId,
+  });
+  try {
+    await requestDescriptorJson<PrivateClawSessionCloseResult>(
+      resolved.descriptor,
+      `/sessions/${encodeURIComponent(params.sessionId)}/close`,
       {
         method: "POST",
         body: {
-          appId: params.appId,
           ...(params.reason ? { reason: params.reason } : {}),
         },
       },
     );
     return {
-      host: listing.host,
-      session,
-      participant: result.participant,
+      host: resolved.listing.host,
+      session: resolved.session,
+      terminatedHost: false,
     };
+  } catch (error) {
+    if (
+      error instanceof PrivateClawControlRequestError &&
+      error.status === 404 &&
+      resolved.listing.host.kind !== "plugin-service" &&
+      resolved.listing.sessions.length === 1
+    ) {
+      process.kill(resolved.listing.host.pid, "SIGTERM");
+      await waitForPidExit({
+        pid: resolved.listing.host.pid,
+      });
+      await rm(resolved.descriptorPath, { force: true });
+      return {
+        host: resolved.listing.host,
+        session: resolved.session,
+        terminatedHost: true,
+      };
+    }
+    throw error;
   }
+}
 
-  throw new Error(
-    `Could not find session ${params.sessionId} in ${resolvePrivateClawStateDir(params.stateDir)}.`,
-  );
+export async function getManagedSessionQrBundleFromStateDir(params: {
+  stateDir: string;
+  sessionId: string;
+  notifyParticipants?: boolean;
+}): Promise<PrivateClawManagedSessionQrLookupResult> {
+  const resolved = await resolveManagedSessionDescriptor({
+    stateDir: params.stateDir,
+    sessionId: params.sessionId,
+  });
+  try {
+    const result = await requestDescriptorJson<PrivateClawSessionQrResult>(
+      resolved.descriptor,
+      `/sessions/${encodeURIComponent(params.sessionId)}/qr`,
+      {
+        method: "POST",
+        body: {
+          ...(params.notifyParticipants ? { notify: true } : {}),
+        },
+      },
+    );
+    return {
+      host: resolved.listing.host,
+      session: resolved.session,
+      bundle: result.bundle,
+      notifyParticipantsSupported: true,
+    };
+  } catch (error) {
+    if (
+      error instanceof PrivateClawControlRequestError &&
+      error.status === 404
+    ) {
+      const legacyPngPath = await resolveLegacySessionQrPngPath({
+        stateDir: params.stateDir,
+        sessionId: params.sessionId,
+      });
+      if (legacyPngPath) {
+        return {
+          host: resolved.listing.host,
+          session: resolved.session,
+          legacyPngPath,
+          notifyParticipantsSupported: false,
+        };
+      }
+      throw new Error(
+        formatBilingualInline(
+          `会话 ${params.sessionId} 的当前 host 还不支持通过 control API 重新导出二维码。请让已连接参与者在会话内运行 /session-qr，或使用当前版本重新建立会话。`,
+          `The current host for session ${params.sessionId} does not support re-exporting QR codes through the control API yet. Ask a connected participant to run /session-qr inside the session, or recreate the session with the current provider build.`,
+        ),
+      );
+    }
+    throw error;
+  }
 }

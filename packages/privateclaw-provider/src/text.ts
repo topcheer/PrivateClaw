@@ -52,6 +52,16 @@ export const PRIVATECLAW_CLI_SESSIONS_DESCRIPTION = formatBilingualInline(
   "List the active PrivateClaw sessions and their participants.",
 );
 
+export const PRIVATECLAW_CLI_SESSIONS_QR_DESCRIPTION = formatBilingualInline(
+  "重新打印指定会话的二维码，可选地打开浏览器预览并通知当前参与者。",
+  "Print the QR code for a selected session, optionally open a browser preview, and optionally notify the current participants.",
+);
+
+export const PRIVATECLAW_CLI_SESSIONS_KILL_DESCRIPTION = formatBilingualInline(
+  "终止指定的活动会话；对于旧的后台 daemon，会回退为终止整个 daemon host。",
+  "Terminate a selected active session; for older background daemons, this falls back to terminating the whole daemon host.",
+);
+
 export const PRIVATECLAW_CLI_KICK_DESCRIPTION = formatBilingualInline(
   "从群聊会话中移除指定参与者。",
   "Remove a participant from a group session.",
@@ -88,6 +98,11 @@ export const PRIVATECLAW_CLI_OPEN_OPTION_DESCRIPTION = formatBilingualInline(
   "Open a local browser preview after generating the QR code.",
 );
 
+export const PRIVATECLAW_CLI_NOTIFY_OPTION_DESCRIPTION = formatBilingualInline(
+  "同时把这个会话二维码通知给当前会话中的所有参与者。",
+  "Also notify every current participant in this session with the session QR code.",
+);
+
 export const PRIVATECLAW_CLI_FOREGROUND_OPTION_DESCRIPTION = formatBilingualInline(
   "保持当前命令在前台运行，直到会话结束或按 Ctrl+C；在支持的运行时里也可按 Ctrl+D 转入后台。",
   "Keep the current command in the foreground until the session ends or you press Ctrl+C; in supported runtimes you can also press Ctrl+D to move it into the background.",
@@ -112,6 +127,16 @@ export const PRIVATECLAW_WAITING_FOR_APP_WITH_BACKGROUND_MESSAGE = formatBilingu
   "等待 PrivateClaw App 连接，按 Ctrl+C 停止，按 Ctrl+D 转入后台。",
   "Waiting for the PrivateClaw app to connect. Press Ctrl+C to stop or Ctrl+D to move it into the background.",
 );
+
+export function buildPrivateClawBackgroundDaemonReminder(
+  commandPrefix: string,
+  sessionId: string,
+): string {
+  return formatBilingualInline(
+    `会话 ${sessionId} 现在由后台 daemon 托管；即使 OpenClaw 主进程重启，它也可能继续存活。可用 \`${commandPrefix} sessions\` 查看，必要时用 \`${commandPrefix} sessions kill ${sessionId}\` 终止。`,
+    `Session ${sessionId} is now owned by a background daemon and may survive OpenClaw main-process restarts. Use \`${commandPrefix} sessions\` to inspect it, and \`${commandPrefix} sessions kill ${sessionId}\` if you want to terminate it.`,
+  );
+}
 
 export const PRIVATECLAW_SESSION_ENDED_MESSAGE = formatBilingualInline(
   "PrivateClaw 会话已结束。",

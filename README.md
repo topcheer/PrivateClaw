@@ -174,6 +174,8 @@ If you want to start a session without another chat app, use the provider CLI th
 | --- | --- | --- |
 | `openclaw privateclaw pair` | Create a local PrivateClaw session and render the pairing QR in the terminal. | By default the command returns to the shell after printing while the provider keeps the session alive in a background daemon until expiry. Use `--relay <url>` to override the relay just for this session. |
 | `openclaw privateclaw sessions` | List locally managed active sessions. | The output includes the total count plus each session's `type`, `participants`, `state`, `expires`, `host`, and optional `label`. `host` is one of `plugin-service`, `pair-foreground`, or `pair-daemon`. |
+| `openclaw privateclaw sessions qr <sessionId>` | Reprint the QR for a currently managed session. | The QR is rendered in the terminal by default. Add `--open` to also launch the local browser preview, or `--notify` to broadcast the same QR back to the session's currently connected participants as an ephemeral assistant message. |
+| `openclaw privateclaw sessions kill <sessionId>` | Terminate a locally managed session. | On current hosts this closes just the selected session. If an already-running older foreground/background host does not support per-session shutdown yet, the command falls back to terminating that legacy host process. |
 | `openclaw privateclaw kick <sessionId> <appId>` | Remove one participant from a group session. | This closes that app's relay connection and blocks the same `appId` from rejoining the current session. |
 
 `pair` accepts these public flags:
@@ -193,8 +195,13 @@ For example, to start a local group session and keep it in the foreground until 
 ```bash
 openclaw privateclaw pair --group --foreground
 openclaw privateclaw pair --relay https://your-relay.example.com
+openclaw privateclaw sessions qr <sessionId> --notify
+openclaw privateclaw sessions kill <sessionId>
+privateclaw-provider sessions qr <sessionId> --open
 privateclaw-provider pair --relay https://your-relay.example.com --foreground
 ```
+
+Background daemon sessions can outlive OpenClaw main-process restarts. Use `openclaw privateclaw sessions` or `privateclaw-provider sessions` to inspect them, and `sessions kill <sessionId>` when you want to shut one down explicitly.
 
 ### 3. Run the app
 

@@ -341,6 +341,14 @@ test("privateclaw command can override the relay per invocation", async (t) => {
     sessions?.actionHandler,
     "plugin should register the privateclaw sessions subcommand",
   );
+  assert.ok(
+    sessions?.children.get("qr")?.actionHandler,
+    "plugin should register the privateclaw sessions qr subcommand",
+  );
+  assert.ok(
+    sessions?.children.get("kill")?.actionHandler,
+    "plugin should register the privateclaw sessions kill subcommand",
+  );
 
   const printed: string[] = [];
   const originalLog = console.log;

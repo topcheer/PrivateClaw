@@ -1,3 +1,4 @@
+import { pathToFileURL } from "node:url";
 import { EchoBridge } from "./bridges/echo-bridge.js";
 import {
   OpenClawAgentBridge,
@@ -9,8 +10,10 @@ import {
 } from "./invite-qr-files.js";
 import { loadAvailableOpenClawCommands } from "./openclaw-command-discovery.js";
 import {
+  openInBrowserPreview,
   parsePositiveIntegerFlag,
   printPairInviteBundle,
+  renderInviteBundleOutput,
   runPairSession,
 } from "./pair-session.js";
 import {
@@ -29,7 +32,11 @@ import { DEFAULT_SESSION_TTL_MS, PrivateClawProvider } from "./provider.js";
 import { DEFAULT_RELAY_BASE_URL } from "./relay-defaults.js";
 import { resolveRelayEndpoints } from "./relay-endpoints.js";
 import {
+  buildManagedSessionQrLegacyLines,
   buildManagedSessionsReportLines,
+  closeManagedSessionFromStateDir,
+  getManagedSessionQrBundleFromStateDir,
+  isManagedSessionQrLegacyResult,
   kickManagedParticipantFromStateDir,
   listManagedSessionsFromStateDir,
   PrivateClawSessionControlServer,
@@ -37,18 +44,22 @@ import {
   type PrivateClawControlHostKind,
 } from "./session-control.js";
 import {
+  buildPrivateClawBackgroundDaemonReminder,
   buildPrivateClawCommandErrorMessage,
   formatBilingualInline,
   PRIVATECLAW_CLI_FOREGROUND_OPTION_DESCRIPTION,
   PRIVATECLAW_CLI_GROUP_OPTION_DESCRIPTION,
   PRIVATECLAW_CLI_KICK_DESCRIPTION,
   PRIVATECLAW_CLI_LABEL_OPTION_DESCRIPTION,
+  PRIVATECLAW_CLI_NOTIFY_OPTION_DESCRIPTION,
   PRIVATECLAW_CLI_OPEN_OPTION_DESCRIPTION,
   PRIVATECLAW_CLI_PAIR_DESCRIPTION,
   PRIVATECLAW_CLI_PRINT_ONLY_OPTION_DESCRIPTION,
   PRIVATECLAW_CLI_RELAY_OPTION_DESCRIPTION,
   PRIVATECLAW_CLI_ROOT_DESCRIPTION,
   PRIVATECLAW_CLI_SESSIONS_DESCRIPTION,
+  PRIVATECLAW_CLI_SESSIONS_KILL_DESCRIPTION,
+  PRIVATECLAW_CLI_SESSIONS_QR_DESCRIPTION,
   PRIVATECLAW_CLI_TTL_OPTION_DESCRIPTION,
   PRIVATECLAW_COMMAND_DESCRIPTION,
   PRIVATECLAW_INVITE_URI_LABEL,
@@ -112,6 +123,11 @@ interface PrivateClawPairCliOptions {
   group?: boolean;
   open?: boolean;
   foreground?: boolean;
+}
+
+interface PrivateClawSessionsQrCliOptions {
+  open?: boolean;
+  notify?: boolean;
 }
 
 const DEFAULT_PROVIDER_LABEL = "PrivateClaw";
@@ -351,6 +367,20 @@ function normalizePairCliOptions(raw: unknown): PrivateClawPairCliOptions {
     ...(typeof options.foreground === "boolean"
       ? { foreground: options.foreground }
       : {}),
+  };
+}
+
+function normalizeSessionsQrCliOptions(
+  raw: unknown,
+): PrivateClawSessionsQrCliOptions {
+  if (!raw || typeof raw !== "object") {
+    return {};
+  }
+
+  const options = raw as Record<string, unknown>;
+  return {
+    ...(typeof options.open === "boolean" ? { open: options.open } : {}),
+    ...(typeof options.notify === "boolean" ? { notify: options.notify } : {}),
   };
 }
 
@@ -624,6 +654,46 @@ class PrivateClawPluginRuntime {
     throw new Error(`Unknown PrivateClaw session: ${sessionId}`);
   }
 
+  private async getLocalManagedSessionQrBundle(
+    sessionId: string,
+    params?: { notifyParticipants?: boolean },
+  ): Promise<PrivateClawInviteBundle> {
+    for (const entry of this.providerEntries.values()) {
+      const provider = entry.provider;
+      if (!provider) {
+        continue;
+      }
+      if (
+        provider
+          .listManagedSessions()
+          .some((session) => session.sessionId === sessionId)
+      ) {
+        return provider.getSessionQrBundle(sessionId, params);
+      }
+    }
+    throw new Error(`Unknown PrivateClaw session: ${sessionId}`);
+  }
+
+  private async closeLocalManagedSession(
+    sessionId: string,
+    reason = "operator_terminated",
+  ): Promise<PrivateClawManagedSession> {
+    for (const entry of this.providerEntries.values()) {
+      const provider = entry.provider;
+      if (!provider) {
+        continue;
+      }
+      if (
+        provider
+          .listManagedSessions()
+          .some((session) => session.sessionId === sessionId)
+      ) {
+        return provider.closeManagedSession(sessionId, reason);
+      }
+    }
+    throw new Error(`Unknown PrivateClaw session: ${sessionId}`);
+  }
+
   private async ensureControlServer(
     kind: PrivateClawControlHostKind,
   ): Promise<void> {
@@ -633,6 +703,10 @@ class PrivateClawPluginRuntime {
     this.controlServer = new PrivateClawSessionControlServer({
       provider: {
         listManagedSessions: () => this.listLocalManagedSessions(),
+        getSessionQrBundle: (sessionId, params) =>
+          this.getLocalManagedSessionQrBundle(sessionId, params),
+        closeManagedSession: (sessionId, reason) =>
+          this.closeLocalManagedSession(sessionId, reason),
         kickGroupParticipant: (sessionId, appId, reason) =>
           this.kickLocalManagedParticipant(sessionId, appId, reason),
       },
@@ -720,6 +794,12 @@ class PrivateClawPluginRuntime {
       ...(params?.openInBrowser === true ? { openInBrowser: true } : {}),
     });
     printPairInviteBundle(bundle, params?.writeLine ?? ((line) => console.log(line)));
+    (params?.writeLine ?? ((line: string) => console.log(line)))(
+      buildPrivateClawBackgroundDaemonReminder(
+        "openclaw privateclaw",
+        bundle.invite.sessionId,
+      ),
+    );
     return bundle;
   }
 
@@ -761,19 +841,19 @@ class PrivateClawPluginRuntime {
             handoffToBackground: async () => {
               provider.suppressReconnectsForHandoff();
               try {
-                await handoffForegroundPairToBackground({
-                   cliModuleUrl: new URL(
-                     import.meta.url.endsWith(".ts") ? "./cli.ts" : "./cli.js",
-                     import.meta.url,
+                  await handoffForegroundPairToBackground({
+                    cliModuleUrl: new URL(
+                      import.meta.url.endsWith(".ts") ? "./cli.ts" : "./cli.js",
+                      import.meta.url,
                     ).href,
                     stateDir: this.ensureStateDir(),
                     ...(handoffEnv ? { env: handoffEnv } : {}),
                     handoffState: provider.exportHandoffState(),
                   });
-                 return formatBilingualInline(
-                   "当前 PrivateClaw 会话已转入后台。可使用 `openclaw privateclaw sessions` 查看。",
-                   "The current PrivateClaw session is now running in the background. Use `openclaw privateclaw sessions` to inspect it.",
-                );
+                  return formatBilingualInline(
+                    "当前 PrivateClaw 会话已转入后台。可使用 `openclaw privateclaw sessions` 查看，必要时用 `openclaw privateclaw sessions kill <sessionId>` 终止。",
+                    "The current PrivateClaw session is now running in the background. Use `openclaw privateclaw sessions` to inspect it, and `openclaw privateclaw sessions kill <sessionId>` if you need to terminate it.",
+                  );
               } catch (error) {
                 provider.resumeReconnectsAfterHandoffFailure();
                 throw error;
@@ -796,6 +876,50 @@ class PrivateClawPluginRuntime {
       appId,
       reason: "participant_removed",
     });
+  }
+
+  async closeManagedSession(sessionId: string) {
+    return closeManagedSessionFromStateDir({
+      stateDir: this.ensureStateDir(),
+      sessionId,
+      reason: "operator_terminated",
+    });
+  }
+
+  async printManagedSessionQr(
+    sessionId: string,
+    params?: {
+      notifyParticipants?: boolean;
+      openInBrowser?: boolean;
+      writeLine?: (line: string) => void;
+    },
+  ) {
+    const result = await getManagedSessionQrBundleFromStateDir({
+      stateDir: this.ensureStateDir(),
+      sessionId,
+      ...(params?.notifyParticipants ? { notifyParticipants: true } : {}),
+    });
+    if (isManagedSessionQrLegacyResult(result)) {
+      for (const line of buildManagedSessionQrLegacyLines({
+        result,
+        ...(params?.notifyParticipants ? { notifyParticipants: true } : {}),
+      })) {
+        (params?.writeLine ?? ((line: string) => console.log(line)))(line);
+      }
+      if (params?.openInBrowser) {
+        await openInBrowserPreview(pathToFileURL(result.legacyPngPath).href);
+      }
+      return result;
+    }
+    const bundle = await renderInviteBundleOutput(result.bundle, {
+      qrMediaDir: this.getMediaDir(),
+      ...(params?.openInBrowser ? { openInBrowser: true } : {}),
+      ...(params?.writeLine ? { writeLine: params.writeLine } : {}),
+    });
+    return {
+      ...result,
+      bundle,
+    };
   }
 
   async dispose(): Promise<void> {
@@ -917,13 +1041,87 @@ function createPluginDefinition(
               await runtime.runBackgroundPairSession(pairParams);
             });
 
-          privateclaw
+          const sessions = privateclaw
             .command("sessions")
             .description(PRIVATECLAW_CLI_SESSIONS_DESCRIPTION)
             .action(async () => {
               const listings = await runtime.listManagedSessions();
               for (const line of buildManagedSessionsReportLines(listings)) {
                 console.log(line);
+              }
+            });
+
+          sessions
+            .command("qr")
+            .description(PRIVATECLAW_CLI_SESSIONS_QR_DESCRIPTION)
+            .argument("<sessionId>")
+            .option("--open", PRIVATECLAW_CLI_OPEN_OPTION_DESCRIPTION)
+            .option("--notify", PRIVATECLAW_CLI_NOTIFY_OPTION_DESCRIPTION)
+            .action(async (sessionIdRaw: unknown, rawOptions: unknown) => {
+              try {
+                const sessionId = readString(sessionIdRaw);
+                if (!sessionId) {
+                  throw new Error(
+                    formatBilingualInline(
+                      "`sessions qr` 需要提供 sessionId。",
+                      "`sessions qr` requires a sessionId.",
+                    ),
+                  );
+                }
+                const options = normalizeSessionsQrCliOptions(rawOptions);
+                const result = await runtime.printManagedSessionQr(sessionId, {
+                  ...(options.notify ? { notifyParticipants: true } : {}),
+                  ...(options.open ? { openInBrowser: true } : {}),
+                  writeLine: (line: string) => {
+                    console.log(line);
+                  },
+                });
+                if (options.notify && !isManagedSessionQrLegacyResult(result)) {
+                  console.log(
+                    formatBilingualInline(
+                      `已向会话 ${result.session.sessionId} 中的 ${result.session.participantCount} 位参与者推送二维码。`,
+                      `Sent the QR code to ${result.session.participantCount} participant(s) in session ${result.session.sessionId}.`,
+                    ),
+                  );
+                } else if (options.notify && isManagedSessionQrLegacyResult(result)) {
+                  process.exitCode = 1;
+                }
+              } catch (error) {
+                console.error(formatCommandError(error));
+                process.exitCode = 1;
+              }
+            });
+
+          sessions
+            .command("kill")
+            .description(PRIVATECLAW_CLI_SESSIONS_KILL_DESCRIPTION)
+            .argument("<sessionId>")
+            .action(async (sessionIdRaw: unknown) => {
+              try {
+                const sessionId = readString(sessionIdRaw);
+                if (!sessionId) {
+                  throw new Error(
+                    formatBilingualInline(
+                      "`sessions kill` 需要提供 sessionId。",
+                      "`sessions kill` requires a sessionId.",
+                    ),
+                  );
+                }
+                const result = await runtime.closeManagedSession(sessionId);
+                console.log(
+                  result.terminatedHost
+                    ? formatBilingualInline(
+                        `会话 ${result.session.sessionId} 已通过终止 legacy host ${result.host.kind}#${result.host.pid} 停止。`,
+                        `Session ${result.session.sessionId} was stopped by terminating the legacy host ${result.host.kind}#${result.host.pid}.`,
+                      )
+                    : formatBilingualInline(
+                        `会话 ${result.session.sessionId} 已终止。`,
+                        `Session ${result.session.sessionId} has been terminated.`,
+                      ),
+                );
+              } catch (error) {
+                console.error(formatCommandError(error));
+                process.exitCode = 1;
               }
             });
 

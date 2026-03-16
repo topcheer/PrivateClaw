@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -9,27 +10,38 @@ import { OpenAICompatibleBridge } from "./bridges/openai-compatible-bridge.js";
 import { WebhookBridge } from "./bridges/webhook-bridge.js";
 import { loadAvailableOpenClawCommands } from "./openclaw-command-discovery.js";
 import {
+  openInBrowserPreview,
   parsePositiveIntegerFlag,
   printPairInviteBundle,
+  renderInviteBundleOutput,
   runPairSession,
 } from "./pair-session.js";
 import {
   handoffForegroundPairToBackground,
   spawnBackgroundPairDaemon,
 } from "./pair-daemon.js";
+import { resolvePrivateClawMediaDir } from "./invite-qr-files.js";
 import { DEFAULT_SESSION_TTL_MS, PrivateClawProvider } from "./provider.js";
 import { DEFAULT_RELAY_BASE_URL } from "./relay-defaults.js";
 import { resolveRelayEndpoints } from "./relay-endpoints.js";
 import {
+  buildManagedSessionQrLegacyLines,
   buildManagedSessionsReportLines,
+  closeManagedSessionFromStateDir,
+  getManagedSessionQrBundleFromStateDir,
+  isManagedSessionQrLegacyResult,
   kickManagedParticipantFromStateDir,
   listManagedSessionsFromStateDir,
   PrivateClawSessionControlServer,
   resolvePrivateClawStateDir,
 } from "./session-control.js";
 import {
+  buildPrivateClawBackgroundDaemonReminder,
   formatBilingualInline,
+  PRIVATECLAW_CLI_NOTIFY_OPTION_DESCRIPTION,
   PRIVATECLAW_CLI_RELAY_OPTION_DESCRIPTION,
+  PRIVATECLAW_CLI_SESSIONS_KILL_DESCRIPTION,
+  PRIVATECLAW_CLI_SESSIONS_QR_DESCRIPTION,
 } from "./text.js";
 import type { PrivateClawProviderHandoffState } from "./types.js";
 
@@ -244,8 +256,13 @@ function printHelp(): void {
 
 pair [--ttl-ms <ms>] [--label <label>] [--relay <url>] [--group] [--print-only] [--open] [--foreground]
 sessions
+sessions qr <sessionId> [--open] [--notify]
+sessions kill <sessionId>
 kick <sessionId> <appId>`);
   console.log(`\n--relay <url>: ${PRIVATECLAW_CLI_RELAY_OPTION_DESCRIPTION}`);
+  console.log(`--notify: ${PRIVATECLAW_CLI_NOTIFY_OPTION_DESCRIPTION}`);
+  console.log(`sessions qr: ${PRIVATECLAW_CLI_SESSIONS_QR_DESCRIPTION}`);
+  console.log(`sessions kill: ${PRIVATECLAW_CLI_SESSIONS_KILL_DESCRIPTION}`);
 }
 
 async function runPairCommand(args: string[]): Promise<void> {
@@ -391,8 +408,8 @@ async function runPairCommand(args: string[]): Promise<void> {
                     handoffState: provider.exportHandoffState(),
                   });
                   return formatBilingualInline(
-                    "当前 PrivateClaw 会话已转入后台。可使用 `privateclaw-provider sessions` 查看。",
-                    "The current PrivateClaw session is now running in the background. Use `privateclaw-provider sessions` to inspect it.",
+                    "当前 PrivateClaw 会话已转入后台。可使用 `privateclaw-provider sessions` 查看，必要时用 `privateclaw-provider sessions kill <sessionId>` 终止。",
+                    "The current PrivateClaw session is now running in the background. Use `privateclaw-provider sessions` to inspect it, and `privateclaw-provider sessions kill <sessionId>` if you need to terminate it.",
                   );
                 } catch (error) {
                   provider.resumeReconnectsAfterHandoffFailure();
@@ -424,9 +441,23 @@ async function runPairCommand(args: string[]): Promise<void> {
   printPairInviteBundle(bundle, (line) => {
     console.log(line);
   });
+  console.log(
+    buildPrivateClawBackgroundDaemonReminder(
+      "privateclaw-provider",
+      bundle.invite.sessionId,
+    ),
+  );
 }
 
 async function runSessionsCommand(args: string[]): Promise<void> {
+  if (args[0] === "qr") {
+    await runSessionsQrCommand(args.slice(1));
+    return;
+  }
+  if (args[0] === "kill") {
+    await runSessionsKillCommand(args.slice(1));
+    return;
+  }
   const parsed = parseArgs({
     args,
     allowPositionals: true,
@@ -442,6 +473,107 @@ async function runSessionsCommand(args: string[]): Promise<void> {
   const listings = await listManagedSessionsFromStateDir(resolvePrivateClawStateDir());
   for (const line of buildManagedSessionsReportLines(listings)) {
     console.log(line);
+  }
+}
+
+async function runSessionsKillCommand(args: string[]): Promise<void> {
+  const parsed = parseArgs({
+    args,
+    allowPositionals: true,
+    options: {
+      help: { type: "boolean", short: "h" },
+    },
+  });
+  if (parsed.values.help) {
+    printHelp();
+    return;
+  }
+  const sessionId = parsed.positionals[0];
+  if (!sessionId) {
+    throw new Error(
+      formatBilingualInline(
+        "`sessions kill` 需要提供 sessionId。",
+        "`sessions kill` requires a sessionId.",
+      ),
+    );
+  }
+
+  const result = await closeManagedSessionFromStateDir({
+    stateDir: resolvePrivateClawStateDir(),
+    sessionId,
+    reason: "operator_terminated",
+  });
+  console.log(
+    result.terminatedHost
+      ? formatBilingualInline(
+          `会话 ${result.session.sessionId} 已通过终止 legacy host ${result.host.kind}#${result.host.pid} 停止。`,
+          `Session ${result.session.sessionId} was stopped by terminating the legacy host ${result.host.kind}#${result.host.pid}.`,
+        )
+      : formatBilingualInline(
+          `会话 ${result.session.sessionId} 已终止。`,
+          `Session ${result.session.sessionId} has been terminated.`,
+        ),
+  );
+}
+
+async function runSessionsQrCommand(args: string[]): Promise<void> {
+  const parsed = parseArgs({
+    args,
+    allowPositionals: true,
+    options: {
+      open: { type: "boolean", default: parseBooleanFlag(process.env.PRIVATECLAW_OPEN_QR) },
+      notify: { type: "boolean", default: false },
+      help: { type: "boolean", short: "h" },
+    },
+  });
+  if (parsed.values.help) {
+    printHelp();
+    return;
+  }
+  const sessionId = parsed.positionals[0];
+  if (!sessionId) {
+    throw new Error(
+      formatBilingualInline(
+        "`sessions qr` 需要提供 sessionId。",
+        "`sessions qr` requires a sessionId.",
+      ),
+    );
+  }
+
+  const result = await getManagedSessionQrBundleFromStateDir({
+    stateDir: resolvePrivateClawStateDir(),
+    sessionId,
+    ...(parsed.values.notify ? { notifyParticipants: true } : {}),
+  });
+  if (isManagedSessionQrLegacyResult(result)) {
+    for (const line of buildManagedSessionQrLegacyLines({
+      result,
+      ...(parsed.values.notify ? { notifyParticipants: true } : {}),
+    })) {
+      console.log(line);
+    }
+    if (parsed.values.open) {
+      await openInBrowserPreview(pathToFileURL(result.legacyPngPath).href);
+    }
+    if (parsed.values.notify) {
+      process.exitCode = 1;
+    }
+    return;
+  }
+  await renderInviteBundleOutput(result.bundle, {
+    qrMediaDir: resolvePrivateClawMediaDir(),
+    ...(parsed.values.open ? { openInBrowser: true } : {}),
+    writeLine: (line: string) => {
+      console.log(line);
+    },
+  });
+  if (parsed.values.notify) {
+    console.log(
+      formatBilingualInline(
+        `已向会话 ${result.session.sessionId} 中的 ${result.session.participantCount} 位参与者推送二维码。`,
+        `Sent the QR code to ${result.session.participantCount} participant(s) in session ${result.session.sessionId}.`,
+      ),
+    );
   }
 }
 
@@ -497,14 +629,19 @@ const [command, ...rest] =
     ? ["pair", ...argv]
     : argv;
 
-if (command === "pair") {
-  await runPairCommand(rest);
-} else if (command === "sessions") {
-  await runSessionsCommand(rest);
-} else if (command === "kick") {
-  await runKickCommand(rest);
-} else if (command === "help" || command === "--help" || command === "-h") {
-  printHelp();
-} else {
-  throw new Error(`Unsupported privateclaw-provider command: ${command}`);
+try {
+  if (command === "pair") {
+    await runPairCommand(rest);
+  } else if (command === "sessions") {
+    await runSessionsCommand(rest);
+  } else if (command === "kick") {
+    await runKickCommand(rest);
+  } else if (command === "help" || command === "--help" || command === "-h") {
+    printHelp();
+  } else {
+    throw new Error(`Unsupported privateclaw-provider command: ${command}`);
+  }
+} catch (error) {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
 }

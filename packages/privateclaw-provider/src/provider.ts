@@ -536,6 +536,36 @@ export class PrivateClawProvider {
     return [...this.sessions.values()].map(toManagedSessionSnapshot);
   }
 
+  async getSessionQrBundle(
+    sessionId: string,
+    params?: { notifyParticipants?: boolean },
+  ): Promise<PrivateClawInviteBundle> {
+    const session = this.requireSession(sessionId);
+    const bundle = await this.buildInviteBundleForInvite(session.invite);
+
+    if (params?.notifyParticipants) {
+      const qrAttachment = await this.buildSessionQrAttachmentFromBundle(bundle);
+      await this.sendAssistantMessage(sessionId, {
+        text: buildSessionQrMessage(session),
+        attachments: [qrAttachment],
+        storeHistory: false,
+      });
+    }
+
+    return bundle;
+  }
+
+  async closeManagedSession(
+    sessionId: string,
+    reason = "operator_terminated",
+  ): Promise<PrivateClawManagedSession> {
+    const session = this.requireSession(sessionId);
+    const snapshot = toManagedSessionSnapshot(session);
+    await this.relayClient.closeSession(sessionId, reason);
+    this.deleteSession(sessionId);
+    return snapshot;
+  }
+
   exportHandoffState(): PrivateClawProviderHandoffState {
     return {
       providerId: this.relayClient.getProviderId(),
@@ -1612,8 +1642,13 @@ export class PrivateClawProvider {
   }
 
   private async buildSessionQrAttachment(sessionId: string): Promise<PrivateClawAttachment> {
-    const session = this.requireSession(sessionId);
-    const bundle = await this.buildInviteBundleForInvite(session.invite);
+    const bundle = await this.getSessionQrBundle(sessionId);
+    return this.buildSessionQrAttachmentFromBundle(bundle);
+  }
+
+  private async buildSessionQrAttachmentFromBundle(
+    bundle: PrivateClawInviteBundle,
+  ): Promise<PrivateClawAttachment> {
     const pngBuffer = await QRCode.toBuffer(bundle.inviteUri, {
       type: "png",
       errorCorrectionLevel: PRIVATECLAW_QR_ERROR_CORRECTION_LEVEL,

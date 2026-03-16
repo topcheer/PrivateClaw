@@ -123,6 +123,35 @@ export function printPairInviteBundle(
   writeLine(bundle.qrTerminal);
 }
 
+export async function renderInviteBundleOutput(
+  bundle: PrivateClawInviteBundle,
+  params?: {
+    qrMediaDir?: string;
+    openInBrowser?: boolean;
+    writeLine?: (line: string) => void;
+  },
+): Promise<PrivateClawInviteBundle> {
+  const mediaDir = params?.qrMediaDir ?? resolvePrivateClawMediaDir();
+  const qrPng = await writeInviteQrPng(bundle, mediaDir);
+  const renderedBundle: PrivateClawInviteBundle = {
+    ...bundle,
+    qrPngPath: qrPng.pngPath,
+  };
+
+  printPairInviteBundle(renderedBundle, params?.writeLine ?? ((line) => console.log(line)));
+
+  if (params?.openInBrowser) {
+    const preview = await writeInviteQrPreviewHtml(
+      renderedBundle,
+      mediaDir,
+      qrPng.pngPath,
+    );
+    await openInBrowserPreview(preview.previewFileUrl);
+  }
+
+  return renderedBundle;
+}
+
 export async function runPairSession({
   provider,
   ttlMs,
@@ -136,32 +165,18 @@ export async function runPairSession({
     console.log(line);
   },
   handoffToBackground,
-}: PairSessionOptions): Promise<PrivateClawInviteBundle> {
+  }: PairSessionOptions): Promise<PrivateClawInviteBundle> {
   try {
     const inviteBundle = await provider.createInviteBundle({
       ...(typeof ttlMs === "number" ? { ttlMs } : {}),
       ...(label ? { label: label.trim() } : {}),
       ...(groupMode ? { groupMode: true } : {}),
     });
-    const qrPng = await writeInviteQrPng(
-      inviteBundle,
-      qrMediaDir ?? resolvePrivateClawMediaDir(),
-    );
-    const bundle: PrivateClawInviteBundle = {
-      ...inviteBundle,
-      qrPngPath: qrPng.pngPath,
-    };
-
-    printPairInviteBundle(bundle, writeLine);
-
-    if (openInBrowser) {
-      const preview = await writeInviteQrPreviewHtml(
-        bundle,
-        qrMediaDir ?? resolvePrivateClawMediaDir(),
-        qrPng.pngPath,
-      );
-      await openInBrowserPreview(preview.previewFileUrl);
-    }
+    const bundle = await renderInviteBundleOutput(inviteBundle, {
+      ...(qrMediaDir ? { qrMediaDir } : {}),
+      ...(openInBrowser ? { openInBrowser: true } : {}),
+      writeLine,
+    });
 
     if (printOnly) {
       await provider.dispose();
@@ -221,7 +236,7 @@ export async function runPairSession({
   }
 }
 
-async function openInBrowserPreview(target: string): Promise<void> {
+export async function openInBrowserPreview(target: string): Promise<void> {
   const command =
     process.platform === "win32"
       ? {

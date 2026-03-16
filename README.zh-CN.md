@@ -153,6 +153,8 @@ openclaw channels add --channel telegram --token <token>
 | --- | --- | --- |
 | `openclaw privateclaw pair` | 创建一个本地 PrivateClaw 会话，并在终端里渲染配对二维码。 | 默认打印完二维码后就返回 shell，同时 provider 会在后台 daemon 中把会话维持到过期。需要临时覆盖 relay 时，可直接追加 `--relay <url>`。 |
 | `openclaw privateclaw sessions` | 列出当前由本地管理的活动会话。 | 输出包含总会话数，以及每个会话的 `type`、`participants`、`state`、`expires`、`host` 和可选的 `label`。`host` 目前可能是 `plugin-service`、`pair-foreground` 或 `pair-daemon`。 |
+| `openclaw privateclaw sessions qr <sessionId>` | 重新打印某个当前活动会话的二维码。 | 默认会直接在终端里渲染二维码；加上 `--open` 会同时打开本地浏览器预览页；加上 `--notify` 会把同一张二维码作为临时 assistant 消息发回这个会话当前在线的所有参与者。 |
+| `openclaw privateclaw sessions kill <sessionId>` | 终止一个当前由本地管理的会话。 | 在当前版本 host 上，它会只关闭目标会话；如果会话仍由较旧的前台/后台 host 托管、还不支持单会话关闭，则会回退为终止那个 legacy host 进程。 |
 | `openclaw privateclaw kick <sessionId> <appId>` | 从群聊会话中移除一个参与者。 | 这会关闭该 app 当前的 relay 连接，并阻止同一个 `appId` 在当前会话中重新加入。 |
 
 `pair` 支持这些公开参数：
@@ -172,8 +174,13 @@ openclaw channels add --channel telegram --token <token>
 ```bash
 openclaw privateclaw pair --group --foreground
 openclaw privateclaw pair --relay https://your-relay.example.com
+openclaw privateclaw sessions qr <sessionId> --notify
+openclaw privateclaw sessions kill <sessionId>
+privateclaw-provider sessions qr <sessionId> --open
 privateclaw-provider pair --relay https://your-relay.example.com --foreground
 ```
+
+后台 daemon 会话在 OpenClaw 主进程重启后仍可能继续存活。可以用 `openclaw privateclaw sessions` 或 `privateclaw-provider sessions` 查看它们，需要手动结束时再用 `sessions kill <sessionId>`。
 
 ### 3. 运行 App
 
@@ -186,7 +193,7 @@ flutter run
 会话真正连上之后，App 的会话面板还会显示当前连接到的 relay 服务器，方便用户确认自己到底接入了哪个 relay 节点。
 如果扫码或粘贴的是“非默认 relay”的邀请，App 现在会先弹出确认警告，再决定是否继续连接。
 
-如果二维码来自 `/privateclaw group` 或 `openclaw privateclaw pair --group`，App 会显示参与者昵称，并把自己的稳定身份一并带入该群聊会话。
+如果二维码来自 `/privateclaw group` 或 `openclaw privateclaw pair --group`，App 会显示参与者昵称，并把自己的稳定身份一并带入该群聊会话。会话进行中时，参与者仍然可以使用 `/session-qr` 重新分享当前二维码；本地操作者也可以用 `openclaw privateclaw sessions qr <sessionId>` 或 `privateclaw-provider sessions qr <sessionId>` 在终端重新打印，必要时再配合 `--notify` 发回群里。
 
 在模拟器、桌面或剪贴板调试场景中，也可以直接粘贴原始 `privateclaw://connect?...` 链接，或者粘贴完整的 `邀请链接 / Invite URI: ...` 文本。
 

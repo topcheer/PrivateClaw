@@ -2,7 +2,7 @@
   "id": "privateclaw",
   "name": "PrivateClaw",
   "description": "Ephemeral end-to-end encrypted private session plugin for OpenClaw.",
-  "version": "0.1.12",
+  "version": "0.1.14",
   "configSchema": {
     "type": "object",
     "additionalProperties": false,

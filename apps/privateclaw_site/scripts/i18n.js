@@ -15,12 +15,12 @@ const BUNDLES = {
       heroTitle: "Bring your people into one private OpenClaw room.",
       heroBody:
         "PrivateClaw turns one shared OpenClaw into a beautiful private room for the people you actually trust. Scan once, join instantly, and let the relay carry ciphertext only.",
-      heroPrimaryCta: "Open mobile web chat",
+      heroPrimaryCta: "Open web chat",
       heroSecondaryCta: "Join the beta group",
       heroDesktopHint:
-        "On phones, the mobile web chat button appears here so you can jump in right away.",
+        "Web chat works on desktop and phone. On desktop, pasting an invite or selecting a saved QR image is usually the fastest way in.",
       heroMobileHint:
-        "You are on a mobile device, so you can open the PrivateClaw web chat right now.",
+        "Web chat works here too, so you can open the PrivateClaw room right away from this phone.",
       appComingSoon: "iOS public beta + Android closed alpha",
       iosComingSoon: "Join iOS public beta",
       androidComingSoon: "Join Android closed alpha",
@@ -163,11 +163,11 @@ const BUNDLES = {
     },
     chat: {
       documentTitle: "PrivateClaw Web Chat",
-      headerTagline: "Mobile web chat",
+      headerTagline: "Web chat",
       disconnectButton: "Disconnect",
-      desktopWarningTitle: "Best on phones",
-      desktopWarningBody:
-        "This web client is designed for mobile access. It still works here, but the phone experience is the one we are optimizing first.",
+      desktopNoteTitle: "Desktop works too",
+      desktopNoteBody:
+        "This room is fully usable on larger screens as well. On desktop, pasting the invite or choosing a saved QR image is often the quickest way to join.",
       connectKicker: "Secure pairing",
       connectTitle: "Paste your PrivateClaw invite.",
       connectBody:
@@ -296,10 +296,10 @@ const BUNDLES = {
       heroTitle: "把你信任的人带进同一个私密 OpenClaw 房间。",
       heroBody:
         "PrivateClaw 把一套共享的 OpenClaw 变成只属于你们的小房间。扫一次码就能进入，中继只负责转发密文，不读取聊天内容。",
-      heroPrimaryCta: "打开移动网页聊天",
+      heroPrimaryCta: "打开网页聊天",
       heroSecondaryCta: "加入内测群组",
-      heroDesktopHint: "在手机上访问时，这里会直接显示移动网页聊天入口。",
-      heroMobileHint: "你正在使用移动设备，可以立即打开 PrivateClaw 网页聊天。",
+      heroDesktopHint: "网页聊天支持桌面和手机访问。在桌面端，直接粘贴邀请或选择一张二维码截图通常是最快的进入方式。",
+      heroMobileHint: "网页聊天在手机上也完全可用，你现在就可以直接打开 PrivateClaw 房间。",
       appComingSoon: "iOS 公开测试 + Android 封闭 alpha",
       iosComingSoon: "加入 iOS 公开测试",
       androidComingSoon: "加入 Android 封闭 alpha",
@@ -441,10 +441,10 @@ const BUNDLES = {
     },
     chat: {
       documentTitle: "PrivateClaw 网页聊天",
-      headerTagline: "移动网页聊天",
+      headerTagline: "网页聊天",
       disconnectButton: "断开连接",
-      desktopWarningTitle: "更适合手机使用",
-      desktopWarningBody: "这个网页客户端主要为移动设备设计。桌面端也能打开，但我们优先优化手机体验。",
+      desktopNoteTitle: "桌面端也可以直接使用",
+      desktopNoteBody: "这个房间在大屏上同样可用。在桌面端，直接粘贴邀请，或者选择一张已经保存的二维码图片，通常是最快的加入方式。",
       connectKicker: "安全配对",
       connectTitle: "粘贴你的 PrivateClaw 邀请。",
       connectBody: "把 OpenClaw 发来的邀请文本、二维码 payload，或者包含邀请链接的整段消息粘贴进来即可。",
@@ -562,10 +562,10 @@ const BUNDLES = {
       heroTitle: "把你信任的人帶進同一個私密 OpenClaw 房間。",
       heroBody:
         "PrivateClaw 把一套共享的 OpenClaw 變成只屬於你們的小房間。掃一次碼就能進入，中繼只負責轉送密文，不讀取聊天內容。",
-      heroPrimaryCta: "開啟行動網頁聊天",
+      heroPrimaryCta: "開啟網頁聊天",
       heroSecondaryCta: "加入內測群組",
-      heroDesktopHint: "在手機上打開時，這裡會直接顯示行動網頁聊天入口。",
-      heroMobileHint: "你正在使用行動裝置，可以立即開啟 PrivateClaw 網頁聊天。",
+      heroDesktopHint: "網頁聊天支援桌面與手機。在桌面端，直接貼上邀請，或選擇一張已儲存的 QR 圖片，通常是最快的進入方式。",
+      heroMobileHint: "網頁聊天在手機上也完全可用，你現在就可以直接開啟 PrivateClaw 房間。",
       appComingSoon: "iOS 公開測試 + Android 封閉 alpha",
       iosComingSoon: "加入 iOS 公開測試",
       androidComingSoon: "加入 Android 封閉 alpha",
@@ -707,10 +707,10 @@ const BUNDLES = {
     },
     chat: {
       documentTitle: "PrivateClaw 網頁聊天",
-      headerTagline: "行動網頁聊天",
+      headerTagline: "網頁聊天",
       disconnectButton: "中斷連線",
-      desktopWarningTitle: "更適合手機使用",
-      desktopWarningBody: "這個網頁客戶端主要為行動裝置設計。桌面端也能打開，但我們優先優化手機體驗。",
+      desktopNoteTitle: "桌面端也可以直接使用",
+      desktopNoteBody: "這個房間在大螢幕上一樣可用。在桌面端，直接貼上邀請，或選擇一張已經存好的 QR 圖片，通常是最快的加入方式。",
       connectKicker: "安全配對",
       connectTitle: "貼上你的 PrivateClaw 邀請。",
       connectBody: "把 OpenClaw 發來的邀請文字、QR payload，或包含邀請連結的整段訊息貼進來即可。",

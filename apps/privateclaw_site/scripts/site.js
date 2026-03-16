@@ -1,7 +1,7 @@
-import { applyTranslations, bindLocaleSelect, getValue, onLocaleChange, t } from "./i18n.js?v=20260316-2";
+import { applyTranslations, bindLocaleSelect, getValue, onLocaleChange, t } from "./i18n.js?v=20260316-3";
 
 const localeSelect = document.getElementById("locale-select");
-const mobileWebEntry = document.getElementById("mobile-web-entry");
+const webEntry = document.getElementById("web-entry");
 const deviceHintCopy = document.getElementById("device-hint-copy");
 const heroStats = document.getElementById("hero-stats");
 const previewChat = document.getElementById("preview-chat");
@@ -135,17 +135,17 @@ function renderSetupSteps() {
   }
 }
 
-function renderMobileEntry() {
+function renderWebEntry() {
   const mobile = isMobileDevice();
-  mobileWebEntry.hidden = !mobile;
-  mobileWebEntry.classList.toggle("hidden", !mobile);
+  webEntry.hidden = false;
+  webEntry.classList.remove("hidden");
   deviceHintCopy.textContent = t(mobile ? "site.heroMobileHint" : "site.heroDesktopHint");
 }
 
 function renderPage() {
   applyTranslations();
   document.title = t("site.documentTitle");
-  renderMobileEntry();
+  renderWebEntry();
   renderStats();
   renderPreview();
   renderCards(featureGrid, getValue("site.features"), "feature-card");
@@ -153,6 +153,6 @@ function renderPage() {
   renderSetupSteps();
 }
 
-window.addEventListener("resize", renderMobileEntry);
+window.addEventListener("resize", renderWebEntry);
 onLocaleChange(renderPage);
 renderPage();

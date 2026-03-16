@@ -1,4 +1,4 @@
-import { applyTranslations, bindLocaleSelect, onLocaleChange, t } from "./i18n.js?v=20260316-2";
+import { applyTranslations, bindLocaleSelect, onLocaleChange, t } from "./i18n.js?v=20260316-3";
 import {
   createIdentity,
   decodeBase64,
@@ -17,7 +17,7 @@ const elements = {
   localeSelect: document.getElementById("chat-locale-select"),
   statusPill: document.getElementById("status-pill"),
   disconnectButton: document.getElementById("disconnect-button"),
-  desktopWarning: document.getElementById("desktop-warning"),
+  desktopNote: document.getElementById("desktop-note"),
   toggleInviteButton: document.getElementById("toggle-invite-button"),
   statusCopy: document.getElementById("status-copy"),
   connectForm: document.getElementById("connect-form"),
@@ -939,10 +939,10 @@ function renderStatus() {
   elements.statusCopy.textContent = state.statusCopy || t("chat.statusIdle");
 }
 
-function renderDesktopWarning() {
+function renderDesktopNote() {
   const showWarning = !isMobileDevice();
-  elements.desktopWarning.classList.toggle("hidden", !showWarning);
-  elements.desktopWarning.hidden = !showWarning;
+  elements.desktopNote.classList.toggle("hidden", !showWarning);
+  elements.desktopNote.hidden = !showWarning;
 }
 
 function renderPage() {
@@ -959,7 +959,7 @@ function renderPage() {
     updateScannerStatus(t("chat.scannerStatusStarting"));
   }
   renderStatus();
-  renderDesktopWarning();
+  renderDesktopNote();
   renderSessionMeta();
   renderParticipants();
   renderMessages();

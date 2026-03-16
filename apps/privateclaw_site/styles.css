@@ -374,7 +374,7 @@ img {
 .community-card p,
 .preview-body,
 .field-help,
-.desktop-warning p,
+.desktop-note p,
 .empty-state p,
 .status-panel-copy,
 .footer-bar p {
@@ -405,7 +405,7 @@ img {
 .draft-chip,
 .command-item,
 .participant-pill,
-.desktop-warning,
+.desktop-note,
 .sheet-card,
 .empty-state,
 .community-card {
@@ -758,8 +758,8 @@ img {
 
 .chat-main {
   display: grid;
-  grid-template-columns: minmax(320px, 360px) minmax(0, 1fr);
-  gap: 16px;
+  grid-template-columns: minmax(340px, 388px) minmax(0, 1fr);
+  gap: 20px;
   align-items: start;
   padding-top: 16px;
 }
@@ -767,6 +767,12 @@ img {
 .session-sidebar,
 .chat-card {
   padding: 18px;
+}
+
+.chat-card {
+  display: flex;
+  flex-direction: column;
+  min-height: clamp(620px, 72vh, 860px);
 }
 
 .session-sidebar {
@@ -784,6 +790,18 @@ img {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+}
+
+.desktop-note {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  background: linear-gradient(180deg, rgba(62, 217, 255, 0.1), rgba(255, 255, 255, 0.04));
+}
+
+.desktop-note strong {
+  font-size: 0.98rem;
 }
 
 .status-panel {
@@ -920,7 +938,7 @@ a:focus {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-width: min(78%, 480px);
+  max-width: min(78%, 620px);
 }
 
 .message-shell.assistant {
@@ -937,7 +955,7 @@ a:focus {
 }
 
 .message-shell.system {
-  max-width: min(92%, 640px);
+  max-width: min(94%, 760px);
   align-self: center;
 }
 
@@ -1282,6 +1300,10 @@ a:focus {
 
   .session-sidebar {
     position: static;
+  }
+
+  .chat-card {
+    min-height: auto;
   }
 
   .hero-stats {

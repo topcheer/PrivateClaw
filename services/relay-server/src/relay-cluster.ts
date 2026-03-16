@@ -18,6 +18,14 @@ interface RelayBusSessionClosedMessage {
   reason: string;
 }
 
+interface RelayBusAppClosedMessage {
+  kind: "app_closed";
+  originNodeId: string;
+  sessionId: string;
+  appId: string;
+  reason: string;
+}
+
 interface RelayBusAppReconnectMessage {
   kind: "app_reconnected";
   originNodeId: string;
@@ -35,6 +43,7 @@ interface RelayBusProviderReconnectMessage {
 
 type RelayBusSessionControlMessage =
   | RelayBusSessionClosedMessage
+  | RelayBusAppClosedMessage
   | RelayBusAppReconnectMessage;
 
 function appBroadcastChannel(sessionId: string): string {
@@ -128,6 +137,11 @@ export interface RelayClusterCallbacks {
     sessionId: string,
     reason: string,
   ): Promise<void> | void;
+  onRemoteAppClosed(
+    sessionId: string,
+    appId: string,
+    reason: string,
+  ): Promise<void> | void;
   onRemoteAppReconnected(
     sessionId: string,
     appId: string,
@@ -160,6 +174,7 @@ export interface RelayClusterClient {
     envelope: EncryptedEnvelope,
   ): Promise<number>;
   publishSessionClosed(sessionId: string, reason: string): Promise<void>;
+  publishAppClosed(sessionId: string, appId: string, reason: string): Promise<void>;
   publishAppReconnected(
     sessionId: string,
     appId: string,
@@ -169,6 +184,7 @@ export interface RelayClusterClient {
     providerId: string,
     targetNodeId: string,
   ): Promise<void>;
+  hasProviderSessionSubscriber(sessionId: string): Promise<boolean>;
   hasAppBinding(sessionId: string, appId: string): Promise<boolean>;
   close(): Promise<void>;
 }
@@ -259,6 +275,23 @@ abstract class BaseRelayClusterClient implements RelayClusterClient {
         sessionId,
         reason,
       } satisfies RelayBusSessionClosedMessage),
+    );
+  }
+
+  async publishAppClosed(
+    sessionId: string,
+    appId: string,
+    reason: string,
+  ): Promise<void> {
+    await this.publish(
+      sessionControlChannel(sessionId),
+      JSON.stringify({
+        kind: "app_closed",
+        originNodeId: this.nodeId,
+        sessionId,
+        appId,
+        reason,
+      } satisfies RelayBusAppClosedMessage),
     );
   }
 
@@ -374,6 +407,14 @@ abstract class BaseRelayClusterClient implements RelayClusterClient {
       await this.callbacks.onRemoteSessionClosed(message.sessionId, message.reason);
       return;
     }
+    if (message.kind === "app_closed") {
+      await this.callbacks.onRemoteAppClosed(
+        message.sessionId,
+        message.appId,
+        message.reason,
+      );
+      return;
+    }
     if (message.targetNodeId !== this.nodeId) {
       return;
     }
@@ -405,6 +446,7 @@ abstract class BaseRelayClusterClient implements RelayClusterClient {
   protected abstract subscribeChannel(channel: string): Promise<void>;
   protected abstract unsubscribeChannel(channel: string): Promise<void>;
   protected abstract publish(channel: string, payload: string): Promise<number>;
+  abstract hasProviderSessionSubscriber(sessionId: string): Promise<boolean>;
   abstract hasAppBinding(sessionId: string, appId: string): Promise<boolean>;
 
   abstract claimProvider(
@@ -556,6 +598,10 @@ export class InMemoryRelayClusterClient extends BaseRelayClusterClient {
 
   async hasAppBinding(sessionId: string, appId: string): Promise<boolean> {
     return this.shared.appPresence.has(`${sessionId}:${appId}`);
+  }
+
+  async hasProviderSessionSubscriber(sessionId: string): Promise<boolean> {
+    return (this.shared.channelSubscribers.get(providerChannel(sessionId))?.size ?? 0) > 0;
   }
 }
 
@@ -713,6 +759,19 @@ export class RedisRelayClusterClient extends BaseRelayClusterClient {
 
   async hasAppBinding(sessionId: string, appId: string): Promise<boolean> {
     return (await this.redis.exists(appPresenceKey(sessionId, appId))) === 1;
+  }
+
+  async hasProviderSessionSubscriber(sessionId: string): Promise<boolean> {
+    const result = await this.redis.call(
+      "PUBSUB",
+      "NUMSUB",
+      providerChannel(sessionId),
+    );
+    if (!Array.isArray(result)) {
+      return false;
+    }
+    const subscriberCount = Number.parseInt(String(result[1] ?? "0"), 10);
+    return Number.isFinite(subscriberCount) && subscriberCount > 0;
   }
 }
 

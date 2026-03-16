@@ -6,7 +6,7 @@ It is responsible for:
 
 - creating one-time relay sessions,
 - optionally turning those sessions into small encrypted group rooms with join/leave presence notices,
-- exposing `/renew-session`, `/mute-bot`, and `/unmute-bot` as dynamic built-in PrivateClaw commands when appropriate,
+- exposing `/renew-session`, `/session-qr`, `/mute-bot`, and `/unmute-bot` as dynamic built-in PrivateClaw commands when appropriate,
 - emitting bilingual Chinese + English invite / CLI / command text for the built-in PrivateClaw surfaces,
 - generating encrypted invite QR payloads,
 - terminating app-side ciphertext,
@@ -124,32 +124,59 @@ The package now ships a real OpenClaw extension entrypoint:
 
 That means the installed extension can surface `/privateclaw` and `/privateclaw group` in native command menus such as Telegram instead of relying on the old local shim.
 
-For group sessions, capabilities also advertise `/mute-bot` or `/unmute-bot` depending on the current session state, and `/renew-session` remains available to any participant.
+Capabilities advertise `/renew-session` and `/session-qr` for active sessions, and for group sessions they also advertise `/mute-bot` or `/unmute-bot` depending on the current session state.
 
 ## Demo CLI
 
 ```bash
-PRIVATECLAW_RELAY_BASE_URL=ws://127.0.0.1:8787 npm run demo --workspace @privateclaw/privateclaw
+PRIVATECLAW_RELAY_BASE_URL=ws://127.0.0.1:8787 npm run demo --workspace @privateclaw/privateclaw -- pair
 ```
 
-## OpenClaw local pairing command
+## Provider CLI reference
 
-Once the plugin is installed and enabled, OpenClaw exposes a plugin CLI command:
+The package exposes the same public provider CLI surface in two places:
+
+- the standalone npm binary: `privateclaw-provider <subcommand>`
+- the OpenClaw plugin alias, once the plugin is installed and enabled: `openclaw privateclaw <subcommand>`
+
+Public subcommands:
+
+| Subcommand | Example | Purpose | Notes |
+| --- | --- | --- | --- |
+| `pair` | `privateclaw-provider pair` | Create a local PrivateClaw session and render the pairing QR in the terminal. | The OpenClaw alias is `openclaw privateclaw pair`. |
+| `sessions` | `privateclaw-provider sessions` | List active locally managed sessions. | The output includes the total count plus each session's `type`, `participants`, `state`, `expires`, `host`, and optional `label`. |
+| `kick <sessionId> <appId>` | `privateclaw-provider kick <sessionId> <appId>` | Remove one participant from a group session. | This also closes that app's relay connection and blocks the same `appId` from rejoining the current session. |
+
+`pair` supports these public flags:
+
+| Flag | Effect |
+| --- | --- |
+| `--ttl-ms <ms>` | Override the session TTL. Fresh sessions default to 8 hours. |
+| `--label <label>` | Attach an optional relay-side label that also appears in `sessions` output. |
+| `--group` | Allow multiple app clients to join the same session. |
+| `--print-only` | Print the invite URI and QR, then exit immediately. This also closes the session instead of keeping it alive. |
+| `--open` | Open a local browser preview page for the generated QR. |
+| `--foreground` | Keep the session in the current terminal until it ends or you press `Ctrl+C`. On supported runtimes, pressing `Ctrl+D` hands the live session off to a detached background daemon without invalidating the QR. |
+
+Typical examples:
 
 ```bash
-openclaw privateclaw pair
+# Standalone npm binary
+privateclaw-provider pair --group --foreground
+privateclaw-provider sessions
+privateclaw-provider kick <sessionId> <appId>
+
+# The same commands through the installed OpenClaw plugin
+openclaw privateclaw pair --group --foreground
+openclaw privateclaw sessions
+openclaw privateclaw kick <sessionId> <appId>
 ```
 
-This starts a local PrivateClaw session and renders the pairing QR code directly in the terminal, without requiring another chat app to trigger `/privateclaw`. It also saves a PNG copy into the OpenClaw media directory, prints that local path, and supports `--open` when you want a browser preview page for the QR.
-Fresh sessions created by the provider default to an 8-hour lifetime unless you override `sessionTtlMs`, and the provider emits a reminder once less than 30 minutes remain so any participant can run `/renew-session`.
+When a first-time participant joins a group session without providing a name, the provider assigns a local animal-style nickname. The label is chosen deterministically from the session/app identity, avoids collisions with other participants already in the same session, and stays stable when that same app reconnects later.
 
-For a multi-app group session, use:
+Active participants can use `/session-qr` to re-share the current invite QR while a session is live. Once less than 30 minutes remain, the provider emits a reminder so any participant can run `/renew-session`. In group sessions, `/mute-bot` and `/unmute-bot` pause or resume assistant replies without interrupting participant-to-participant chat delivery.
 
-```bash
-openclaw privateclaw pair --group
-```
-
-When a first-time participant joins a group session without providing a name, the provider now assigns a local animal-style nickname. The label is chosen deterministically from the session/app identity, avoids collisions with other participants already in the same session, and stays stable when that same app reconnects later.
+After the app attaches, the in-app session panel also shows the current relay server so users can verify which relay endpoint the invite resolved to.
 
 ## Relay deployment
 

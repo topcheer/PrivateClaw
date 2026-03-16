@@ -147,22 +147,33 @@ openclaw channels add --channel telegram --token <token>
 
 Then send `/privateclaw` from that chat surface and scan the returned QR code in the app.
 
-If you want the session to behave like an encrypted group chat, use `/privateclaw group` instead. That keeps one OpenClaw conversation state for the session while allowing multiple app clients to join with distinct participant labels. Individual participants can leave and later rejoin the same invite until the session TTL expires, and once less than 30 minutes remain the provider emits a reminder to run `/renew-session`. While the group is active, any participant can also use `/mute-bot` and `/unmute-bot` to pause or resume assistant replies without stopping participant-to-participant chat delivery.
+If you want the session to behave like an encrypted group chat, use `/privateclaw group` instead. That keeps one OpenClaw conversation state for the session while allowing multiple app clients to join with distinct participant labels. Individual participants can leave and later rejoin the same invite until the session TTL expires, any connected participant can run `/session-qr` to re-share the current invite QR, and once less than 30 minutes remain the provider emits a reminder to run `/renew-session`. While the group is active, any participant can also use `/mute-bot` and `/unmute-bot` to pause or resume assistant replies without stopping participant-to-participant chat delivery.
 
 #### Path B: local pairing directly from the OpenClaw CLI
 
-If you want to start a session without another chat app, use the plugin-provided local pair command:
+If you want to start a session without another chat app, use the provider CLI that the plugin adds to OpenClaw. The same public subcommands also exist on the standalone npm binary as `privateclaw-provider <subcommand>`; the examples below use the OpenClaw alias:
+
+| Command | Purpose | Notes |
+| --- | --- | --- |
+| `openclaw privateclaw pair` | Create a local PrivateClaw session and render the pairing QR in the terminal. | By default the command returns to the shell after printing while the provider keeps the session alive in a background daemon until expiry. |
+| `openclaw privateclaw sessions` | List locally managed active sessions. | The output includes the total count plus each session's `type`, `participants`, `state`, `expires`, `host`, and optional `label`. `host` is one of `plugin-service`, `pair-foreground`, or `pair-daemon`. |
+| `openclaw privateclaw kick <sessionId> <appId>` | Remove one participant from a group session. | This closes that app's relay connection and blocks the same `appId` from rejoining the current session. |
+
+`pair` accepts these public flags:
+
+| Flag | Effect |
+| --- | --- |
+| `--ttl-ms <ms>` | Override the session TTL. The default remains 8 hours. |
+| `--label <label>` | Attach an optional relay-side label that also appears in session-management output. |
+| `--group` | Allow multiple PrivateClaw app clients to join the same session. |
+| `--print-only` | Print the invite URI and QR, then exit immediately. This also closes the session instead of leaving it alive. |
+| `--open` | Open a local browser preview page for the generated QR. |
+| `--foreground` | Keep the session in the current terminal until it ends or you press `Ctrl+C`. On supported runtimes, pressing `Ctrl+D` hands the live session off to a detached background daemon without invalidating the QR. |
+
+For example, to start a local group session and keep it in the foreground until you hand it off or stop it:
 
 ```bash
-openclaw privateclaw pair
-```
-
-This command creates a session immediately and renders the pairing QR code in your terminal. It also saves a PNG copy under the OpenClaw media directory and prints that local path, which helps on terminals that do not render QR blocks cleanly. Add `--open` if you want PrivateClaw to launch a browser preview page for the QR automatically. It keeps the provider session alive until you stop it with `Ctrl+C`. New sessions created this way stay valid for 8 hours by default unless you explicitly override the TTL.
-
-To start the same flow in group mode:
-
-```bash
-openclaw privateclaw pair --group
+openclaw privateclaw pair --group --foreground
 ```
 
 ### 3. Run the app
@@ -180,6 +191,7 @@ The mobile app's native Firebase files are intentionally local-only:
 If those files are present on your machine, the app can exercise the full Firebase push/background-wake flow. If they are absent, the app still builds and runs, but push stays disabled until you add your own Firebase project configuration.
 
 Then either scan the QR code returned by `/privateclaw` from your existing channel, or scan the QR code rendered by `openclaw privateclaw pair`.
+After the session attaches, the app session panel also shows the current relay server so users can confirm which relay endpoint they are connected to.
 If you are pairing on a simulator or desktop, you can also paste either the raw `privateclaw://connect?...` link or the full `Invite URI: ...` / `邀请链接 / Invite URI: ...` line into the app.
 
 ## Development and testing deployment

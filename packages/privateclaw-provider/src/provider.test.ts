@@ -165,6 +165,7 @@ test("provider creates one-time invites and replies through the encrypted relay"
   const inviteBundle = await provider.createInviteBundle();
   const invite = decodeInviteString(inviteBundle.inviteUri);
   assert.equal(invite.sessionId, inviteBundle.invite.sessionId);
+  assert.equal(invite.relayLabel, `127.0.0.1:${port}`);
 
   const appSocket = new WebSocket(invite.appWsUrl);
   const attachedPromise = nextMessage(appSocket);
@@ -225,6 +226,112 @@ test("provider creates one-time invites and replies through the encrypted relay"
   const assistant = await nextRelayPayload(appSocket, invite);
   assert.equal(assistant.kind, "assistant_message");
   assert.match(assistant.text, /你好/);
+
+  appSocket.close();
+  await waitForClose(appSocket);
+});
+
+test("provider can hand off an active session to a successor provider", async (t) => {
+  const relay = createRelayServer({
+    host: "127.0.0.1",
+    port: 0,
+    sessionTtlMs: 60_000,
+    frameCacheSize: 8,
+  });
+  const { port } = await relay.start();
+  t.after(async () => {
+    await relay.stop();
+  });
+
+  const providerOne = new PrivateClawProvider({
+    providerWsUrl: `ws://127.0.0.1:${port}/ws/provider`,
+    appWsUrl: `ws://127.0.0.1:${port}/ws/app`,
+    bridge: new EchoBridge("OpenClaw bridge"),
+    defaultTtlMs: DEFAULT_SESSION_TTL_MS,
+    welcomeMessage: "欢迎来到 PrivateClaw",
+  });
+  await providerOne.connect();
+  let providerOneDisposed = false;
+  t.after(async () => {
+    if (!providerOneDisposed) {
+      await providerOne.dispose();
+    }
+  });
+
+  const inviteBundle = await providerOne.createInviteBundle();
+  const invite = decodeInviteString(inviteBundle.inviteUri);
+
+  const appUrl = new URL(invite.appWsUrl);
+  appUrl.searchParams.set("appId", "handoff-app");
+  const appSocket = new WebSocket(appUrl.toString());
+  const attachedPromise = nextMessage(appSocket);
+  await waitForOpen(appSocket);
+  assert.equal((await attachedPromise).type, "relay:attached");
+
+  appSocket.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "client_hello",
+          appId: "handoff-app",
+          displayName: "Handoff Tester",
+          appVersion: "flutter-test",
+          deviceLabel: "Simulator",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+  await nextMessages(appSocket, 2);
+
+  providerOne.suppressReconnectsForHandoff();
+  const handoffState = providerOne.exportHandoffState();
+  assert.equal(handoffState.sessions.length, 1);
+  assert.equal(handoffState.sessions[0]?.participants.length, 1);
+
+  const providerTwo = new PrivateClawProvider({
+    providerWsUrl: `ws://127.0.0.1:${port}/ws/provider`,
+    appWsUrl: `ws://127.0.0.1:${port}/ws/app`,
+    bridge: new EchoBridge("OpenClaw bridge"),
+    providerId: handoffState.providerId,
+    defaultTtlMs: DEFAULT_SESSION_TTL_MS,
+    welcomeMessage: "欢迎来到 PrivateClaw",
+  });
+  providerTwo.importHandoffState(handoffState);
+  await providerTwo.connect();
+  t.after(async () => {
+    await providerTwo.dispose();
+  });
+
+  await providerOne.dispose({ closeSessions: false });
+  providerOneDisposed = true;
+
+  const resumedSession = providerTwo.listManagedSessions()[0];
+  assert.ok(resumedSession);
+  assert.equal(resumedSession?.participantCount, 1);
+
+  appSocket.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "user_message",
+          text: "after handoff",
+          clientMessageId: "client-message-handoff",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+
+  const assistant = await nextRelayPayload(appSocket, invite);
+  assert.equal(assistant.kind, "assistant_message");
+  assert.match(assistant.text, /after handoff/);
 
   appSocket.close();
   await waitForClose(appSocket);
@@ -352,6 +459,179 @@ test("provider returns the current session QR only to the requesting participant
   appOne.close();
   appTwo.close();
   await Promise.all([waitForClose(appOne), waitForClose(appTwo)]);
+});
+
+test("provider can remove a group participant and reject the same app id on rejoin", async (t) => {
+  const relay = createRelayServer({
+    host: "127.0.0.1",
+    port: 0,
+    sessionTtlMs: 60_000,
+    frameCacheSize: 8,
+  });
+  const { port } = await relay.start();
+  t.after(async () => {
+    await relay.stop();
+  });
+
+  const provider = new PrivateClawProvider({
+    providerWsUrl: `ws://127.0.0.1:${port}/ws/provider`,
+    appWsUrl: `ws://127.0.0.1:${port}/ws/app`,
+    bridge: new GroupBridge(),
+    defaultTtlMs: DEFAULT_SESSION_TTL_MS,
+  });
+  await provider.connect();
+  t.after(async () => {
+    await provider.dispose();
+  });
+
+  const inviteBundle = await provider.createInviteBundle({ groupMode: true });
+  const invite = decodeInviteString(inviteBundle.inviteUri);
+
+  const appOneUrl = new URL(invite.appWsUrl);
+  appOneUrl.searchParams.set("appId", "app-one");
+  const appOne = new WebSocket(appOneUrl.toString());
+  const appOneAttached = nextMessage(appOne);
+  await waitForOpen(appOne);
+  assert.equal((await appOneAttached).type, "relay:attached");
+  const appOneInitialFrames = nextMessages(appOne, 3);
+  appOne.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "client_hello",
+          appId: "app-one",
+          displayName: "SolarFox",
+          appVersion: "flutter-test",
+          deviceLabel: "Tester One",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+  await appOneInitialFrames;
+
+  const appTwoUrl = new URL(invite.appWsUrl);
+  appTwoUrl.searchParams.set("appId", "app-two");
+  const appTwo = new WebSocket(appTwoUrl.toString());
+  const appTwoAttached = nextMessage(appTwo);
+  await waitForOpen(appTwo);
+  assert.equal((await appTwoAttached).type, "relay:attached");
+  const appTwoInitialFrames = nextMessages(appTwo, 3);
+  const appOneJoinFrames = nextMessages(appOne, 2);
+  appTwo.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "client_hello",
+          appId: "app-two",
+          displayName: "RiverCat",
+          appVersion: "flutter-test",
+          deviceLabel: "Tester Two",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+  await Promise.all([appTwoInitialFrames, appOneJoinFrames]);
+
+  const appOneKickFrames = nextMessages(appOne, 2);
+  const appTwoClosedMessage = new Promise<Record<string, unknown>>(
+    (resolve, reject) => {
+      const onMessage = (data: WebSocket.RawData) => {
+        const message = JSON.parse(data.toString()) as Record<string, unknown>;
+        if (message.type !== "relay:session_closed") {
+          return;
+        }
+        cleanup();
+        resolve(message);
+      };
+      const onError = (error: Error) => {
+        cleanup();
+        reject(error);
+      };
+      const cleanup = () => {
+        appTwo.off("message", onMessage);
+        appTwo.off("error", onError);
+      };
+      appTwo.on("message", onMessage);
+      appTwo.on("error", onError);
+    },
+  );
+  const kicked = await provider.kickGroupParticipant(invite.sessionId, "app-two");
+  assert.equal(kicked.appId, "app-two");
+  assert.equal(kicked.displayName, "RiverCat");
+
+  const closed = await appTwoClosedMessage;
+  assert.equal(closed.type, "relay:session_closed");
+  assert.equal(closed.reason, "participant_removed");
+  appTwo.close();
+  await waitForClose(appTwo);
+
+  const [kickNoticeFrame, capabilitiesFrame] = await appOneKickFrames;
+  const kickNotice = decryptRelayPayload(kickNoticeFrame!, invite);
+  assert.equal(kickNotice.kind, "system_message");
+  assert.match(kickNotice.message, /移出群聊|removed from the group chat/i);
+  const capabilities = decryptRelayPayload(capabilitiesFrame!, invite);
+  assert.equal(capabilities.kind, "provider_capabilities");
+  assert.equal(capabilities.participants?.length, 1);
+  assert.equal(capabilities.participants?.[0]?.appId, "app-one");
+
+  const appTwoReconnect = new WebSocket(appTwoUrl.toString());
+  const appTwoReconnectAttached = nextMessage(appTwoReconnect);
+  await waitForOpen(appTwoReconnect);
+  assert.equal((await appTwoReconnectAttached).type, "relay:attached");
+  const appTwoReconnectClosed = new Promise<Record<string, unknown>>(
+    (resolve, reject) => {
+      const onMessage = (data: WebSocket.RawData) => {
+        const message = JSON.parse(data.toString()) as Record<string, unknown>;
+        if (message.type !== "relay:session_closed") {
+          return;
+        }
+        cleanup();
+        resolve(message);
+      };
+      const onError = (error: Error) => {
+        cleanup();
+        reject(error);
+      };
+      const cleanup = () => {
+        appTwoReconnect.off("message", onMessage);
+        appTwoReconnect.off("error", onError);
+      };
+      appTwoReconnect.on("message", onMessage);
+      appTwoReconnect.on("error", onError);
+    },
+  );
+  appTwoReconnect.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "client_hello",
+          appId: "app-two",
+          displayName: "RiverCat",
+          appVersion: "flutter-test",
+          deviceLabel: "Tester Two",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+  const reconnectClosed = await appTwoReconnectClosed;
+  assert.equal(reconnectClosed.type, "relay:session_closed");
+  assert.equal(reconnectClosed.reason, "participant_removed");
+  await waitForClose(appTwoReconnect);
+
+  appOne.close();
+  await waitForClose(appOne);
 });
 
 test("provider renews the session key and keeps the chat usable after re-handshake", async (t) => {

@@ -504,7 +504,7 @@ test("relay coalesces repeated wake pushes for the same offline app within the c
   await waitForClose(providerSocket);
 });
 
-test("relay preserves a session after provider disconnect and replays buffered frames on reattach", async (t) => {
+test("relay rejects app frames while the provider is disconnected and resumes after reattach", async (t) => {
   const relay = createRelayServer({
     host: "127.0.0.1",
     port: 0,
@@ -542,25 +542,44 @@ test("relay preserves a session after provider disconnect and replays buffered f
   providerSocket.close();
   await waitForClose(providerSocket);
 
-  const bufferedEnvelope = encryptPayload({
+  const unavailableEnvelope = encryptPayload({
     sessionId,
     sessionKey,
     payload: {
       kind: "user_message",
-      text: "buffered while provider was away",
+      text: "should fail while provider is away",
       clientMessageId: "client-1",
       sentAt: new Date().toISOString(),
     },
   });
-  appSocket.send(JSON.stringify({ type: "app:frame", envelope: bufferedEnvelope }));
+  const appUnavailablePromise = nextMessage(appSocket);
+  appSocket.send(JSON.stringify({ type: "app:frame", envelope: unavailableEnvelope }));
+  const appUnavailable = await appUnavailablePromise;
+  assert.equal(appUnavailable.type, "relay:error");
+  assert.equal(appUnavailable.code, "provider_unavailable");
+  assert.equal(appUnavailable.sessionId, sessionId);
 
   const reattachedProviderSocket = new WebSocket(
     `ws://127.0.0.1:${port}/ws/provider?providerId=${providerId}`,
   );
-  const providerMessagesPromise = nextMessages(reattachedProviderSocket, 2);
+  const readyAgainPromise = nextMessage(reattachedProviderSocket);
   await waitForOpen(reattachedProviderSocket);
-  const [readyAgain, replayed] = await providerMessagesPromise;
+  const readyAgain = await readyAgainPromise;
   assert.equal(readyAgain.type, "relay:provider_ready");
+
+  const resumedEnvelope = encryptPayload({
+    sessionId,
+    sessionKey,
+    payload: {
+      kind: "user_message",
+      text: "delivered after provider reconnect",
+      clientMessageId: "client-2",
+      sentAt: new Date().toISOString(),
+    },
+  });
+  const replayedPromise = nextMessage(reattachedProviderSocket);
+  appSocket.send(JSON.stringify({ type: "app:frame", envelope: resumedEnvelope }));
+  const replayed = await replayedPromise;
   assert.equal(replayed.type, "relay:frame");
   const decryptedReplay = decryptPayload({
     sessionId,
@@ -568,7 +587,7 @@ test("relay preserves a session after provider disconnect and replays buffered f
     envelope: replayed.envelope as Parameters<typeof decryptPayload>[0]["envelope"],
   });
   assert.equal(decryptedReplay.kind, "user_message");
-  assert.equal(decryptedReplay.text, "buffered while provider was away");
+  assert.equal(decryptedReplay.text, "delivered after provider reconnect");
 
   appSocket.close();
   reattachedProviderSocket.close();
@@ -996,7 +1015,7 @@ test("relay cluster routes provider and app frames across relay instances", asyn
   ]);
 });
 
-test("relay keeps Redis-style shared sessions usable after a relay restart", async (t) => {
+test("relay blocks Redis-style shared sessions until the provider reconnects after a relay restart", async (t) => {
   const sharedFrameCache = createInMemoryEncryptedFrameCache(8);
   const sharedSessionStore = new (class extends InMemoryRelaySessionStore {
     readonly persistent = true;
@@ -1064,11 +1083,29 @@ test("relay keeps Redis-style shared sessions usable after a relay restart", asy
   const appSocket = new WebSocket(
     `ws://127.0.0.1:${portTwo}/ws/app?sessionId=${sessionId}&appId=restarted-app`,
   );
-  const appAttached = nextMessage(appSocket);
+  const appUnavailablePromise = nextMessage(appSocket);
   await waitForOpen(appSocket);
-  assert.equal((await appAttached).type, "relay:attached");
+  const appUnavailable = await appUnavailablePromise;
+  assert.equal(appUnavailable.type, "relay:error");
+  assert.equal(appUnavailable.code, "provider_unavailable");
+  assert.equal(appUnavailable.sessionId, sessionId);
+  await waitForClose(appSocket);
 
-  const bufferedEnvelope = encryptPayload({
+  providerSocket = new WebSocket(
+    `ws://127.0.0.1:${portTwo}/ws/provider?providerId=provider-restart`,
+  );
+  providerReady = nextMessage(providerSocket);
+  await waitForOpen(providerSocket);
+  assert.equal((await providerReady).type, "relay:provider_ready");
+
+  const recoveredAppSocket = new WebSocket(
+    `ws://127.0.0.1:${portTwo}/ws/app?sessionId=${sessionId}&appId=restarted-app`,
+  );
+  const recoveredAppAttached = nextMessage(recoveredAppSocket);
+  await waitForOpen(recoveredAppSocket);
+  assert.equal((await recoveredAppAttached).type, "relay:attached");
+
+  const liveEnvelope = encryptPayload({
     sessionId,
     sessionKey,
     payload: {
@@ -1078,15 +1115,9 @@ test("relay keeps Redis-style shared sessions usable after a relay restart", asy
       sentAt: new Date().toISOString(),
     },
   });
-  appSocket.send(JSON.stringify({ type: "app:frame", envelope: bufferedEnvelope }));
-
-  providerSocket = new WebSocket(
-    `ws://127.0.0.1:${portTwo}/ws/provider?providerId=provider-restart`,
-  );
-  const providerMessages = nextMessages(providerSocket, 2);
-  await waitForOpen(providerSocket);
-  const [readyAgain, replayedFrame] = await providerMessages;
-  assert.equal(readyAgain.type, "relay:provider_ready");
+  const replayedFramePromise = nextMessage(providerSocket);
+  recoveredAppSocket.send(JSON.stringify({ type: "app:frame", envelope: liveEnvelope }));
+  const replayedFrame = await replayedFramePromise;
   assert.equal(replayedFrame.type, "relay:frame");
   assert.equal(
     decryptPayload({
@@ -1109,7 +1140,7 @@ test("relay keeps Redis-style shared sessions usable after a relay restart", asy
   providerSocket.send(
     JSON.stringify({ type: "provider:frame", sessionId, envelope: providerReply }),
   );
-  const appFrame = await nextMessage(appSocket);
+  const appFrame = await nextMessage(recoveredAppSocket);
   assert.equal(appFrame.type, "relay:frame");
   assert.equal(
     decryptPayload({
@@ -1120,7 +1151,10 @@ test("relay keeps Redis-style shared sessions usable after a relay restart", asy
     "same QR still works",
   );
 
-  appSocket.close();
+  recoveredAppSocket.close();
   providerSocket.close();
-  await Promise.all([waitForClose(appSocket), waitForClose(providerSocket)]);
+  await Promise.all([
+    waitForClose(recoveredAppSocket),
+    waitForClose(providerSocket),
+  ]);
 });

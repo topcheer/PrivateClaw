@@ -4,7 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { decodeInviteString } from "@privateclaw/protocol";
+import { decodeInviteString, encryptPayload } from "@privateclaw/protocol";
+import WebSocket from "ws";
 import { createRelayServer } from "../../../services/relay-server/src/relay-server.js";
 import { EchoBridge } from "./bridges/echo-bridge.js";
 import { privateClawConfigSchema } from "./compat/openclaw.js";
@@ -85,6 +86,10 @@ class FakeCliCommand {
   }
 
   description(_text: string): FakeCliCommand {
+    return this;
+  }
+
+  argument(_spec: string): FakeCliCommand {
     return this;
   }
 
@@ -340,4 +345,214 @@ test("privateclaw plugin local pair CLI defaults to the long session TTL", async
   const qrPath = qrPathLine.replace("二维码 PNG 路径 / QR PNG path: ", "");
   const qrPng = await readFile(qrPath);
   assert.deepEqual(qrPng.subarray(0, PNG_SIGNATURE.length), PNG_SIGNATURE);
+});
+
+test("privateclaw CLI can list and remove active group-session participants", async (t) => {
+  const relay = createRelayServer({
+    host: "127.0.0.1",
+    port: 0,
+    sessionTtlMs: 60_000,
+    frameCacheSize: 8,
+  });
+  const { port } = await relay.start();
+
+  const stateDir = await mkdtemp(path.join(os.tmpdir(), "privateclaw-cli-state-"));
+  t.after(async () => {
+    await rm(stateDir, { recursive: true, force: true });
+    await relay.stop();
+  });
+
+  const plugin = createOpenClawCompatiblePlugin({
+    providerWsUrl: `ws://127.0.0.1:${port}/ws/provider`,
+    appWsUrl: `ws://127.0.0.1:${port}/ws/app`,
+    bridge: new EchoBridge("OpenClaw bridge"),
+  });
+  const { api, getCli, getCommand, getService } = createMockApi();
+  plugin.register(api);
+
+  const service = getService();
+  await service.start({
+    config: {},
+    stateDir,
+    logger: api.logger,
+  });
+  t.after(async () => {
+    await service.stop?.({
+      config: {},
+      stateDir,
+      logger: api.logger,
+    });
+  });
+
+  const cli = getCli();
+  const root = new FakeCliCommand("root");
+  await cli.registrar({
+    program: root,
+    config: {},
+    logger: api.logger,
+  });
+
+  const privateclaw = root.children.get("privateclaw");
+  assert.ok(privateclaw, "plugin should register a top-level privateclaw command");
+  const sessions = privateclaw.children.get("sessions");
+  const kick = privateclaw.children.get("kick");
+  assert.ok(sessions?.actionHandler, "plugin should register the privateclaw sessions subcommand");
+  assert.ok(kick?.actionHandler, "plugin should register the privateclaw kick subcommand");
+
+  const command = getCommand();
+  const reply = await command.handler({
+    channel: "telegram",
+    senderId: "tester",
+    isAuthorizedSender: true,
+    commandBody: "/privateclaw group",
+    args: "group",
+    config: {},
+  });
+  const inviteUri = reply.text?.match(/privateclaw:\/\/connect\?payload=\S+/)?.[0];
+  assert.ok(inviteUri, "reply text should include a PrivateClaw invite URI");
+  const invite = decodeInviteString(inviteUri);
+
+  const appOneUrl = new URL(invite.appWsUrl);
+  appOneUrl.searchParams.set("appId", "app-one");
+  const appOne = new WebSocket(appOneUrl.toString());
+  const appOneAttached = new Promise<Record<string, unknown>>((resolve, reject) => {
+    appOne.once("message", (data) => resolve(JSON.parse(data.toString()) as Record<string, unknown>));
+    appOne.once("error", reject);
+  });
+  await new Promise<void>((resolve, reject) => {
+    appOne.once("open", () => resolve());
+    appOne.once("error", reject);
+  });
+  assert.equal((await appOneAttached).type, "relay:attached");
+  const appOneInitialFrames = new Promise<Record<string, unknown>[]>((resolve, reject) => {
+    const messages: Record<string, unknown>[] = [];
+    const onMessage = (data: unknown) => {
+      messages.push(JSON.parse(String(data)) as Record<string, unknown>);
+      if (messages.length === 3) {
+        appOne.off("message", onMessage);
+        resolve(messages);
+      }
+    };
+    appOne.on("message", onMessage);
+    appOne.once("error", reject);
+  });
+  appOne.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "client_hello",
+          appId: "app-one",
+          displayName: "SolarFox",
+          appVersion: "flutter-test",
+          deviceLabel: "Tester One",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+  await appOneInitialFrames;
+
+  const appTwoUrl = new URL(invite.appWsUrl);
+  appTwoUrl.searchParams.set("appId", "app-two");
+  const appTwo = new WebSocket(appTwoUrl.toString());
+  const appTwoAttached = new Promise<Record<string, unknown>>((resolve, reject) => {
+    appTwo.once("message", (data) => resolve(JSON.parse(data.toString()) as Record<string, unknown>));
+    appTwo.once("error", reject);
+  });
+  await new Promise<void>((resolve, reject) => {
+    appTwo.once("open", () => resolve());
+    appTwo.once("error", reject);
+  });
+  assert.equal((await appTwoAttached).type, "relay:attached");
+  const appTwoInitialFrames = new Promise<Record<string, unknown>[]>((resolve, reject) => {
+    const messages: Record<string, unknown>[] = [];
+    const onMessage = (data: unknown) => {
+      messages.push(JSON.parse(String(data)) as Record<string, unknown>);
+      if (messages.length === 3) {
+        appTwo.off("message", onMessage);
+        resolve(messages);
+      }
+    };
+    appTwo.on("message", onMessage);
+    appTwo.once("error", reject);
+  });
+  const appOneJoinFrames = new Promise<Record<string, unknown>[]>((resolve, reject) => {
+    const messages: Record<string, unknown>[] = [];
+    const onMessage = (data: unknown) => {
+      messages.push(JSON.parse(String(data)) as Record<string, unknown>);
+      if (messages.length === 2) {
+        appOne.off("message", onMessage);
+        resolve(messages);
+      }
+    };
+    appOne.on("message", onMessage);
+    appOne.once("error", reject);
+  });
+  appTwo.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "client_hello",
+          appId: "app-two",
+          displayName: "RiverCat",
+          appVersion: "flutter-test",
+          deviceLabel: "Tester Two",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+  await Promise.all([appTwoInitialFrames, appOneJoinFrames]);
+
+  const printed: string[] = [];
+  const originalLog = console.log;
+  console.log = (message?: unknown, ...optionalParams: unknown[]) => {
+    printed.push([message, ...optionalParams].map(String).join(" "));
+  };
+  t.after(() => {
+    console.log = originalLog;
+  });
+
+  await sessions.actionHandler?.();
+  assert.ok(printed.some((line) => line.includes(invite.sessionId)));
+  assert.ok(printed.some((line) => line.includes("type=group")));
+  assert.ok(printed.some((line) => line.includes("participants=2")));
+  assert.ok(printed.some((line) => line.includes("SolarFox (app-one)")));
+  assert.ok(printed.some((line) => line.includes("RiverCat (app-two)")));
+  printed.length = 0;
+
+  const appTwoClosed = new Promise<Record<string, unknown>>((resolve, reject) => {
+    const onMessage = (data: WebSocket.RawData) => {
+      const message = JSON.parse(data.toString()) as Record<string, unknown>;
+      if (message.type !== "relay:session_closed") {
+        return;
+      }
+      cleanup();
+      resolve(message);
+    };
+    const onError = (error: Error) => {
+      cleanup();
+      reject(error);
+    };
+    const cleanup = () => {
+      appTwo.off("message", onMessage);
+      appTwo.off("error", onError);
+    };
+    appTwo.on("message", onMessage);
+    appTwo.on("error", onError);
+  });
+  await kick.actionHandler?.(invite.sessionId, "app-two");
+  assert.ok(printed.some((line) => line.includes("RiverCat (app-two)")));
+  const closed = await appTwoClosed;
+  assert.equal(closed.type, "relay:session_closed");
+  assert.equal(closed.reason, "participant_removed");
+
+  appOne.close();
+  appTwo.close();
 });

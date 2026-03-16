@@ -164,6 +164,13 @@ export interface ProviderCloseSessionMessage {
   reason?: string;
 }
 
+export interface ProviderCloseAppMessage {
+  type: "provider:close_app";
+  sessionId: string;
+  appId: string;
+  reason?: string;
+}
+
 export interface ProviderRenewSessionMessage {
   type: "provider:renew_session";
   requestId: string;
@@ -233,6 +240,7 @@ export type ProviderToRelayMessage =
   | ProviderCreateSessionMessage
   | ProviderFrameMessage
   | ProviderCloseSessionMessage
+  | ProviderCloseAppMessage
   | ProviderRenewSessionMessage;
 
 export type AppToRelayMessage =

@@ -45,6 +45,7 @@ export interface PrivateClawProviderOptions {
   providerWsUrl: string;
   appWsUrl: string;
   bridge: PrivateClawAgentBridge;
+  providerId?: string;
   defaultTtlMs?: number;
   providerLabel?: string;
   welcomeMessage?: string;
@@ -54,6 +55,17 @@ export interface PrivateClawProviderOptions {
 
 export interface ProviderParticipantState extends PrivateClawParticipant {
   lastSeenAt: string;
+}
+
+export interface PrivateClawManagedSession {
+  sessionId: string;
+  expiresAt: string;
+  providerLabel?: string;
+  label?: string;
+  groupMode: boolean;
+  participantCount: number;
+  participants: PrivateClawParticipant[];
+  state: "awaiting_hello" | "active";
 }
 
 export interface PrivateClawInviteBundle {
@@ -67,10 +79,12 @@ export interface PrivateClawInviteBundle {
 
 export interface ProviderSessionState {
   invite: PrivateClawInvite;
+  label?: string;
   history: PrivateClawConversationTurn[];
   groupMode: boolean;
   botMuted: boolean;
   participants: Map<string, ProviderParticipantState>;
+  removedParticipantAppIds: Set<string>;
   state: "awaiting_hello" | "active";
   pendingRenewal?: {
     expiresAt: string;
@@ -78,4 +92,25 @@ export interface ProviderSessionState {
   };
   renewalReminderSentAt?: string;
   renewalReminderTimer?: ReturnType<typeof setTimeout>;
+}
+
+export interface PrivateClawProviderSessionHandoff {
+  invite: PrivateClawInvite;
+  label?: string;
+  history: PrivateClawConversationTurn[];
+  groupMode: boolean;
+  botMuted: boolean;
+  participants: ProviderParticipantState[];
+  removedParticipantAppIds: string[];
+  state: "awaiting_hello" | "active";
+  pendingRenewal?: {
+    expiresAt: string;
+    sentAt: string;
+  };
+  renewalReminderSentAt?: string;
+}
+
+export interface PrivateClawProviderHandoffState {
+  providerId: string;
+  sessions: PrivateClawProviderSessionHandoff[];
 }

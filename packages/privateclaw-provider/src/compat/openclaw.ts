@@ -127,6 +127,7 @@ export interface OpenClawPluginServiceCompat {
 export interface OpenClawCliCommandCompat {
   command(name: string): OpenClawCliCommandCompat;
   description(text: string): OpenClawCliCommandCompat;
+  argument(spec: string): OpenClawCliCommandCompat;
   option(
     flags: string,
     description?: string,

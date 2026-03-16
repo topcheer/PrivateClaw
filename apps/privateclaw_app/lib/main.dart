@@ -163,6 +163,30 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     return remaining;
   }
 
+  String? get _currentRelayLabel {
+    final PrivateClawInvite? invite = _invite;
+    if (invite == null) {
+      return null;
+    }
+    final String? explicitLabel = invite.relayLabel?.trim();
+    if (explicitLabel != null && explicitLabel.isNotEmpty) {
+      return explicitLabel;
+    }
+    try {
+      final Uri uri = Uri.parse(invite.appWsUrl);
+      if (uri.host.isEmpty) {
+        return null;
+      }
+      final bool useDefaultPort =
+          uri.port == 0 ||
+          (uri.scheme == 'wss' && uri.port == 443) ||
+          (uri.scheme == 'ws' && uri.port == 80);
+      return useDefaultPort ? uri.host : '${uri.host}:${uri.port}';
+    } catch (_) {
+      return null;
+    }
+  }
+
   bool get _showsSessionRenewPrompt {
     final Duration? remaining = _sessionRemainingDuration;
     return _hasLiveSessionContext &&
@@ -176,6 +200,30 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       _sessionStatus == PrivateClawSessionStatus.active &&
       !_isRenewingSession &&
       _showsSessionRenewPrompt;
+
+  Widget _buildRelayServerInfo(BuildContext context) {
+    final String? relayLabel = _currentRelayLabel;
+    if (relayLabel == null || relayLabel.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    final TextStyle? style = Theme.of(context).textTheme.bodySmall;
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Row(
+        children: <Widget>[
+          const Icon(Icons.cloud_outlined, size: 16),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              relayLabel,
+              key: const ValueKey<String>('relay-server-label'),
+              style: style,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -1251,6 +1299,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
                     '${l10n.expiresLabel}: ${_formatDateTime(_invite!.expiresAt)}',
                     style: theme.textTheme.bodySmall,
                   ),
+                  _buildRelayServerInfo(context),
                 ],
                 if (_identity != null) ...<Widget>[
                   const SizedBox(height: 8),
@@ -1408,6 +1457,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
                   '${l10n.expiresLabel}: ${_formatDateTime(_invite!.expiresAt)}',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
+                _buildRelayServerInfo(context),
               ],
               if (_identity != null) ...<Widget>[
                 const SizedBox(height: 8),

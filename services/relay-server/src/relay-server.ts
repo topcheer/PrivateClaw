@@ -372,6 +372,32 @@ class SessionHub {
     return session;
   }
 
+  private hasLocalProviderSession(sessionId: string, providerId: string): boolean {
+    if (this.sessionProviders.get(sessionId) !== providerId) {
+      return false;
+    }
+    const providerSocket = this.providerSockets.get(providerId);
+    return !!providerSocket && providerSocket.readyState === WebSocket.OPEN;
+  }
+
+  private async assertSessionHasLiveProvider(session: RelaySessionRecord): Promise<void> {
+    if (this.hasLocalProviderSession(session.sessionId, session.providerId)) {
+      return;
+    }
+    if (this.cluster) {
+      const hasRemoteSubscriber = await this.cluster.hasProviderSessionSubscriber(
+        session.sessionId,
+      );
+      if (hasRemoteSubscriber) {
+        return;
+      }
+    }
+    throw new RelayProtocolError(
+      "provider_unavailable",
+      "PrivateClaw session host is currently offline. Ask the host to reopen the session.",
+    );
+  }
+
   async renewSession(
     providerSocket: WebSocket,
     sessionId: string,
@@ -542,6 +568,7 @@ class SessionHub {
     appSocket: WebSocket,
   ): Promise<RelaySessionRecord> {
     const session = await this.requireSession(sessionId);
+    await this.assertSessionHasLiveProvider(session);
     const normalizedAppId = appId.trim() || "legacy-app";
     const previousSocket = this.sessionApps.get(sessionId)?.get(normalizedAppId);
     if (
@@ -667,7 +694,8 @@ class SessionHub {
     sessionId: string,
     envelope: EncryptedEnvelope,
   ): Promise<void> {
-    await this.requireSession(sessionId);
+    const session = await this.requireSession(sessionId);
+    await this.assertSessionHasLiveProvider(session);
     const localDelivered = this.deliverLocalToProvider(sessionId, envelope);
     const remoteDelivered = this.cluster
       ? await this.cluster.publishFrameToProvider(sessionId, envelope)
@@ -778,6 +806,30 @@ class SessionHub {
     await this.closeSession(sessionId, reason);
   }
 
+  async closeApp(
+    sessionId: string,
+    appId: string,
+    reason: string,
+  ): Promise<void> {
+    await this.params.pushRegistrationStore.deleteRegistration(sessionId, appId);
+    this.clearWakeState(sessionId, appId);
+    await this.params.frameCache.clearApp(sessionId, appId);
+    await this.closeLocalApp(sessionId, appId, reason);
+    if (this.cluster) {
+      await this.cluster.publishAppClosed(sessionId, appId, reason);
+    }
+  }
+
+  async closeAppForProvider(
+    providerSocket: WebSocket,
+    sessionId: string,
+    appId: string,
+    reason: string,
+  ): Promise<void> {
+    await this.assertProviderOwnsSession(providerSocket, sessionId);
+    await this.closeApp(sessionId, appId, reason);
+  }
+
   async detachProvider(providerSocket: WebSocket): Promise<void> {
     const providerId = this.socketProviders.get(providerSocket);
     if (!providerId) {
@@ -821,6 +873,11 @@ class SessionHub {
       return;
     }
     await this.forgetLocalAppBinding(appSocket, binding);
+    sendJson(appSocket, {
+      type: "relay:session_closed",
+      sessionId,
+      reason,
+    });
     if (isSocketActive(appSocket)) {
       appSocket.close(1012, reason);
     }
@@ -966,6 +1023,9 @@ export function createRelayServer(
     },
     onRemoteSessionClosed: async (sessionId, reason) => {
       await sessionHub.closeLocalSession(sessionId, reason);
+    },
+    onRemoteAppClosed: async (sessionId, appId, reason) => {
+      await sessionHub.closeLocalApp(sessionId, appId, reason);
     },
     onRemoteAppReconnected: async (sessionId, appId) => {
       await sessionHub.closeLocalApp(sessionId, appId, "app_reconnected");
@@ -1198,6 +1258,27 @@ export function createRelayServer(
             typeof message.reason === "string"
               ? message.reason
               : "provider_closed",
+          );
+          return;
+        }
+        case "provider:close_app": {
+          if (
+            typeof message.sessionId !== "string" ||
+            typeof message.appId !== "string" ||
+            message.appId.trim() === ""
+          ) {
+            throw new RelayProtocolError(
+              "invalid_close_request",
+              "provider:close_app requires a sessionId and appId.",
+            );
+          }
+          await sessionHub.closeAppForProvider(
+            socket,
+            message.sessionId,
+            message.appId,
+            typeof message.reason === "string"
+              ? message.reason
+              : "provider_closed_app",
           );
           return;
         }

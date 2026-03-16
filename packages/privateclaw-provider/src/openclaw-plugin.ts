@@ -8,7 +8,15 @@ import {
   writeInviteQrPng,
 } from "./invite-qr-files.js";
 import { loadAvailableOpenClawCommands } from "./openclaw-command-discovery.js";
-import { parsePositiveIntegerFlag, runPairSession } from "./pair-session.js";
+import {
+  parsePositiveIntegerFlag,
+  printPairInviteBundle,
+  runPairSession,
+} from "./pair-session.js";
+import {
+  handoffForegroundPairToBackground,
+  spawnBackgroundPairDaemon,
+} from "./pair-daemon.js";
 import { WebhookBridge } from "./bridges/webhook-bridge.js";
 import {
   type OpenClawExtensionPluginCompat,
@@ -21,13 +29,25 @@ import { DEFAULT_SESSION_TTL_MS, PrivateClawProvider } from "./provider.js";
 import { DEFAULT_RELAY_BASE_URL } from "./relay-defaults.js";
 import { resolveRelayEndpoints } from "./relay-endpoints.js";
 import {
+  buildManagedSessionsReportLines,
+  kickManagedParticipantFromStateDir,
+  listManagedSessionsFromStateDir,
+  PrivateClawSessionControlServer,
+  resolvePrivateClawStateDir,
+  type PrivateClawControlHostKind,
+} from "./session-control.js";
+import {
   buildPrivateClawCommandErrorMessage,
+  formatBilingualInline,
+  PRIVATECLAW_CLI_FOREGROUND_OPTION_DESCRIPTION,
   PRIVATECLAW_CLI_GROUP_OPTION_DESCRIPTION,
+  PRIVATECLAW_CLI_KICK_DESCRIPTION,
   PRIVATECLAW_CLI_LABEL_OPTION_DESCRIPTION,
   PRIVATECLAW_CLI_OPEN_OPTION_DESCRIPTION,
   PRIVATECLAW_CLI_PAIR_DESCRIPTION,
   PRIVATECLAW_CLI_PRINT_ONLY_OPTION_DESCRIPTION,
   PRIVATECLAW_CLI_ROOT_DESCRIPTION,
+  PRIVATECLAW_CLI_SESSIONS_DESCRIPTION,
   PRIVATECLAW_CLI_TTL_OPTION_DESCRIPTION,
   PRIVATECLAW_COMMAND_DESCRIPTION,
   PRIVATECLAW_INVITE_URI_LABEL,
@@ -88,6 +108,7 @@ interface PrivateClawPairCliOptions {
   printOnly?: boolean;
   group?: boolean;
   open?: boolean;
+  foreground?: boolean;
 }
 
 const DEFAULT_PROVIDER_LABEL = "PrivateClaw";
@@ -322,6 +343,9 @@ function normalizePairCliOptions(raw: unknown): PrivateClawPairCliOptions {
     ...(typeof options.printOnly === "boolean" ? { printOnly: options.printOnly } : {}),
     ...(typeof options.group === "boolean" ? { group: options.group } : {}),
     ...(typeof options.open === "boolean" ? { open: options.open } : {}),
+    ...(typeof options.foreground === "boolean"
+      ? { foreground: options.foreground }
+      : {}),
   };
 }
 
@@ -370,21 +394,79 @@ function buildProviderOptions(
   };
 }
 
+function buildDaemonEnvFromPluginConfig(
+  pluginConfig: ResolvedPrivateClawPluginConfig,
+): NodeJS.ProcessEnv {
+  return {
+    PRIVATECLAW_RELAY_BASE_URL: pluginConfig.relayBaseUrl,
+    PRIVATECLAW_BRIDGE_MODE: pluginConfig.bridgeMode,
+    PRIVATECLAW_PROVIDER_LABEL: pluginConfig.providerLabel,
+    ...(typeof pluginConfig.sessionTtlMs === "number"
+      ? { PRIVATECLAW_SESSION_TTL_MS: String(pluginConfig.sessionTtlMs) }
+      : {}),
+    ...(pluginConfig.welcomeMessage
+      ? { PRIVATECLAW_WELCOME_MESSAGE: pluginConfig.welcomeMessage }
+      : {}),
+    ...(pluginConfig.webhookUrl
+      ? { PRIVATECLAW_WEBHOOK_URL: pluginConfig.webhookUrl }
+      : {}),
+    ...(pluginConfig.webhookToken
+      ? { PRIVATECLAW_WEBHOOK_TOKEN: pluginConfig.webhookToken }
+      : {}),
+    ...(pluginConfig.echoPrefix
+      ? { PRIVATECLAW_ECHO_PREFIX: pluginConfig.echoPrefix }
+      : {}),
+    ...(pluginConfig.openclawAgentExecutable
+      ? { PRIVATECLAW_OPENCLAW_AGENT_BIN: pluginConfig.openclawAgentExecutable }
+      : {}),
+    ...(pluginConfig.openclawAgentId
+      ? { PRIVATECLAW_OPENCLAW_AGENT_ID: pluginConfig.openclawAgentId }
+      : {}),
+    ...(pluginConfig.openclawAgentChannel
+      ? { PRIVATECLAW_OPENCLAW_AGENT_CHANNEL: pluginConfig.openclawAgentChannel }
+      : {}),
+    ...(typeof pluginConfig.openclawAgentLocal === "boolean"
+      ? {
+          PRIVATECLAW_OPENCLAW_AGENT_LOCAL: pluginConfig.openclawAgentLocal
+            ? "true"
+            : "false",
+        }
+      : {}),
+    ...(pluginConfig.openclawAgentThinking
+      ? { PRIVATECLAW_OPENCLAW_AGENT_THINKING: pluginConfig.openclawAgentThinking }
+      : {}),
+    ...(typeof pluginConfig.openclawAgentTimeoutSeconds === "number"
+      ? {
+          PRIVATECLAW_OPENCLAW_AGENT_TIMEOUT_SECONDS: String(
+            pluginConfig.openclawAgentTimeoutSeconds,
+          ),
+        }
+      : {}),
+  };
+}
+
 class PrivateClawPluginRuntime {
   private provider: PrivateClawProvider | undefined;
   private stateDir: string | undefined;
+  private controlServer: PrivateClawSessionControlServer | undefined;
 
   constructor(
     private readonly providerOptions: PrivateClawProviderOptions,
     private readonly defaultTtlMs: number = DEFAULT_SESSION_TTL_MS,
+    private readonly daemonEnv?: NodeJS.ProcessEnv,
   ) {}
 
   setStateDir(stateDir: string): void {
     this.stateDir = stateDir;
   }
 
+  private ensureStateDir(): string {
+    this.stateDir = resolvePrivateClawStateDir(this.stateDir);
+    return this.stateDir;
+  }
+
   private getMediaDir(): string {
-    return resolvePrivateClawMediaDir(this.stateDir);
+    return resolvePrivateClawMediaDir(this.ensureStateDir());
   }
 
   private getProvider(): PrivateClawProvider {
@@ -395,11 +477,29 @@ class PrivateClawPluginRuntime {
     return this.provider;
   }
 
+  private async ensureControlServer(
+    kind: PrivateClawControlHostKind,
+  ): Promise<void> {
+    if (this.controlServer) {
+      return;
+    }
+    this.controlServer = new PrivateClawSessionControlServer({
+      provider: this.getProvider(),
+      stateDir: this.ensureStateDir(),
+      kind,
+      ...(this.providerOptions.onLog
+        ? { onLog: this.providerOptions.onLog }
+        : {}),
+    });
+    await this.controlServer.start();
+  }
+
   async createInviteBundle(params?: {
     ttlMs?: number;
     label?: string;
     groupMode?: boolean;
   }): Promise<PrivateClawInviteBundle> {
+    await this.ensureControlServer("plugin-service");
     return this.getProvider().createInviteBundle(
       {
         ...(typeof params?.ttlMs === "number"
@@ -434,31 +534,113 @@ class PrivateClawPluginRuntime {
     };
   }
 
+  async runBackgroundPairSession(params?: {
+    ttlMs?: number;
+    label?: string;
+    groupMode?: boolean;
+    openInBrowser?: boolean;
+    writeLine?: (line: string) => void;
+  }): Promise<PrivateClawInviteBundle> {
+    if (!this.daemonEnv) {
+      throw new Error(
+        formatBilingualInline(
+          "当前运行时无法安全地转入后台，请改用 --foreground。",
+          "This runtime cannot safely move into the background. Use --foreground instead.",
+        ),
+      );
+    }
+
+    const bundle = await spawnBackgroundPairDaemon({
+      cliModuleUrl: new URL(
+        import.meta.url.endsWith(".ts") ? "./cli.ts" : "./cli.js",
+        import.meta.url,
+      ).href,
+      stateDir: this.ensureStateDir(),
+      ...(this.daemonEnv ? { env: this.daemonEnv } : {}),
+      ...(typeof params?.ttlMs === "number" ? { ttlMs: params.ttlMs } : {}),
+      ...(params?.label ? { label: params.label } : {}),
+      ...(params?.groupMode === true ? { groupMode: true } : {}),
+      ...(params?.openInBrowser === true ? { openInBrowser: true } : {}),
+    });
+    printPairInviteBundle(bundle, params?.writeLine ?? ((line) => console.log(line)));
+    return bundle;
+  }
+
   async runPairSession(params?: {
     ttlMs?: number;
     label?: string;
     printOnly?: boolean;
     groupMode?: boolean;
+    foreground?: boolean;
     openInBrowser?: boolean;
     writeLine?: (line: string) => void;
   }): Promise<PrivateClawInviteBundle> {
+    if (!params?.printOnly) {
+      await this.ensureControlServer("pair-foreground");
+    }
+    const provider = this.getProvider();
     return runPairSession({
-      provider: this.getProvider(),
+      provider,
       ...(typeof params?.ttlMs === "number"
         ? { ttlMs: params.ttlMs }
         : { ttlMs: this.defaultTtlMs }),
       ...(params?.label ? { label: params.label } : {}),
       ...(typeof params?.printOnly === "boolean" ? { printOnly: params.printOnly } : {}),
       ...(params?.groupMode === true ? { groupMode: true } : {}),
+      ...(typeof params?.foreground === "boolean"
+        ? { foreground: params.foreground }
+        : {}),
       ...(typeof params?.openInBrowser === "boolean"
         ? { openInBrowser: params.openInBrowser }
         : {}),
       qrMediaDir: this.getMediaDir(),
+      ...(this.daemonEnv && !params?.printOnly
+        ? {
+            handoffToBackground: async () => {
+              provider.suppressReconnectsForHandoff();
+              try {
+                await handoffForegroundPairToBackground({
+                  cliModuleUrl: new URL(
+                    import.meta.url.endsWith(".ts") ? "./cli.ts" : "./cli.js",
+                    import.meta.url,
+                  ).href,
+                  stateDir: this.ensureStateDir(),
+                  ...(this.daemonEnv ? { env: this.daemonEnv } : {}),
+                  handoffState: provider.exportHandoffState(),
+                });
+                return formatBilingualInline(
+                  "当前 PrivateClaw 会话已转入后台。可使用 `openclaw privateclaw sessions` 查看。",
+                  "The current PrivateClaw session is now running in the background. Use `openclaw privateclaw sessions` to inspect it.",
+                );
+              } catch (error) {
+                provider.resumeReconnectsAfterHandoffFailure();
+                throw error;
+              }
+            },
+          }
+        : {}),
       ...(params?.writeLine ? { writeLine: params.writeLine } : {}),
     });
   }
 
+  async listManagedSessions() {
+    return listManagedSessionsFromStateDir(this.ensureStateDir());
+  }
+
+  async kickManagedParticipant(sessionId: string, appId: string) {
+    return kickManagedParticipantFromStateDir({
+      stateDir: this.ensureStateDir(),
+      sessionId,
+      appId,
+      reason: "participant_removed",
+    });
+  }
+
   async dispose(): Promise<void> {
+    if (this.controlServer) {
+      await this.controlServer.stop();
+      this.controlServer = undefined;
+    }
     if (!this.provider) {
       return;
     }
@@ -540,11 +722,12 @@ function createPluginDefinition(
             .option("--group", PRIVATECLAW_CLI_GROUP_OPTION_DESCRIPTION)
             .option("--print-only", PRIVATECLAW_CLI_PRINT_ONLY_OPTION_DESCRIPTION)
             .option("--open", PRIVATECLAW_CLI_OPEN_OPTION_DESCRIPTION)
+            .option("--foreground", PRIVATECLAW_CLI_FOREGROUND_OPTION_DESCRIPTION)
             .action(async (rawOptions: unknown) => {
               const options = normalizePairCliOptions(rawOptions);
               const ttlMs = parsePositiveIntegerFlag(options.ttlMs, "--ttl-ms");
               const label = readString(options.label);
-              await runtime.runPairSession({
+              const pairParams = {
                 ...(typeof ttlMs === "number" ? { ttlMs } : {}),
                 ...(label ? { label } : {}),
                 ...(options.group ? { groupMode: true } : {}),
@@ -554,10 +737,53 @@ function createPluginDefinition(
                 ...(typeof options.open === "boolean"
                   ? { openInBrowser: options.open }
                   : {}),
-                writeLine: (line) => {
+                writeLine: (line: string) => {
                   console.log(line);
                 },
-              });
+              };
+              if (options.printOnly || options.foreground) {
+                await runtime.runPairSession({
+                  ...pairParams,
+                  foreground: true,
+                });
+                return;
+              }
+              await runtime.runBackgroundPairSession(pairParams);
+            });
+
+          privateclaw
+            .command("sessions")
+            .description(PRIVATECLAW_CLI_SESSIONS_DESCRIPTION)
+            .action(async () => {
+              const listings = await runtime.listManagedSessions();
+              for (const line of buildManagedSessionsReportLines(listings)) {
+                console.log(line);
+              }
+            });
+
+          privateclaw
+            .command("kick")
+            .description(PRIVATECLAW_CLI_KICK_DESCRIPTION)
+            .argument("<sessionId>")
+            .argument("<appId>")
+            .action(async (sessionIdRaw: unknown, appIdRaw: unknown) => {
+              const sessionId = readString(sessionIdRaw);
+              const appId = readString(appIdRaw);
+              if (!sessionId || !appId) {
+                throw new Error(
+                  formatBilingualInline(
+                    "kick 需要提供 sessionId 和 appId。",
+                    "kick requires both a sessionId and appId.",
+                  ),
+                );
+              }
+              const result = await runtime.kickManagedParticipant(sessionId, appId);
+              console.log(
+                formatBilingualInline(
+                  `已从会话 ${result.session.sessionId} 中移除 ${result.participant.displayName} (${result.participant.appId})。`,
+                  `Removed ${result.participant.displayName} (${result.participant.appId}) from session ${result.session.sessionId}.`,
+                ),
+              );
             });
         },
         { commands: ["privateclaw"] },
@@ -578,7 +804,11 @@ export function createPrivateClawPlugin(): OpenClawExtensionPluginCompat {
   return createPluginDefinition((api) => {
     const pluginConfig = resolvePluginConfig(api.pluginConfig);
     const resolved = buildProviderOptions(pluginConfig, api);
-    return new PrivateClawPluginRuntime(resolved.options, resolved.defaultTtlMs);
+    return new PrivateClawPluginRuntime(
+      resolved.options,
+      resolved.defaultTtlMs,
+      buildDaemonEnvFromPluginConfig(pluginConfig),
+    );
   });
 }
 

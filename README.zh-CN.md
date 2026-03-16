@@ -126,22 +126,33 @@ openclaw channels add --channel telegram --token <token>
 
 然后在该渠道里发送 `/privateclaw`，再用 App 扫描返回的二维码。
 
-如果你想开启加密群聊模式，可以发送 `/privateclaw group`；这样同一个会话允许多个 App 客户端加入，并共享同一段 OpenClaw 对话上下文。群聊中任意参与者都可以使用 `/renew-session` 续时，也可以用 `/mute-bot` / `/unmute-bot` 暂停或恢复 assistant 参与讨论。
+如果你想开启加密群聊模式，可以发送 `/privateclaw group`；这样同一个会话允许多个 App 客户端加入，并共享同一段 OpenClaw 对话上下文。参与者在会话有效期内离开后也可以重新加入；任意已连接参与者都可以用 `/session-qr` 重新分享当前会话二维码；当剩余时间少于 30 分钟时，provider 会提醒大家运行 `/renew-session`。群聊中任意参与者也可以用 `/mute-bot` / `/unmute-bot` 暂停或恢复 assistant 参与讨论。
 
 #### 方式 B：直接用 OpenClaw CLI 本地起配对会话
 
-如果你不想借助另一个聊天工具，可以直接运行：
+如果你不想借助另一个聊天工具，可以直接使用插件提供给 OpenClaw 的 provider CLI。相同的公开子命令也可以通过独立 npm 二进制 `privateclaw-provider <subcommand>` 使用；下面先用 OpenClaw 里的别名来举例：
+
+| 命令 | 用途 | 说明 |
+| --- | --- | --- |
+| `openclaw privateclaw pair` | 创建一个本地 PrivateClaw 会话，并在终端里渲染配对二维码。 | 默认打印完二维码后就返回 shell，同时 provider 会在后台 daemon 中把会话维持到过期。 |
+| `openclaw privateclaw sessions` | 列出当前由本地管理的活动会话。 | 输出包含总会话数，以及每个会话的 `type`、`participants`、`state`、`expires`、`host` 和可选的 `label`。`host` 目前可能是 `plugin-service`、`pair-foreground` 或 `pair-daemon`。 |
+| `openclaw privateclaw kick <sessionId> <appId>` | 从群聊会话中移除一个参与者。 | 这会关闭该 app 当前的 relay 连接，并阻止同一个 `appId` 在当前会话中重新加入。 |
+
+`pair` 支持这些公开参数：
+
+| 参数 | 作用 |
+| --- | --- |
+| `--ttl-ms <ms>` | 覆盖会话 TTL，默认仍是 8 小时。 |
+| `--label <label>` | 给 relay 侧会话附加一个可选标签，之后也会显示在会话管理输出中。 |
+| `--group` | 允许多个 PrivateClaw App 客户端加入同一个会话。 |
+| `--print-only` | 只打印邀请链接和二维码后立即退出；同时也会关闭这个会话，不会继续保持它存活。 |
+| `--open` | 为生成的二维码打开一个本地浏览器预览页。 |
+| `--foreground` | 把会话留在当前终端前台，直到会话结束或你按 `Ctrl+C`。在支持的运行时里，还可以按 `Ctrl+D` 把当前活跃会话无缝切换到后台 daemon。 |
+
+例如，想直接从 CLI 启动一个群聊会话，并先留在前台：
 
 ```bash
-openclaw privateclaw pair
-```
-
-这个命令会立刻创建会话，并在终端里直接渲染配对二维码；同时也会把 PNG 文件保存到 OpenClaw 的 media 目录，并把本地路径打印出来，方便那些终端无法稳定显示二维码的场景。如果你想让 PrivateClaw 自动弹出浏览器预览页，可以额外加上 `--open`。命令会保持运行，直到你按 `Ctrl+C` 停止。
-
-如果想直接从 CLI 启动群聊模式：
-
-```bash
-openclaw privateclaw pair --group
+openclaw privateclaw pair --group --foreground
 ```
 
 ### 3. 运行 App
@@ -152,6 +163,7 @@ flutter run
 ```
 
 随后扫描 `/privateclaw` 返回的二维码，或者扫描 `openclaw privateclaw pair` 在终端里打印的二维码，即可进入私有会话。
+会话真正连上之后，App 的会话面板还会显示当前连接到的 relay 服务器，方便用户确认自己到底接入了哪个 relay 节点。
 
 如果二维码来自 `/privateclaw group` 或 `openclaw privateclaw pair --group`，App 会显示参与者昵称，并把自己的稳定身份一并带入该群聊会话。
 

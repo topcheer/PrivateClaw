@@ -6,11 +6,14 @@ import {
   writeInviteQrPreviewHtml,
 } from "./invite-qr-files.js";
 import {
+  buildPrivateClawBackgroundHandoffFailureMessage,
   buildPrivateClawShutdownMessage,
   formatBilingualInline,
   PRIVATECLAW_INVITE_URI_LABEL,
   PRIVATECLAW_QR_PNG_PATH_LABEL,
+  PRIVATECLAW_SESSION_ENDED_MESSAGE,
   PRIVATECLAW_WAITING_FOR_APP_MESSAGE,
+  PRIVATECLAW_WAITING_FOR_APP_WITH_BACKGROUND_MESSAGE,
 } from "./text.js";
 import type { PrivateClawInviteBundle } from "./types.js";
 
@@ -20,9 +23,11 @@ export interface PairSessionOptions {
   label?: string;
   groupMode?: boolean;
   printOnly?: boolean;
+  foreground?: boolean;
   openInBrowser?: boolean;
   qrMediaDir?: string;
   writeLine?: (line: string) => void;
+  handoffToBackground?: () => Promise<string | void>;
 }
 
 export function parsePositiveIntegerFlag(
@@ -66,17 +71,71 @@ async function waitForShutdownSignal(): Promise<NodeJS.Signals> {
   });
 }
 
+async function waitForStdinEof(): Promise<void> {
+  if (!process.stdin.isTTY || process.stdin.destroyed) {
+    return new Promise<void>(() => undefined);
+  }
+
+  return new Promise((resolve) => {
+    const wasPaused = process.stdin.isPaused();
+    const handleEnd = () => {
+      cleanup();
+      resolve();
+    };
+    const handleClose = () => {
+      cleanup();
+      resolve();
+    };
+    const cleanup = () => {
+      process.stdin.off("end", handleEnd);
+      process.stdin.off("close", handleClose);
+      if (wasPaused && !process.stdin.destroyed) {
+        process.stdin.pause();
+      }
+    };
+
+    process.stdin.once("end", handleEnd);
+    process.stdin.once("close", handleClose);
+    if (wasPaused) {
+      process.stdin.resume();
+    }
+  });
+}
+
+async function waitForSessionsToDrain(
+  provider: PrivateClawProvider,
+  pollMs = 250,
+): Promise<void> {
+  while (provider.listActiveSessions().length > 0) {
+    await new Promise((resolve) => setTimeout(resolve, pollMs));
+  }
+}
+
+export function printPairInviteBundle(
+  bundle: PrivateClawInviteBundle,
+  writeLine: (line: string) => void,
+): void {
+  writeLine(bundle.announcementText);
+  writeLine(`${PRIVATECLAW_INVITE_URI_LABEL}: ${bundle.inviteUri}`);
+  if (bundle.qrPngPath) {
+    writeLine(`${PRIVATECLAW_QR_PNG_PATH_LABEL}: ${bundle.qrPngPath}`);
+  }
+  writeLine(bundle.qrTerminal);
+}
+
 export async function runPairSession({
   provider,
   ttlMs,
   label,
   groupMode = false,
   printOnly = false,
+  foreground = true,
   openInBrowser = false,
   qrMediaDir,
   writeLine = (line) => {
     console.log(line);
   },
+  handoffToBackground,
 }: PairSessionOptions): Promise<PrivateClawInviteBundle> {
   try {
     const inviteBundle = await provider.createInviteBundle({
@@ -93,10 +152,7 @@ export async function runPairSession({
       qrPngPath: qrPng.pngPath,
     };
 
-    writeLine(bundle.announcementText);
-    writeLine(`${PRIVATECLAW_INVITE_URI_LABEL}: ${bundle.inviteUri}`);
-    writeLine(`${PRIVATECLAW_QR_PNG_PATH_LABEL}: ${qrPng.pngPath}`);
-    writeLine(bundle.qrTerminal);
+    printPairInviteBundle(bundle, writeLine);
 
     if (openInBrowser) {
       const preview = await writeInviteQrPreviewHtml(
@@ -112,16 +168,53 @@ export async function runPairSession({
       return bundle;
     }
 
-    writeLine(PRIVATECLAW_WAITING_FOR_APP_MESSAGE);
-    process.stdin.resume();
-    try {
-      const signal = await waitForShutdownSignal();
-      writeLine(buildPrivateClawShutdownMessage(signal));
-      await provider.dispose();
+    if (!foreground) {
       return bundle;
-    } finally {
-      process.stdin.pause();
     }
+
+    writeLine(
+      handoffToBackground
+        ? PRIVATECLAW_WAITING_FOR_APP_WITH_BACKGROUND_MESSAGE
+        : PRIVATECLAW_WAITING_FOR_APP_MESSAGE,
+    );
+    for (;;) {
+      const outcome = await Promise.race<
+        | { kind: "signal"; signal: NodeJS.Signals }
+        | { kind: "session-ended" }
+        | { kind: "stdin-eof" }
+      >([
+        waitForShutdownSignal().then((signal) => ({ kind: "signal", signal })),
+        waitForSessionsToDrain(provider).then(() => ({ kind: "session-ended" })),
+        ...(handoffToBackground
+          ? [waitForStdinEof().then(() => ({ kind: "stdin-eof" as const }))]
+          : []),
+      ]);
+      if (outcome.kind === "stdin-eof") {
+        try {
+          const message = await handoffToBackground?.();
+          if (message) {
+            writeLine(message);
+          }
+          await provider.dispose({ closeSessions: false });
+          return bundle;
+        } catch (error) {
+          writeLine(
+            buildPrivateClawBackgroundHandoffFailureMessage(
+              error instanceof Error ? error.message : String(error),
+            ),
+          );
+          continue;
+        }
+      }
+      if (outcome.kind === "signal") {
+        writeLine(buildPrivateClawShutdownMessage(outcome.signal));
+      } else {
+        writeLine(PRIVATECLAW_SESSION_ENDED_MESSAGE);
+      }
+      break;
+    }
+    await provider.dispose();
+    return bundle;
   } catch (error) {
     await provider.dispose();
     throw error;

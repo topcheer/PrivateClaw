@@ -47,6 +47,16 @@ export const PRIVATECLAW_CLI_PAIR_DESCRIPTION = formatBilingualInline(
   "Start a local PrivateClaw session and render the pairing QR code in the terminal.",
 );
 
+export const PRIVATECLAW_CLI_SESSIONS_DESCRIPTION = formatBilingualInline(
+  "列出当前活动中的 PrivateClaw 会话及参与者。",
+  "List the active PrivateClaw sessions and their participants.",
+);
+
+export const PRIVATECLAW_CLI_KICK_DESCRIPTION = formatBilingualInline(
+  "从群聊会话中移除指定参与者。",
+  "Remove a participant from a group session.",
+);
+
 export const PRIVATECLAW_CLI_TTL_OPTION_DESCRIPTION = formatBilingualInline(
   "会话 TTL（毫秒）。",
   "Session TTL in milliseconds.",
@@ -73,6 +83,11 @@ export const PRIVATECLAW_CLI_OPEN_OPTION_DESCRIPTION = formatBilingualInline(
   "Open a local browser preview after generating the QR code.",
 );
 
+export const PRIVATECLAW_CLI_FOREGROUND_OPTION_DESCRIPTION = formatBilingualInline(
+  "保持当前命令在前台运行，直到会话结束或按 Ctrl+C；在支持的运行时里也可按 Ctrl+D 转入后台。",
+  "Keep the current command in the foreground until the session ends or you press Ctrl+C; in supported runtimes you can also press Ctrl+D to move it into the background.",
+);
+
 export const PRIVATECLAW_INVITE_URI_LABEL = formatBilingualInline(
   "邀请链接",
   "Invite URI",
@@ -88,10 +103,29 @@ export const PRIVATECLAW_WAITING_FOR_APP_MESSAGE = formatBilingualInline(
   "Waiting for the PrivateClaw app to connect. Press Ctrl+C to stop.",
 );
 
+export const PRIVATECLAW_WAITING_FOR_APP_WITH_BACKGROUND_MESSAGE = formatBilingualInline(
+  "等待 PrivateClaw App 连接，按 Ctrl+C 停止，按 Ctrl+D 转入后台。",
+  "Waiting for the PrivateClaw app to connect. Press Ctrl+C to stop or Ctrl+D to move it into the background.",
+);
+
+export const PRIVATECLAW_SESSION_ENDED_MESSAGE = formatBilingualInline(
+  "PrivateClaw 会话已结束。",
+  "The PrivateClaw session has ended.",
+);
+
 export function buildPrivateClawShutdownMessage(signal: string): string {
   return `[privateclaw-provider] ${formatBilingualInline(
     `收到 ${signal}，正在关闭`,
     `received ${signal}, shutting down`,
+  )}`;
+}
+
+export function buildPrivateClawBackgroundHandoffFailureMessage(
+  details: string,
+): string {
+  return `[privateclaw-provider] ${formatBilingualInline(
+    `转入后台失败：${details}`,
+    `failed to move the session into the background: ${details}`,
   )}`;
 }
 

@@ -38,6 +38,7 @@ void main() {
         sessionKey: 'test-session-key',
         appWsUrl: 'wss://relay.privateclaw.us/ws/app?sessionId=session-active',
         expiresAt: now.add(const Duration(hours: 1)),
+        relayLabel: 'relay.privateclaw.us',
       );
 
       await tester.pumpWidget(
@@ -80,6 +81,7 @@ void main() {
       );
       expect(find.text('Scan QR code'), findsOneWidget);
       expect(find.text('Disconnect'), findsOneWidget);
+      expect(find.text('relay.privateclaw.us'), findsOneWidget);
       expect(
         find.byKey(const ValueKey<String>('session-disconnect-button')),
         findsOneWidget,

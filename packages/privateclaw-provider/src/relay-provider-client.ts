@@ -13,6 +13,7 @@ const MAX_RECONNECT_DELAY_MS = 30_000;
 
 interface RelayProviderClientOptions {
   providerWsUrl: string;
+  providerId?: string;
   onFrame?: (sessionId: string, envelope: EncryptedEnvelope) => Promise<void> | void;
   onSessionClosed?: (sessionId: string, reason: string) => Promise<void> | void;
   onError?: (message: string) => void;
@@ -37,14 +38,17 @@ export class RelayProviderClient {
   private readyPromise: Promise<void> | undefined;
   private readonly pendingSessionCreations = new Map<string, PendingSessionCreation>();
   private readonly pendingSessionRenewals = new Map<string, PendingSessionRenewal>();
-  private readonly providerId = randomUUID();
+  private readonly providerId: string;
   private reconnectTimer: NodeJS.Timeout | undefined;
   private heartbeatTimer: NodeJS.Timeout | undefined;
   private reconnectDelayMs = INITIAL_RECONNECT_DELAY_MS;
   private lastPongAt = 0;
   private disposed = false;
+  private reconnectsSuppressed = false;
 
-  constructor(private readonly options: RelayProviderClientOptions) {}
+  constructor(private readonly options: RelayProviderClientOptions) {
+    this.providerId = options.providerId?.trim() || randomUUID();
+  }
 
   private buildProviderUrl(): string {
     const url = new URL(this.options.providerWsUrl);
@@ -123,7 +127,7 @@ export class RelayProviderClient {
         if (!ready) {
           rejectIfUnsettled(new Error("Relay provider socket closed before ready."));
         }
-        if (!this.disposed) {
+        if (!this.disposed && !this.reconnectsSuppressed) {
           this.scheduleReconnect();
         }
       });
@@ -158,7 +162,7 @@ export class RelayProviderClient {
   }
 
   private scheduleReconnect(): void {
-    if (this.reconnectTimer || this.disposed) {
+    if (this.reconnectTimer || this.disposed || this.reconnectsSuppressed) {
       return;
     }
     const delayMs = this.reconnectDelayMs;
@@ -319,6 +323,39 @@ export class RelayProviderClient {
       sessionId,
       ...(reason ? { reason } : {}),
     });
+  }
+
+  async closeApp(
+    sessionId: string,
+    appId: string,
+    reason?: string,
+  ): Promise<void> {
+    await this.connect();
+    this.send({
+      type: "provider:close_app",
+      sessionId,
+      appId,
+      ...(reason ? { reason } : {}),
+    });
+  }
+
+  getProviderId(): string {
+    return this.providerId;
+  }
+
+  suppressReconnects(): void {
+    this.reconnectsSuppressed = true;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = undefined;
+    }
+  }
+
+  resumeReconnects(): void {
+    if (this.disposed) {
+      return;
+    }
+    this.reconnectsSuppressed = false;
   }
 
   async dispose(): Promise<void> {

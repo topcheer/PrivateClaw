@@ -13,6 +13,7 @@ export interface EncryptedFrameCache {
     target: CachedRelayFrameTarget;
     appId?: string;
   }): Promise<EncryptedEnvelope[]>;
+  clearApp(sessionId: string, appId: string): Promise<void>;
   clear(sessionId: string): Promise<void>;
   close(): Promise<void>;
 }
@@ -90,6 +91,10 @@ export class InMemoryEncryptedFrameCache implements EncryptedFrameCache {
         this.frames.delete(key);
       }
     }
+  }
+
+  async clearApp(sessionId: string, appId: string): Promise<void> {
+    this.frames.delete(this.key(sessionId, "app", appId));
   }
 
   async close(): Promise<void> {
@@ -190,6 +195,10 @@ export class RedisEncryptedFrameCache implements EncryptedFrameCache {
       }
       cursor = nextCursor;
     } while (cursor !== "0");
+  }
+
+  async clearApp(sessionId: string, appId: string): Promise<void> {
+    await this.redis.del(this.key(sessionId, "app", appId));
   }
 
   async close(): Promise<void> {

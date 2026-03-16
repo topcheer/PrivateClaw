@@ -1,6 +1,6 @@
 {
   "name": "@privateclaw/privateclaw",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "description": "PrivateClaw provider runtime and OpenClaw-compatible plugin adapter",
   "type": "module",
   "main": "./dist/index.js",
@@ -46,7 +46,7 @@
     "test": "node --import tsx --test src/*.test.ts src/**/*.test.ts"
   },
   "dependencies": {
-    "@privateclaw/protocol": "^0.1.0",
+    "@privateclaw/protocol": "^0.1.2",
     "fflate": "^0.8.2",
     "qrcode": "^1.5.4",
     "ws": "^8.18.3"

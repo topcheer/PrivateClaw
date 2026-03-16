@@ -33,7 +33,10 @@ import type {
   BridgeResponse,
   PrivateClawConversationTurn,
   PrivateClawInviteBundle,
+  PrivateClawProviderHandoffState,
+  PrivateClawManagedSession,
   PrivateClawProviderOptions,
+  PrivateClawProviderSessionHandoff,
   ProviderParticipantState,
   ProviderSessionState,
 } from "./types.js";
@@ -162,6 +165,84 @@ function buildGeneratedParticipantLabel(
   }
 }
 
+function cloneConversationTurn(
+  turn: PrivateClawConversationTurn,
+): PrivateClawConversationTurn {
+  return {
+    ...turn,
+    ...(turn.attachments
+      ? {
+          attachments: turn.attachments.map((attachment) => ({
+            ...attachment,
+          })),
+        }
+      : {}),
+  };
+}
+
+function buildRelayLabel(appWsUrl: string): string | undefined {
+  try {
+    const url = new URL(appWsUrl);
+    if (!url.hostname) {
+      return undefined;
+    }
+    const port = url.port;
+    const isDefaultPort =
+      port === "" ||
+      (url.protocol === "wss:" && port === "443") ||
+      (url.protocol === "ws:" && port === "80");
+    return isDefaultPort ? url.hostname : `${url.hostname}:${port}`;
+  } catch {
+    return undefined;
+  }
+}
+
+function toProviderSessionHandoff(
+  session: ProviderSessionState,
+): PrivateClawProviderSessionHandoff {
+  return {
+    invite: { ...session.invite },
+    ...(session.label ? { label: session.label } : {}),
+    history: session.history.map(cloneConversationTurn),
+    groupMode: session.groupMode,
+    botMuted: session.botMuted,
+    participants: [...session.participants.values()].map((participant) => ({
+      ...participant,
+    })),
+    removedParticipantAppIds: [...session.removedParticipantAppIds.values()],
+    state: session.state,
+    ...(session.pendingRenewal
+      ? { pendingRenewal: { ...session.pendingRenewal } }
+      : {}),
+    ...(session.renewalReminderSentAt
+      ? { renewalReminderSentAt: session.renewalReminderSentAt }
+      : {}),
+  };
+}
+
+function fromProviderSessionHandoff(
+  snapshot: PrivateClawProviderSessionHandoff,
+): ProviderSessionState {
+  return {
+    invite: { ...snapshot.invite },
+    ...(snapshot.label ? { label: snapshot.label } : {}),
+    history: snapshot.history.map(cloneConversationTurn),
+    groupMode: snapshot.groupMode,
+    botMuted: snapshot.botMuted,
+    participants: new Map(
+      snapshot.participants.map((participant) => [participant.appId, { ...participant }]),
+    ),
+    removedParticipantAppIds: new Set(snapshot.removedParticipantAppIds),
+    state: snapshot.state,
+    ...(snapshot.pendingRenewal
+      ? { pendingRenewal: { ...snapshot.pendingRenewal } }
+      : {}),
+    ...(snapshot.renewalReminderSentAt
+      ? { renewalReminderSentAt: snapshot.renewalReminderSentAt }
+      : {}),
+  };
+}
+
 function buildRenewalReminderMessage(session: ProviderSessionState): string {
   const command = "/renew-session";
   if (session.groupMode) {
@@ -218,6 +299,26 @@ function toParticipantSnapshot(
     displayName: participant.displayName,
     ...(participant.deviceLabel ? { deviceLabel: participant.deviceLabel } : {}),
     joinedAt: participant.joinedAt,
+  };
+}
+
+function toManagedSessionSnapshot(
+  session: ProviderSessionState,
+): PrivateClawManagedSession {
+  const participants = [...session.participants.values()]
+    .sort((left, right) => left.joinedAt.localeCompare(right.joinedAt))
+    .map(toParticipantSnapshot);
+  return {
+    sessionId: session.invite.sessionId,
+    expiresAt: session.invite.expiresAt,
+    ...(session.invite.providerLabel
+      ? { providerLabel: session.invite.providerLabel }
+      : {}),
+    ...(session.label ? { label: session.label } : {}),
+    groupMode: session.groupMode,
+    participantCount: participants.length,
+    participants,
+    state: session.state,
   };
 }
 
@@ -287,6 +388,15 @@ function buildParticipantLeftMessage(participantLabel: string): string {
   return formatBilingualInline(
     `${participantLabel} 离开了群聊。`,
     `${participantLabel} left the group chat.`,
+  );
+}
+
+function buildParticipantRemovedByOperatorMessage(
+  participantLabel: string,
+): string {
+  return formatBilingualInline(
+    `${participantLabel} 已被移出群聊。`,
+    `${participantLabel} was removed from the group chat.`,
   );
 }
 
@@ -379,6 +489,7 @@ export class PrivateClawProvider {
   constructor(private readonly options: PrivateClawProviderOptions) {
     this.relayClient = new RelayProviderClient({
       providerWsUrl: options.providerWsUrl,
+      ...(options.providerId ? { providerId: options.providerId } : {}),
       onFrame: async (sessionId, envelope) => {
         await this.handleRelayFrame(sessionId, envelope);
       },
@@ -396,16 +507,21 @@ export class PrivateClawProvider {
     await this.relayClient.connect();
   }
 
-  async dispose(): Promise<void> {
+  async dispose(params?: { closeSessions?: boolean }): Promise<void> {
+    const closeSessions = params?.closeSessions !== false;
     const activeSessionIds = [...this.sessions.keys()];
     for (const sessionId of activeSessionIds) {
-      try {
-        await this.relayClient.closeSession(sessionId, "provider_shutdown");
-      } catch (error) {
-        this.options.onLog?.(
-            `[provider] failed to close session ${sessionId} during shutdown: ${error instanceof Error ? error.message : String(error)}`,
-          );
-      } finally {
+      if (closeSessions) {
+        try {
+          await this.relayClient.closeSession(sessionId, "provider_shutdown");
+        } catch (error) {
+          this.options.onLog?.(
+              `[provider] failed to close session ${sessionId} during shutdown: ${error instanceof Error ? error.message : String(error)}`,
+            );
+        } finally {
+          this.deleteSession(sessionId);
+        }
+      } else {
         this.deleteSession(sessionId);
       }
     }
@@ -414,6 +530,77 @@ export class PrivateClawProvider {
 
   listActiveSessions(): PrivateClawInvite[] {
     return [...this.sessions.values()].map((session) => session.invite);
+  }
+
+  listManagedSessions(): PrivateClawManagedSession[] {
+    return [...this.sessions.values()].map(toManagedSessionSnapshot);
+  }
+
+  exportHandoffState(): PrivateClawProviderHandoffState {
+    return {
+      providerId: this.relayClient.getProviderId(),
+      sessions: [...this.sessions.values()].map(toProviderSessionHandoff),
+    };
+  }
+
+  importHandoffState(state: PrivateClawProviderHandoffState): void {
+    if (state.providerId !== this.relayClient.getProviderId()) {
+      throw new Error("Handoff providerId does not match this provider instance.");
+    }
+    for (const sessionId of [...this.sessions.keys()]) {
+      this.deleteSession(sessionId);
+    }
+    for (const snapshot of state.sessions) {
+      const session = fromProviderSessionHandoff(snapshot);
+      this.sessions.set(session.invite.sessionId, session);
+      this.scheduleRenewalReminder(session.invite.sessionId);
+    }
+  }
+
+  suppressReconnectsForHandoff(): void {
+    this.relayClient.suppressReconnects();
+  }
+
+  resumeReconnectsAfterHandoffFailure(): void {
+    this.relayClient.resumeReconnects();
+  }
+
+  async kickGroupParticipant(
+    sessionId: string,
+    appId: string,
+    reason = "participant_removed",
+  ): Promise<PrivateClawParticipant> {
+    const session = this.requireSession(sessionId);
+    if (!session.groupMode) {
+      throw new Error("Participant removal is only available for group sessions.");
+    }
+
+    const normalizedAppId = appId.trim();
+    if (normalizedAppId === "") {
+      throw new Error("Participant appId is required.");
+    }
+
+    const participant = session.participants.get(normalizedAppId);
+    if (!participant) {
+      throw new Error(
+        `Participant ${normalizedAppId} is not part of session ${sessionId}.`,
+      );
+    }
+
+    session.participants.delete(normalizedAppId);
+    session.removedParticipantAppIds.add(normalizedAppId);
+
+    await this.relayClient.closeApp(sessionId, normalizedAppId, reason);
+
+    if (session.participants.size > 0) {
+      await this.sendSystemMessageToGroupParticipants(
+        sessionId,
+        buildParticipantRemovedByOperatorMessage(participant.displayName),
+      );
+      await this.sendCapabilities(sessionId);
+    }
+
+    return toParticipantSnapshot(participant);
   }
 
   private buildSessionAppUrl(sessionId: string): string {
@@ -933,9 +1120,18 @@ export class PrivateClawProvider {
 
     switch (payload.kind) {
       case "client_hello": {
+        const normalizedAppId = payload.appId?.trim() || "legacy-app";
+        if (session.removedParticipantAppIds.has(normalizedAppId)) {
+          await this.relayClient.closeApp(
+            sessionId,
+            normalizedAppId,
+            "participant_removed",
+          );
+          return;
+        }
         const participantState = await this.upsertParticipant(sessionId, {
           sentAt: payload.sentAt,
-          ...(payload.appId ? { appId: payload.appId } : {}),
+          ...(payload.appId ? { appId: normalizedAppId } : {}),
           ...(payload.deviceLabel
             ? { deviceLabel: payload.deviceLabel }
             : {}),
@@ -1351,6 +1547,7 @@ export class PrivateClawProvider {
     await this.connect();
 
     const groupMode = params?.groupMode === true;
+    const relayLabel = buildRelayLabel(this.options.appWsUrl);
     const { sessionId, expiresAt } = await this.relayClient.createSession(
       params?.ttlMs ?? this.options.defaultTtlMs,
       params?.label,
@@ -1365,14 +1562,17 @@ export class PrivateClawProvider {
       expiresAt,
       ...(groupMode ? { groupMode: true } : {}),
       ...(this.options.providerLabel ? { providerLabel: this.options.providerLabel } : {}),
+      ...(relayLabel ? { relayLabel } : {}),
     };
 
     this.sessions.set(sessionId, {
       invite,
+      ...(params?.label ? { label: params.label } : {}),
       history: [],
       groupMode,
       botMuted: false,
       participants: new Map<string, ProviderParticipantState>(),
+      removedParticipantAppIds: new Set<string>(),
       state: "awaiting_hello",
     });
     this.scheduleRenewalReminder(sessionId);

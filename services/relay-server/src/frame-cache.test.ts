@@ -139,3 +139,35 @@ test("RedisEncryptedFrameCache drains global and targeted app frames in order", 
 
   await cache.close();
 });
+
+test("RedisEncryptedFrameCache clears only the targeted app queue", async () => {
+  const cache = new RedisEncryptedFrameCache("redis://unused", 8, new FakeRedisClient());
+  const sessionId = "session-redis-clear-app";
+  const globalFrame = createEnvelope("global-frame");
+  const appOneFrame = createEnvelope("app-one-frame");
+  const appTwoFrame = createEnvelope("app-two-frame");
+
+  await cache.push({ sessionId, target: "app", envelope: globalFrame });
+  await cache.push({
+    sessionId,
+    target: "app",
+    appId: "app-1",
+    envelope: appOneFrame,
+  });
+  await cache.push({
+    sessionId,
+    target: "app",
+    appId: "app-2",
+    envelope: appTwoFrame,
+  });
+
+  await cache.clearApp(sessionId, "app-1");
+
+  assert.deepEqual(await cache.drain({ sessionId, target: "app", appId: "app-2" }), [
+    globalFrame,
+    appTwoFrame,
+  ]);
+  assert.deepEqual(await cache.drain({ sessionId, target: "app", appId: "app-1" }), []);
+
+  await cache.close();
+});

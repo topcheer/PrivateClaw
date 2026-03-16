@@ -9,6 +9,7 @@ import {
   type PrivateClawInvite,
   type PrivateClawParticipant,
   type PrivateClawSlashCommand,
+  type UserMessagePayload,
 } from "@privateclaw/protocol";
 import QRCode from "qrcode";
 import {
@@ -66,6 +67,14 @@ const PARTICIPANT_FALLBACK_SUFFIXES = [
   "鸮",
 ] as const;
 
+interface PreparedUserMessage {
+  text: string;
+  bridgeText?: string;
+  historyBridgeText?: string;
+  attachments?: PrivateClawAttachment[];
+  bridgeAttachments?: PrivateClawAttachment[];
+}
+
 function normalizeBridgeMessages(
   response: BridgeResponse,
 ): Array<{ text: string; attachments?: PrivateClawAttachment[] }> {
@@ -86,6 +95,10 @@ function nowIso(): string {
 
 function buildMessageId(prefix: string): string {
   return `${prefix}-${randomUUID()}`;
+}
+
+function buildPendingAssistantMessageId(replyTo: string): string {
+  return `pending-${replyTo}`;
 }
 
 function sanitizeParticipantLabel(raw: string | undefined): string | undefined {
@@ -281,6 +294,12 @@ function buildSessionQrFailureMessage(details: string): string {
 function formatBridgeHistoryTurn(
   turn: PrivateClawConversationTurn,
 ): PrivateClawConversationTurn {
+  if (turn.role === "user" && turn.bridgeText?.trim()) {
+    return {
+      ...turn,
+      text: turn.bridgeText,
+    };
+  }
   if (turn.role !== "user" || !turn.participantLabel) {
     return turn;
   }
@@ -289,6 +308,57 @@ function formatBridgeHistoryTurn(
     ...turn,
     text: `${turn.participantLabel}: ${turn.text}`,
   };
+}
+
+function isAudioAttachment(attachment: PrivateClawAttachment): boolean {
+  const normalizedMimeType = attachment.mimeType.trim().toLowerCase();
+  if (normalizedMimeType.startsWith("audio/")) {
+    return true;
+  }
+  return /\.(?:aac|caf|m4a|mp3|ogg|opus|wav)$/iu.test(attachment.name.trim());
+}
+
+function hasAudioAttachments(
+  attachments?: ReadonlyArray<PrivateClawAttachment>,
+): boolean {
+  return (attachments ?? []).some(isAudioAttachment);
+}
+
+function mergeVoiceTranscriptText(transcript: string, fallbackText: string): string {
+  const normalizedTranscript = transcript.trim();
+  const normalizedFallback = fallbackText.trim();
+  if (normalizedTranscript === "") {
+    return normalizedFallback;
+  }
+  if (
+    normalizedFallback === "" ||
+    normalizedFallback.localeCompare(normalizedTranscript, undefined, {
+      sensitivity: "accent",
+    }) === 0
+  ) {
+    return normalizedTranscript;
+  }
+  return `${normalizedTranscript}\n\n${normalizedFallback}`;
+}
+
+function buildVoiceBridgeText(speakerName: string, messageText: string): string {
+  const normalizedSpeakerName = speakerName.trim();
+  const normalizedMessageText = messageText.trim();
+  if (normalizedSpeakerName === "") {
+    return normalizedMessageText;
+  }
+  return `${normalizedSpeakerName}说：${normalizedMessageText}`;
+}
+
+function buildVoiceBridgePromptText(speakerName: string, messageText: string): string {
+  const bridgeText = buildVoiceBridgeText(speakerName, messageText);
+  return [
+    "PrivateClaw note: the next line is the speech-to-text transcript of a user's voice message.",
+    "Treat it as the user's original request and respond directly to the request itself.",
+    "Do not mention transcription, speech recognition, or the transcript unless the user explicitly asks about it.",
+    "",
+    bridgeText,
+  ].join("\n");
 }
 
 function toParticipantSnapshot(
@@ -425,6 +495,13 @@ function buildBridgeErrorMessage(details: string): string {
   return formatBilingualInline(
     `OpenClaw bridge 错误：${details}`,
     `OpenClaw bridge error: ${details}`,
+  );
+}
+
+function buildVoiceReceiptMessage(): string {
+  return formatBilingualInline(
+    "我已经收到你的语音，正在努力理解。",
+    "I received your voice message and am working on understanding it.",
   );
 }
 
@@ -666,6 +743,60 @@ export class PrivateClawProvider {
     return session.history.map(formatBridgeHistoryTurn);
   }
 
+  private async prepareUserMessage(
+    session: ProviderSessionState,
+    payload: UserMessagePayload,
+    participant: ProviderParticipantState | undefined,
+  ): Promise<PreparedUserMessage> {
+    const allAttachments = payload.attachments ?? [];
+    const audioAttachments = allAttachments.filter(isAudioAttachment);
+    if (
+      audioAttachments.length === 0 ||
+      !this.options.bridge.transcribeAudioAttachments
+    ) {
+      return {
+        text: payload.text,
+        ...(allAttachments.length > 0 ? { attachments: allAttachments } : {}),
+        ...(allAttachments.length > 0 ? { bridgeAttachments: allAttachments } : {}),
+      };
+    }
+
+    this.options.onLog?.(
+      `[provider] voice_transcription_start session=${session.invite.sessionId} request=${payload.clientMessageId} audioAttachments=${audioAttachments.length}`,
+    );
+    const transcript = (
+      await this.options.bridge.transcribeAudioAttachments({
+        sessionId: session.invite.sessionId,
+        requestId: payload.clientMessageId,
+        attachments: audioAttachments,
+      })
+    ).trim();
+    if (transcript === "") {
+      throw new Error("OpenClaw STT returned an empty transcript.");
+    }
+
+    const text = mergeVoiceTranscriptText(transcript, payload.text);
+    const speakerName =
+      participant?.displayName ??
+      sanitizeParticipantLabel(payload.displayName) ??
+      "用户";
+    const passthroughAttachments = allAttachments.filter(
+      (attachment) => !isAudioAttachment(attachment),
+    );
+    this.options.onLog?.(
+      `[provider] voice_transcription_complete session=${session.invite.sessionId} request=${payload.clientMessageId} transcriptChars=${transcript.length} passthroughAttachments=${passthroughAttachments.length}`,
+    );
+    return {
+      text: payload.text,
+      bridgeText: buildVoiceBridgePromptText(speakerName, text),
+      historyBridgeText: buildVoiceBridgeText(speakerName, text),
+      ...(allAttachments.length > 0 ? { attachments: allAttachments } : {}),
+      ...(passthroughAttachments.length > 0
+        ? { bridgeAttachments: passthroughAttachments }
+        : {}),
+    };
+  }
+
   private listParticipants(
     session: ProviderSessionState,
   ): PrivateClawParticipant[] {
@@ -810,6 +941,7 @@ export class PrivateClawProvider {
     params: {
       text: string;
       replyTo?: string;
+      pending?: boolean;
       attachments?: PrivateClawAttachment[];
       messageId?: string;
       sentAt?: string;
@@ -836,8 +968,28 @@ export class PrivateClawProvider {
       text: params.text,
       sentAt,
       ...(params.replyTo ? { replyTo: params.replyTo } : {}),
+      ...(params.pending ? { pending: true } : {}),
       ...(params.attachments ? { attachments: params.attachments } : {}),
     }, params.targetAppId);
+  }
+
+  private async sendPendingAssistantStatus(
+    sessionId: string,
+    params: {
+      replyTo: string;
+      targetAppId?: string;
+      sentAt?: string;
+    },
+  ): Promise<void> {
+    await this.sendAssistantMessage(sessionId, {
+      text: "",
+      replyTo: params.replyTo,
+      pending: true,
+      messageId: buildPendingAssistantMessageId(params.replyTo),
+      storeHistory: false,
+      ...(params.sentAt ? { sentAt: params.sentAt } : {}),
+      ...(params.targetAppId ? { targetAppId: params.targetAppId } : {}),
+    });
   }
 
   async sendSystemMessage(
@@ -931,6 +1083,7 @@ export class PrivateClawProvider {
       clientMessageId: string;
       sentAt?: string;
       attachments?: PrivateClawAttachment[];
+      bridgeText?: string;
       targetAppId?: string;
       storeHistory?: boolean;
     },
@@ -938,14 +1091,14 @@ export class PrivateClawProvider {
     const sentAt = params.sentAt ?? nowIso();
     const session = this.requireSession(sessionId);
     if (params.storeHistory !== false) {
-      session.history.push({
+      this.storeUserMessageTurn(session, {
         messageId: params.clientMessageId,
-        role: "user",
         text: params.text,
         sentAt,
         appId: params.senderAppId,
         participantLabel: params.senderDisplayName,
         ...(params.attachments ? { attachments: params.attachments } : {}),
+        ...(params.bridgeText ? { bridgeText: params.bridgeText } : {}),
       });
     }
     await this.sendPayload(sessionId, {
@@ -958,6 +1111,97 @@ export class PrivateClawProvider {
       sentAt,
       ...(params.attachments ? { attachments: params.attachments } : {}),
     }, params.targetAppId);
+  }
+
+  private async sendParticipantMessageToGroupParticipants(
+    sessionId: string,
+    params: {
+      text: string;
+      senderAppId: string;
+      senderDisplayName: string;
+      clientMessageId: string;
+      sentAt?: string;
+      attachments?: PrivateClawAttachment[];
+      excludeAppId?: string;
+      bridgeText?: string;
+      storeHistory?: boolean;
+    },
+  ): Promise<void> {
+    const session = this.requireSession(sessionId);
+    const sentAt = params.sentAt ?? nowIso();
+    if (params.storeHistory !== false) {
+      this.storeUserMessageTurn(session, {
+        messageId: params.clientMessageId,
+        text: params.text,
+        sentAt,
+        appId: params.senderAppId,
+        participantLabel: params.senderDisplayName,
+        ...(params.attachments ? { attachments: params.attachments } : {}),
+        ...(params.bridgeText ? { bridgeText: params.bridgeText } : {}),
+      });
+    }
+    const targetAppIds = [...session.participants.keys()].filter(
+      (appId) => appId !== params.excludeAppId,
+    );
+    if (targetAppIds.length === 0) {
+      return;
+    }
+    await Promise.all(
+      targetAppIds.map((targetAppId) =>
+        this.sendPayload(
+          sessionId,
+          {
+            kind: "participant_message",
+            messageId: params.clientMessageId,
+            senderAppId: params.senderAppId,
+            senderDisplayName: params.senderDisplayName,
+            text: params.text,
+            clientMessageId: params.clientMessageId,
+            sentAt,
+            ...(params.attachments ? { attachments: params.attachments } : {}),
+          },
+          targetAppId,
+        ),
+      ),
+    );
+  }
+
+  private storeUserMessageTurn(
+    session: ProviderSessionState,
+    params: {
+      messageId: string;
+      text: string;
+      sentAt: string;
+      bridgeText?: string;
+      appId?: string;
+      participantLabel?: string;
+      attachments?: PrivateClawAttachment[];
+    },
+  ): void {
+    session.history.push({
+      messageId: params.messageId,
+      role: "user",
+      text: params.text,
+      sentAt: params.sentAt,
+      ...(params.bridgeText ? { bridgeText: params.bridgeText } : {}),
+      ...(params.appId ? { appId: params.appId } : {}),
+      ...(params.participantLabel ? { participantLabel: params.participantLabel } : {}),
+      ...(params.attachments ? { attachments: params.attachments } : {}),
+    });
+  }
+
+  private updateStoredUserBridgeText(
+    session: ProviderSessionState,
+    messageId: string,
+    bridgeText: string,
+  ): void {
+    for (let index = session.history.length - 1; index >= 0; index -= 1) {
+      const turn = session.history[index];
+      if (turn?.role === "user" && turn.messageId === messageId) {
+        turn.bridgeText = bridgeText;
+        return;
+      }
+    }
   }
 
   private async sendWelcomeMessage(
@@ -1449,48 +1693,160 @@ export class PrivateClawProvider {
           return;
         }
 
-        if (session.groupMode) {
-          if (!participant) {
-            await this.sendSystemMessage(
-              sessionId,
-              buildMissingParticipantIdentityMessage(),
-              "error",
-              payload.clientMessageId,
-            );
-            return;
+        if (session.groupMode && !participant) {
+          await this.sendSystemMessage(
+            sessionId,
+            buildMissingParticipantIdentityMessage(),
+            "error",
+            payload.clientMessageId,
+          );
+          return;
+        }
+
+        const supportsVoiceTranscription = Boolean(
+          this.options.bridge.transcribeAudioAttachments,
+        );
+        const containsAudioAttachment = hasAudioAttachments(payload.attachments);
+        const shouldHandleVoiceAsynchronously =
+          containsAudioAttachment && supportsVoiceTranscription;
+        const voiceFeedbackParams =
+          shouldHandleVoiceAsynchronously && participant
+            ? {
+                targetAppId: participant.appId,
+                storeHistory: false,
+              }
+            : undefined;
+
+        if (shouldHandleVoiceAsynchronously) {
+          if (session.groupMode) {
+            this.storeUserMessageTurn(session, {
+              messageId: payload.clientMessageId,
+              text: payload.text,
+              sentAt: payload.sentAt,
+              appId: participant!.appId,
+              participantLabel: participant!.displayName,
+              ...(payload.attachments ? { attachments: payload.attachments } : {}),
+            });
+            await this.sendParticipantMessageToGroupParticipants(sessionId, {
+              text: payload.text,
+              senderAppId: participant!.appId,
+              senderDisplayName: participant!.displayName,
+              clientMessageId: payload.clientMessageId,
+              sentAt: payload.sentAt,
+              ...(payload.attachments ? { attachments: payload.attachments } : {}),
+              excludeAppId: participant!.appId,
+              storeHistory: false,
+            });
+          } else {
+            this.storeUserMessageTurn(session, {
+              messageId: payload.clientMessageId,
+              text: payload.text,
+              sentAt: payload.sentAt,
+              ...(payload.attachments ? { attachments: payload.attachments } : {}),
+            });
           }
-          await this.sendParticipantMessage(sessionId, {
-            text: payload.text,
-            senderAppId: participant.appId,
-            senderDisplayName: participant.displayName,
-            clientMessageId: payload.clientMessageId,
-            sentAt: payload.sentAt,
-            ...(payload.attachments ? { attachments: payload.attachments } : {}),
-          });
-        } else {
-          session.history.push({
-            messageId: payload.clientMessageId,
-            role: "user",
-            text: payload.text,
-            sentAt: payload.sentAt,
-            ...(payload.attachments ? { attachments: payload.attachments } : {}),
-          });
         }
 
         if (session.groupMode && session.botMuted) {
+          if (!shouldHandleVoiceAsynchronously) {
+            await this.sendParticipantMessage(sessionId, {
+              text: payload.text,
+              senderAppId: participant!.appId,
+              senderDisplayName: participant!.displayName,
+              clientMessageId: payload.clientMessageId,
+              sentAt: payload.sentAt,
+              ...(payload.attachments ? { attachments: payload.attachments } : {}),
+            });
+          }
           return;
+        }
+
+        if (voiceFeedbackParams) {
+          await this.sendSystemMessage(
+            sessionId,
+            buildVoiceReceiptMessage(),
+            "info",
+            undefined,
+            voiceFeedbackParams,
+          );
+          await this.sendPendingAssistantStatus(sessionId, {
+            replyTo: payload.clientMessageId,
+            targetAppId: voiceFeedbackParams.targetAppId,
+            sentAt: payload.sentAt,
+          });
+        }
+
+        let preparedMessage: PreparedUserMessage;
+        try {
+          preparedMessage = await this.prepareUserMessage(
+            session,
+            payload,
+            participant,
+          );
+        } catch (error) {
+          await this.sendSystemMessage(
+            sessionId,
+            buildBridgeErrorMessage(
+              error instanceof Error ? error.message : String(error),
+            ),
+            "error",
+            payload.clientMessageId,
+            voiceFeedbackParams,
+          );
+          return;
+        }
+
+        if (shouldHandleVoiceAsynchronously) {
+          if (preparedMessage.historyBridgeText) {
+            this.updateStoredUserBridgeText(
+              session,
+              payload.clientMessageId,
+              preparedMessage.historyBridgeText,
+            );
+          }
+        } else if (session.groupMode) {
+          await this.sendParticipantMessage(sessionId, {
+            text: preparedMessage.text,
+            senderAppId: participant!.appId,
+            senderDisplayName: participant!.displayName,
+            clientMessageId: payload.clientMessageId,
+            sentAt: payload.sentAt,
+            ...(preparedMessage.attachments
+              ? { attachments: preparedMessage.attachments }
+              : {}),
+            ...(preparedMessage.historyBridgeText
+              ? { bridgeText: preparedMessage.historyBridgeText }
+              : {}),
+          });
+        } else {
+          this.storeUserMessageTurn(session, {
+            messageId: payload.clientMessageId,
+            text: preparedMessage.text,
+            sentAt: payload.sentAt,
+            ...(preparedMessage.historyBridgeText
+              ? { bridgeText: preparedMessage.historyBridgeText }
+              : {}),
+            ...(preparedMessage.attachments
+              ? { attachments: preparedMessage.attachments }
+              : {}),
+          });
         }
 
         try {
           const bridgeMessage =
-            session.groupMode && participant
-              ? `${participant.displayName}: ${payload.text}`
-              : payload.text;
+            preparedMessage.bridgeText ??
+            (session.groupMode && participant
+              ? `${participant.displayName}: ${preparedMessage.text}`
+              : preparedMessage.text);
           const bridgeResponse = await this.options.bridge.handleUserMessage({
             sessionId,
             invite: session.invite,
             message: bridgeMessage,
-            ...(payload.attachments ? { attachments: payload.attachments } : {}),
+            ...(preparedMessage.bridgeAttachments
+              ? { attachments: preparedMessage.bridgeAttachments }
+              : preparedMessage.attachments
+                ? { attachments: preparedMessage.attachments }
+              : {}),
             history: this.buildBridgeHistory(session),
           });
 
@@ -1517,6 +1873,7 @@ export class PrivateClawProvider {
             ),
             "error",
             payload.clientMessageId,
+            voiceFeedbackParams,
           );
         }
         return;

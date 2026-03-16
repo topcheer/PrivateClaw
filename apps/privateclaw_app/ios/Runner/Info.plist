@@ -47,6 +47,8 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>PrivateClaw uses the camera to scan one-time encrypted session QR codes.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>PrivateClaw uses the microphone only when you press and hold to record an encrypted voice message.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>PrivateClaw uses your photo library only when you choose media or files to attach to an encrypted chat.</string>
 	<key>UIBackgroundModes</key>

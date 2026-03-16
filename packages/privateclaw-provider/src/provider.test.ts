@@ -138,6 +138,39 @@ class GroupBridge {
   }
 }
 
+class VoiceTranscribingBridge {
+  readonly conversationMessages: string[] = [];
+  readonly transcriptionRequests: Array<{ sessionId: string; requestId: string }> = [];
+
+  async transcribeAudioAttachments(params: {
+    sessionId: string;
+    requestId: string;
+  }): Promise<string> {
+    this.transcriptionRequests.push({
+      sessionId: params.sessionId,
+      requestId: params.requestId,
+    });
+    return "你好世界";
+  }
+
+  async handleUserMessage(params: {
+    message: string;
+  }): Promise<string> {
+    this.conversationMessages.push(params.message);
+    return `OpenClaw bridge: ${params.message}`;
+  }
+}
+
+function buildVoiceAttachment() {
+  return {
+    id: "voice-attachment-1",
+    name: "voice.m4a",
+    mimeType: "audio/mp4",
+    sizeBytes: 16,
+    dataBase64: Buffer.from("voice-bytes").toString("base64"),
+  };
+}
+
 test("provider creates one-time invites and replies through the encrypted relay", async (t) => {
   const relay = createRelayServer({
     host: "127.0.0.1",
@@ -227,8 +260,7 @@ test("provider creates one-time invites and replies through the encrypted relay"
   assert.equal(assistant.kind, "assistant_message");
   assert.match(assistant.text, /你好/);
 
-  appSocket.close();
-  await waitForClose(appSocket);
+  appSocket.terminate();
 });
 
 test("provider can hand off an active session to a successor provider", async (t) => {
@@ -335,6 +367,113 @@ test("provider can hand off an active session to a successor provider", async (t
 
   appSocket.close();
   await waitForClose(appSocket);
+});
+
+test("provider acknowledges voice uploads before forwarding transcript-derived replies", async (t) => {
+  const relay = createRelayServer({
+    host: "127.0.0.1",
+    port: 0,
+    sessionTtlMs: 60_000,
+    frameCacheSize: 8,
+  });
+  const { port } = await relay.start();
+  t.after(async () => {
+    await relay.stop();
+  });
+
+  const bridge = new VoiceTranscribingBridge();
+  const provider = new PrivateClawProvider({
+    providerWsUrl: `ws://127.0.0.1:${port}/ws/provider`,
+    appWsUrl: `ws://127.0.0.1:${port}/ws/app`,
+    bridge,
+    defaultTtlMs: DEFAULT_SESSION_TTL_MS,
+    welcomeMessage: "欢迎来到 PrivateClaw",
+  });
+  await provider.connect();
+  t.after(async () => {
+    await provider.dispose();
+  });
+
+  const inviteBundle = await provider.createInviteBundle();
+  const invite = decodeInviteString(inviteBundle.inviteUri);
+
+  const appUrl = new URL(invite.appWsUrl);
+  appUrl.searchParams.set("appId", "voice-app");
+  const appSocket = new WebSocket(appUrl.toString());
+  const attachedPromise = nextMessage(appSocket);
+  await waitForOpen(appSocket);
+  assert.equal((await attachedPromise).type, "relay:attached");
+
+  appSocket.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "client_hello",
+          appId: "voice-app",
+          displayName: "小明",
+          appVersion: "flutter-test",
+          deviceLabel: "Simulator",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+  await nextMessages(appSocket, 2);
+
+  appSocket.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "user_message",
+          appId: "voice-app",
+          displayName: "小明",
+          text: "",
+          attachments: [buildVoiceAttachment()],
+          clientMessageId: "voice-message-1",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+
+  const voiceFrames = await nextMessages(appSocket, 3);
+  const voiceReceipt = decryptRelayPayload(voiceFrames[0]!, invite);
+  assert.equal(voiceReceipt.kind, "system_message");
+  assert.match(voiceReceipt.message, /已经收到你的语音/u);
+  assert.match(voiceReceipt.message, /working on understanding/i);
+  assert.equal(voiceReceipt.replyTo, undefined);
+
+  const pendingReply = decryptRelayPayload(voiceFrames[1]!, invite);
+  assert.equal(pendingReply.kind, "assistant_message");
+  assert.equal(pendingReply.replyTo, "voice-message-1");
+  assert.equal(pendingReply.pending, true);
+  assert.equal(pendingReply.messageId, "pending-voice-message-1");
+  assert.equal(pendingReply.text, "");
+
+  const assistant = decryptRelayPayload(voiceFrames[2]!, invite);
+  assert.equal(assistant.kind, "assistant_message");
+  assert.notEqual(assistant.pending, true);
+  assert.match(assistant.text, /小明说：你好世界/u);
+  assert.deepEqual(bridge.transcriptionRequests, [
+    {
+      sessionId: invite.sessionId,
+      requestId: "voice-message-1",
+    },
+  ]);
+  assert.equal(bridge.conversationMessages.length, 1);
+  assert.match(
+    bridge.conversationMessages[0] ?? "",
+    /speech-to-text transcript of a user's voice message/u,
+  );
+  assert.match(bridge.conversationMessages[0] ?? "", /小明说：你好世界/u);
+
+  appSocket.terminate();
 });
 
 test("provider returns the current session QR only to the requesting participant", async (t) => {
@@ -456,9 +595,8 @@ test("provider returns the current session QR only to the requesting participant
     PNG_SIGNATURE,
   );
 
-  appOne.close();
-  appTwo.close();
-  await Promise.all([waitForClose(appOne), waitForClose(appTwo)]);
+  appOne.terminate();
+  appTwo.terminate();
 });
 
 test("provider can remove a group participant and reject the same app id on rejoin", async (t) => {
@@ -908,6 +1046,156 @@ test("provider group sessions broadcast participant messages and assign unique l
   assert.equal(appOneAssistant.kind, "assistant_message");
   assert.equal(appTwoAssistant.kind, "assistant_message");
   assert.match(appTwoAssistant.text, new RegExp(`${firstDisplayName}: hello team`, "u"));
+
+  appOne.close();
+  appTwo.close();
+  await Promise.all([waitForClose(appOne), waitForClose(appTwo)]);
+});
+
+test("provider group sessions broadcast raw voice first and only reply with the final assistant answer", async (t) => {
+  const relay = createRelayServer({
+    host: "127.0.0.1",
+    port: 0,
+    sessionTtlMs: 60_000,
+    frameCacheSize: 8,
+  });
+  const { port } = await relay.start();
+  t.after(async () => {
+    await relay.stop();
+  });
+
+  const bridge = new VoiceTranscribingBridge();
+  const provider = new PrivateClawProvider({
+    providerWsUrl: `ws://127.0.0.1:${port}/ws/provider`,
+    appWsUrl: `ws://127.0.0.1:${port}/ws/app`,
+    bridge,
+    defaultTtlMs: DEFAULT_SESSION_TTL_MS,
+  });
+  await provider.connect();
+  t.after(async () => {
+    await provider.dispose();
+  });
+
+  const inviteBundle = await provider.createInviteBundle({ groupMode: true });
+  const invite = decodeInviteString(inviteBundle.inviteUri);
+
+  const appOneUrl = new URL(invite.appWsUrl);
+  appOneUrl.searchParams.set("appId", "app-one");
+  const appOne = new WebSocket(appOneUrl.toString());
+  const appOneAttached = nextMessage(appOne);
+  await waitForOpen(appOne);
+  assert.equal((await appOneAttached).type, "relay:attached");
+  const appOneInitialFramesPromise = nextMessages(appOne, 3);
+  appOne.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "client_hello",
+          appId: "app-one",
+          displayName: "小明",
+          appVersion: "flutter-test",
+          deviceLabel: "Tester One",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+  await appOneInitialFramesPromise;
+
+  const appTwoUrl = new URL(invite.appWsUrl);
+  appTwoUrl.searchParams.set("appId", "app-two");
+  const appTwo = new WebSocket(appTwoUrl.toString());
+  const appTwoAttached = nextMessage(appTwo);
+  await waitForOpen(appTwo);
+  assert.equal((await appTwoAttached).type, "relay:attached");
+  const appTwoFramesPromise = nextMessages(appTwo, 3);
+  const appOneJoinFramesPromise = nextMessages(appOne, 2);
+  appTwo.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "client_hello",
+          appId: "app-two",
+          displayName: "小红",
+          appVersion: "flutter-test",
+          deviceLabel: "Tester Two",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+  await Promise.all([appTwoFramesPromise, appOneJoinFramesPromise]);
+
+  const appOnePayloadFramesPromise = nextMessages(appOne, 3);
+  const appTwoPayloadFramesPromise = nextMessages(appTwo, 2);
+  appOne.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "user_message",
+          appId: "app-one",
+          displayName: "小明",
+          text: "",
+          attachments: [buildVoiceAttachment()],
+          clientMessageId: "group-voice-1",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+
+  const [appOnePayloadFrames, appTwoPayloadFrames] = await Promise.all([
+    appOnePayloadFramesPromise,
+    appTwoPayloadFramesPromise,
+  ]);
+  const appOneParticipantFrame = decryptRelayPayload(
+    appOnePayloadFrames[0]!,
+    invite,
+  );
+  const appTwoParticipantFrame = decryptRelayPayload(
+    appTwoPayloadFrames[0]!,
+    invite,
+  );
+  assert.equal(appOneParticipantFrame.kind, "system_message");
+  assert.match(appOneParticipantFrame.message, /已经收到你的语音/u);
+  assert.match(appOneParticipantFrame.message, /working on understanding/i);
+  assert.equal(appOneParticipantFrame.replyTo, undefined);
+
+  const appOnePendingFrame = decryptRelayPayload(appOnePayloadFrames[1]!, invite);
+  assert.equal(appOnePendingFrame.kind, "assistant_message");
+  assert.equal(appOnePendingFrame.pending, true);
+  assert.equal(appOnePendingFrame.replyTo, "group-voice-1");
+  assert.equal(appOnePendingFrame.messageId, "pending-group-voice-1");
+  assert.equal(appOnePendingFrame.text, "");
+
+  assert.equal(appTwoParticipantFrame.kind, "participant_message");
+  assert.equal(appTwoParticipantFrame.text, "");
+  assert.equal(appTwoParticipantFrame.attachments?.length, 1);
+  assert.equal(appTwoParticipantFrame.attachments?.[0]?.mimeType, "audio/mp4");
+
+  const appOneAssistant = decryptRelayPayload(appOnePayloadFrames[2]!, invite);
+  assert.equal(appOneAssistant.kind, "assistant_message");
+  assert.notEqual(appOneAssistant.pending, true);
+  const appTwoAssistant = decryptRelayPayload(appTwoPayloadFrames[1]!, invite);
+  assert.equal(appTwoAssistant.kind, "assistant_message");
+  assert.notEqual(appTwoAssistant.pending, true);
+  assert.match(appTwoAssistant.text, /小明说：你好世界/u);
+  assert.equal(appOneAssistant.text, appTwoAssistant.text);
+  assert.equal(bridge.conversationMessages.length, 1);
+  assert.match(
+    bridge.conversationMessages[0] ?? "",
+    /speech-to-text transcript of a user's voice message/u,
+  );
+  assert.match(bridge.conversationMessages[0] ?? "", /小明说：你好世界/u);
 
   appOne.close();
   appTwo.close();

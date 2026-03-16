@@ -529,6 +529,62 @@ test("OpenClawAgentBridge stages image and PDF attachments with tool hints", asy
   assert(stagedNames.some((name) => name.endsWith("-report.pdf")));
 });
 
+test("OpenClawAgentBridge transcribes audio attachments through a dedicated STT prompt", async (t) => {
+  const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "privateclaw-bridge-"));
+  t.after(async () => {
+    await fs.rm(workspaceDir, { recursive: true, force: true });
+  });
+
+  let invokedArgs: string[] = [];
+  const bridge = new OpenClawAgentBridge({
+    workspaceDir,
+    execFileImpl: (_file, args, _options, callback) => {
+      invokedArgs = args;
+      callback(
+        null,
+        JSON.stringify({
+          status: "ok",
+          result: {
+            payloads: [{ text: "今天天气不错" }],
+          },
+        }),
+        "",
+      );
+    },
+  });
+
+  const transcript = await bridge.transcribeAudioAttachments({
+    sessionId: "privateclaw-session",
+    requestId: "voice-message-1",
+    attachments: [
+      {
+        id: "voice-1",
+        name: "voice.m4a",
+        mimeType: "audio/mp4",
+        sizeBytes: 16,
+        dataBase64: Buffer.from("audio-bytes").toString("base64"),
+      },
+    ],
+  });
+
+  assert.equal(transcript, "今天天气不错");
+  assert.equal(invokedArgs[0], "agent");
+  assert.equal(invokedArgs[1], "--session-id");
+  assert.match(
+    invokedArgs[2] ?? "",
+    /^privateclaw-voice-stt-privateclaw-session-voice-message-1$/u,
+  );
+  assert.equal(invokedArgs[3], "--message");
+  const prompt = invokedArgs[4] ?? "";
+  assert.match(prompt, /PrivateClaw voice transcription request\./u);
+  assert.match(prompt, /Return only the recognized spoken content/u);
+  assert.match(
+    prompt,
+    /workspacePath: privateclaw\/privateclaw-voice-stt-privateclaw-session-voice-message-1\//u,
+  );
+  assert.match(prompt, /PrivateClaw response contract:/u);
+});
+
 test("OpenClawAgentBridge extracts DOCX text and points the agent at the staged text file", async (t) => {
   const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "privateclaw-bridge-"));
   t.after(async () => {

@@ -711,6 +711,69 @@ export async function closeManagedSessionFromStateDir(params: {
   }
 }
 
+export interface PrivateClawBulkClosedManagedSession {
+  host: PrivateClawDiscoveredSessionHost;
+  session: PrivateClawManagedSession;
+  terminatedHost: boolean;
+}
+
+export interface PrivateClawBulkCloseManagedSessionFailure {
+  host: PrivateClawDiscoveredSessionHost;
+  session: PrivateClawManagedSession;
+  error: string;
+}
+
+export async function closeManagedSessionsFromStateDir(params: {
+  stateDir: string;
+  hostKinds: PrivateClawControlHostKind[];
+  reason?: string;
+}): Promise<{
+  closed: PrivateClawBulkClosedManagedSession[];
+  failed: PrivateClawBulkCloseManagedSessionFailure[];
+}> {
+  const targetedHostKinds = new Set(params.hostKinds);
+  const skippedSessionIds = new Set<string>();
+  const closed: PrivateClawBulkClosedManagedSession[] = [];
+  const failed: PrivateClawBulkCloseManagedSessionFailure[] = [];
+
+  for (;;) {
+    const listings = await listManagedSessionsFromStateDir(params.stateDir);
+    const candidate = listings
+      .filter((listing) => targetedHostKinds.has(listing.host.kind))
+      .flatMap((listing) =>
+        listing.sessions.map((session) => ({
+          host: listing.host,
+          session,
+        })),
+      )
+      .find((entry) => !skippedSessionIds.has(entry.session.sessionId));
+
+    if (!candidate) {
+      return {
+        closed,
+        failed,
+      };
+    }
+
+    try {
+      closed.push(
+        await closeManagedSessionFromStateDir({
+          stateDir: params.stateDir,
+          sessionId: candidate.session.sessionId,
+          ...(params.reason ? { reason: params.reason } : {}),
+        }),
+      );
+    } catch (error) {
+      failed.push({
+        host: candidate.host,
+        session: candidate.session,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      skippedSessionIds.add(candidate.session.sessionId);
+    }
+  }
+}
+
 export async function getManagedSessionQrBundleFromStateDir(params: {
   stateDir: string;
   sessionId: string;

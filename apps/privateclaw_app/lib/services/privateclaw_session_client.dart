@@ -312,6 +312,7 @@ class PrivateClawSessionClient {
               text: payload['text'] as String? ?? '',
               sentAt: _parseTimestamp(payload['sentAt'] as String?),
               replyTo: payload['replyTo'] as String?,
+              isPending: payload['pending'] as bool? ?? false,
               attachments: _parseAttachments(payload['attachments']),
             ),
           ),
@@ -496,21 +497,10 @@ class PrivateClawSessionClient {
           text: trimmed,
           sentAt: sentAt,
           attachments: attachments,
+          isPending: true,
           isOwnMessage: true,
           senderId: _identity.appId,
           senderLabel: _identity.displayName,
-        ),
-      ),
-    );
-    _emitEvent(
-      PrivateClawSessionEvent(
-        message: ChatMessage(
-          id: 'pending-$clientMessageId',
-          sender: ChatSender.assistant,
-          text: '',
-          sentAt: sentAt,
-          replyTo: clientMessageId,
-          isPending: true,
         ),
       ),
     );

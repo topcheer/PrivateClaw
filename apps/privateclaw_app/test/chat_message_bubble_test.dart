@@ -31,6 +31,30 @@ void main() {
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
   });
 
+  testWidgets('ChatMessageBubble keeps own pending text visible with inline wait indicator', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ChatMessageBubble(
+            message: ChatMessage(
+              id: 'user-pending-1',
+              sender: ChatSender.user,
+              text: '正在发送这条消息',
+              sentAt: DateTime.utc(2026, 1, 1),
+              isPending: true,
+              isOwnMessage: true,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('正在发送这条消息'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+  });
+
   testWidgets('ChatMessageBubble renders markdown text and image attachments', (
     WidgetTester tester,
   ) async {

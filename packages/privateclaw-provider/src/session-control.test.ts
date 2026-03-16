@@ -19,10 +19,13 @@ import { resolvePrivateClawMediaDir } from "./invite-qr-files.js";
 import { DEFAULT_SESSION_TTL_MS, PrivateClawProvider } from "./provider.js";
 import {
   buildManagedSessionQrLegacyLines,
+  closeManagedSessionsFromStateDir,
   closeManagedSessionFromStateDir,
   getManagedSessionQrBundleFromStateDir,
   isManagedSessionQrLegacyResult,
+  listManagedSessionsFromStateDir,
   PrivateClawSessionControlServer,
+  type PrivateClawControlHostKind,
   resolvePrivateClawControlDir,
 } from "./session-control.js";
 
@@ -79,6 +82,107 @@ function waitForClose(socket: WebSocket): Promise<void> {
     }
     socket.once("close", () => resolve());
   });
+}
+
+async function spawnLegacyManagedSessionHost(params: {
+  stateDir: string;
+  sessionId: string;
+  kind?: PrivateClawControlHostKind;
+  closeStatusCode?: number;
+}) {
+  const child = spawn(
+    process.execPath,
+    [
+      "-e",
+      `
+const { createServer } = require('node:http');
+const { mkdirSync, writeFileSync } = require('node:fs');
+const path = require('node:path');
+const stateDir = process.env.STATE_DIR;
+const sessionId = process.env.SESSION_ID;
+const token = process.env.CONTROL_TOKEN;
+const controlId = process.env.CONTROL_ID;
+const hostKind = process.env.HOST_KIND;
+const closeStatusCode = Number.parseInt(process.env.CLOSE_STATUS_CODE || '404', 10);
+const startedAt = new Date().toISOString();
+const controlDir = path.join(stateDir, 'privateclaw', 'control');
+const server = createServer((request, response) => {
+  if (request.headers.authorization !== \`Bearer \${token}\`) {
+    response.statusCode = 401;
+    response.end(JSON.stringify({ error: 'unauthorized' }));
+    return;
+  }
+  const url = new URL(request.url || '/', 'http://127.0.0.1');
+  if (request.method === 'GET' && url.pathname === '/sessions') {
+    response.statusCode = 200;
+    response.setHeader('content-type', 'application/json; charset=utf-8');
+    response.end(JSON.stringify({
+      host: {
+        controlId,
+        kind: hostKind,
+        pid: process.pid,
+        startedAt,
+      },
+      sessions: [{
+        sessionId,
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        groupMode: false,
+        participantCount: 0,
+        participants: [],
+        state: 'awaiting_hello',
+      }],
+    }));
+    return;
+  }
+  if (request.method === 'POST' && url.pathname === \`/sessions/\${encodeURIComponent(sessionId)}/close\`) {
+    response.statusCode = closeStatusCode;
+    response.end(JSON.stringify({ error: closeStatusCode === 200 ? undefined : 'not found' }));
+    return;
+  }
+  response.statusCode = 404;
+  response.end(JSON.stringify({ error: 'missing' }));
+});
+server.listen(0, '127.0.0.1', () => {
+  const address = server.address();
+  mkdirSync(controlDir, { recursive: true, mode: 0o700 });
+  writeFileSync(path.join(controlDir, \`\${hostKind}-\${process.pid}-\${controlId}.json\`), JSON.stringify({
+    version: 1,
+    controlId,
+    kind: hostKind,
+    pid: process.pid,
+    host: '127.0.0.1',
+    port: address.port,
+    token,
+    startedAt,
+  }, null, 2), 'utf8');
+  process.stdout.write('ready\\n');
+});
+process.on('SIGTERM', () => {
+  server.close(() => process.exit(0));
+});
+setInterval(() => {}, 1000);
+      `,
+    ],
+    {
+      env: {
+        ...process.env,
+        STATE_DIR: params.stateDir,
+        SESSION_ID: params.sessionId,
+        HOST_KIND: params.kind ?? "pair-daemon",
+        CONTROL_ID: `${params.kind ?? "pair-daemon"}-${params.sessionId}-control`,
+        CONTROL_TOKEN: `${params.sessionId}-token`,
+        CLOSE_STATUS_CODE: String(params.closeStatusCode ?? 404),
+      },
+      stdio: ["ignore", "pipe", "inherit"],
+    },
+  );
+
+  await new Promise<void>((resolve, reject) => {
+    child.once("error", reject);
+    child.stdout?.once("data", () => resolve());
+  });
+
+  return child;
 }
 
 function decryptRelayPayload(
@@ -284,95 +388,14 @@ test("session control can terminate a legacy daemon host when close endpoint is 
   });
 
   const sessionId = "legacy-close-session";
-  const child = spawn(
-    process.execPath,
-    [
-      "-e",
-      `
-const { createServer } = require('node:http');
-const { mkdirSync, writeFileSync } = require('node:fs');
-const path = require('node:path');
-const stateDir = process.env.STATE_DIR;
-const sessionId = process.env.SESSION_ID;
-const token = 'legacy-close-token';
-const controlId = 'legacy-close-control';
-const startedAt = new Date().toISOString();
-const controlDir = path.join(stateDir, 'privateclaw', 'control');
-const server = createServer((request, response) => {
-  if (request.headers.authorization !== \`Bearer \${token}\`) {
-    response.statusCode = 401;
-    response.end(JSON.stringify({ error: 'unauthorized' }));
-    return;
-  }
-  const url = new URL(request.url || '/', 'http://127.0.0.1');
-  if (request.method === 'GET' && url.pathname === '/sessions') {
-    response.statusCode = 200;
-    response.setHeader('content-type', 'application/json; charset=utf-8');
-    response.end(JSON.stringify({
-      host: {
-        controlId,
-        kind: 'pair-daemon',
-        pid: process.pid,
-        startedAt,
-      },
-      sessions: [{
-        sessionId,
-        expiresAt: new Date(Date.now() + 60_000).toISOString(),
-        groupMode: false,
-        participantCount: 0,
-        participants: [],
-        state: 'awaiting_hello',
-      }],
-    }));
-    return;
-  }
-  if (request.method === 'POST' && url.pathname === \`/sessions/\${encodeURIComponent(sessionId)}/close\`) {
-    response.statusCode = 404;
-    response.end(JSON.stringify({ error: 'not found' }));
-    return;
-  }
-  response.statusCode = 404;
-  response.end(JSON.stringify({ error: 'missing' }));
-});
-server.listen(0, '127.0.0.1', () => {
-  const address = server.address();
-  mkdirSync(controlDir, { recursive: true, mode: 0o700 });
-  writeFileSync(path.join(controlDir, \`\${controlId}.json\`), JSON.stringify({
-    version: 1,
-    controlId,
-    kind: 'pair-daemon',
-    pid: process.pid,
-    host: '127.0.0.1',
-    port: address.port,
-    token,
-    startedAt,
-  }, null, 2), 'utf8');
-  process.stdout.write('ready\\n');
-});
-process.on('SIGTERM', () => {
-  server.close(() => process.exit(0));
-});
-setInterval(() => {}, 1000);
-      `,
-    ],
-    {
-      env: {
-        ...process.env,
-        STATE_DIR: stateDir,
-        SESSION_ID: sessionId,
-      },
-      stdio: ["ignore", "pipe", "inherit"],
-    },
-  );
+  const child = await spawnLegacyManagedSessionHost({
+    stateDir,
+    sessionId,
+  });
   t.after(async () => {
     if (!child.killed && child.exitCode == null) {
       child.kill("SIGTERM");
     }
-  });
-
-  await new Promise<void>((resolve, reject) => {
-    child.once("error", reject);
-    child.stdout?.once("data", () => resolve());
   });
 
   const result = await closeManagedSessionFromStateDir({
@@ -383,6 +406,85 @@ setInterval(() => {}, 1000);
 
   assert.equal(result.terminatedHost, true);
   assert.equal(result.session.sessionId, sessionId);
+  if (child.exitCode == null) {
+    await new Promise<void>((resolve) => {
+      child.once("exit", () => resolve());
+    });
+  }
+});
+
+test("session control killall only terminates background daemon sessions", async (t) => {
+  const relay = createRelayServer({
+    host: "127.0.0.1",
+    port: 0,
+    sessionTtlMs: 60_000,
+    frameCacheSize: 8,
+  });
+  const { port } = await relay.start();
+  t.after(async () => {
+    await relay.stop();
+  });
+
+  const stateDir = await mkdtemp(path.join(os.tmpdir(), "privateclaw-session-control-killall-"));
+  t.after(async () => {
+    await rm(stateDir, { recursive: true, force: true });
+  });
+
+  const provider = new PrivateClawProvider({
+    providerWsUrl: `ws://127.0.0.1:${port}/ws/provider`,
+    appWsUrl: `ws://127.0.0.1:${port}/ws/app`,
+    bridge: new EchoBridge("OpenClaw bridge"),
+    defaultTtlMs: DEFAULT_SESSION_TTL_MS,
+  });
+  await provider.connect();
+  t.after(async () => {
+    await provider.dispose();
+  });
+
+  const controlServer = new PrivateClawSessionControlServer({
+    provider,
+    stateDir,
+    kind: "pair-foreground",
+  });
+  await controlServer.start();
+  t.after(async () => {
+    await controlServer.stop();
+  });
+
+  const foregroundInviteBundle = await provider.createInviteBundle();
+  const foregroundInvite = decodeInviteString(foregroundInviteBundle.inviteUri);
+  const daemonSessionId = "legacy-daemon-session";
+  const child = await spawnLegacyManagedSessionHost({
+    stateDir,
+    sessionId: daemonSessionId,
+  });
+  t.after(async () => {
+    if (!child.killed && child.exitCode == null) {
+      child.kill("SIGTERM");
+    }
+  });
+
+  const result = await closeManagedSessionsFromStateDir({
+    stateDir,
+    hostKinds: ["pair-daemon"],
+    reason: "operator_terminated_all",
+  });
+
+  assert.deepEqual(result.failed, []);
+  assert.equal(result.closed.length, 1);
+  assert.equal(result.closed[0]?.session.sessionId, daemonSessionId);
+  assert.equal(result.closed[0]?.host.kind, "pair-daemon");
+  assert.equal(result.closed[0]?.terminatedHost, true);
+  assert.equal(provider.listManagedSessions().length, 1);
+
+  const remainingListings = await listManagedSessionsFromStateDir(stateDir);
+  assert.deepEqual(
+    remainingListings.flatMap((listing) =>
+      listing.sessions.map((session) => session.sessionId),
+    ),
+    [foregroundInvite.sessionId],
+  );
+
   if (child.exitCode == null) {
     await new Promise<void>((resolve) => {
       child.once("exit", () => resolve());

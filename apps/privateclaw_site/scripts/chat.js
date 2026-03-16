@@ -750,9 +750,34 @@ function renderAttachments(attachments) {
 }
 
 function upsertMessage(message) {
+  if (message.isPending && message.replyTo) {
+    const repliedIndex = state.messages.findIndex(
+      (item) => item.id === message.replyTo && item.sender === "user",
+    );
+    if (repliedIndex >= 0) {
+      state.messages[repliedIndex] = {
+        ...state.messages[repliedIndex],
+        isPending: true,
+      };
+      state.messages = state.messages.filter(
+        (item) => !(item.sender === "assistant" && item.isPending && item.replyTo === message.replyTo),
+      );
+      return;
+    }
+  }
+
   const existingIndex = state.messages.findIndex((item) => item.id === message.id);
   if (existingIndex >= 0) {
-    state.messages[existingIndex] = message;
+    const existingMessage = state.messages[existingIndex];
+    state.messages[existingIndex] = {
+      ...message,
+      isPending:
+        existingMessage.sender === "user" &&
+        existingMessage.id === message.id &&
+        existingMessage.isPending
+          ? true
+          : Boolean(message.isPending),
+    };
     return;
   }
 
@@ -762,8 +787,17 @@ function upsertMessage(message) {
   }
 
   if (message.replyTo) {
+    const repliedIndex = state.messages.findIndex(
+      (item) => item.id === message.replyTo && item.sender === "user",
+    );
+    if (repliedIndex >= 0 && state.messages[repliedIndex].isPending) {
+      state.messages[repliedIndex] = {
+        ...state.messages[repliedIndex],
+        isPending: false,
+      };
+    }
     state.messages = state.messages.filter(
-      (item) => !(item.isPending && item.replyTo === message.replyTo),
+      (item) => !(item.sender === "assistant" && item.isPending && item.replyTo === message.replyTo),
     );
   }
   state.messages.push(message);
@@ -804,7 +838,7 @@ function renderMessages() {
 
     const body = document.createElement("div");
     body.className = "message-text";
-    if (message.isPending) {
+    if (message.isPending && message.sender !== "user") {
       const pendingLabel = document.createElement("p");
       pendingLabel.textContent = t("chat.pendingLabel");
       body.append(pendingLabel, createPendingIndicator());
@@ -812,6 +846,9 @@ function renderMessages() {
       body.append(renderRichText(message.text || ""));
       if (Array.isArray(message.attachments) && message.attachments.length > 0) {
         body.append(renderAttachments(message.attachments));
+      }
+      if (message.isPending && message.sender === "user") {
+        body.append(createPendingIndicator());
       }
     }
     bubble.append(body);

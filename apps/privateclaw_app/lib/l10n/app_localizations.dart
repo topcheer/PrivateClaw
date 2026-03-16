@@ -465,6 +465,90 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Preparing video…'**
   String get preparingVideoAttachment;
+
+  /// No description provided for @switchToVoiceInputTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Voice input'**
+  String get switchToVoiceInputTooltip;
+
+  /// No description provided for @switchToTextInputTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Keyboard input'**
+  String get switchToTextInputTooltip;
+
+  /// No description provided for @voiceRecordHoldToSend.
+  ///
+  /// In en, this message translates to:
+  /// **'Hold to Talk'**
+  String get voiceRecordHoldToSend;
+
+  /// No description provided for @voiceRecordReleaseToSend.
+  ///
+  /// In en, this message translates to:
+  /// **'Release to send'**
+  String get voiceRecordReleaseToSend;
+
+  /// No description provided for @voiceRecordSending.
+  ///
+  /// In en, this message translates to:
+  /// **'Sending voice message…'**
+  String get voiceRecordSending;
+
+  /// No description provided for @voiceRecordUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Wait for the session to finish connecting…'**
+  String get voiceRecordUnavailable;
+
+  /// No description provided for @voiceRecordingPermissionDenied.
+  ///
+  /// In en, this message translates to:
+  /// **'Microphone access is required for voice messages.'**
+  String get voiceRecordingPermissionDenied;
+
+  /// No description provided for @voiceRecordingUnsupported.
+  ///
+  /// In en, this message translates to:
+  /// **'Voice recording is unavailable on this device.'**
+  String get voiceRecordingUnsupported;
+
+  /// No description provided for @voiceRecordingTooShort.
+  ///
+  /// In en, this message translates to:
+  /// **'Hold a little longer before releasing your voice message.'**
+  String get voiceRecordingTooShort;
+
+  /// No description provided for @voiceRecordingTooLarge.
+  ///
+  /// In en, this message translates to:
+  /// **'This voice message is too large to send inline.'**
+  String get voiceRecordingTooLarge;
+
+  /// No description provided for @voiceRecordingCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Voice recording cancelled.'**
+  String get voiceRecordingCancelled;
+
+  /// No description provided for @voiceRecordingFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Voice recording failed: {error}'**
+  String voiceRecordingFailed(String error);
+
+  /// No description provided for @emojiPickerTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Emoji'**
+  String get emojiPickerTooltip;
+
+  /// No description provided for @emojiPickerTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Common emoji'**
+  String get emojiPickerTitle;
 }
 
 class _AppLocalizationsDelegate

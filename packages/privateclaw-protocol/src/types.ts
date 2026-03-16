@@ -90,6 +90,7 @@ export interface AssistantMessagePayload {
   messageId?: string;
   text: string;
   replyTo?: string;
+  pending?: boolean;
   sentAt: string;
   attachments?: PrivateClawAttachment[];
 }

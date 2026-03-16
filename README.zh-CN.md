@@ -155,6 +155,7 @@ openclaw channels add --channel telegram --token <token>
 | `openclaw privateclaw sessions` | 列出当前由本地管理的活动会话。 | 输出包含总会话数，以及每个会话的 `type`、`participants`、`state`、`expires`、`host` 和可选的 `label`。`host` 目前可能是 `plugin-service`、`pair-foreground` 或 `pair-daemon`。 |
 | `openclaw privateclaw sessions qr <sessionId>` | 重新打印某个当前活动会话的二维码。 | 默认会直接在终端里渲染二维码；加上 `--open` 会同时打开本地浏览器预览页；加上 `--notify` 会把同一张二维码作为临时 assistant 消息发回这个会话当前在线的所有参与者。 |
 | `openclaw privateclaw sessions kill <sessionId>` | 终止一个当前由本地管理的会话。 | 在当前版本 host 上，它会只关闭目标会话；如果会话仍由较旧的前台/后台 host 托管、还不支持单会话关闭，则会回退为终止那个 legacy host 进程。 |
+| `openclaw privateclaw sessions killall` | 终止全部由后台 daemon 托管的会话。 | 这个命令只会清理 `pair-daemon` 会话，不会影响前台 host 或 plugin-service 会话。独立二进制也提供同样的简写：`privateclaw-provider killall`。 |
 | `openclaw privateclaw kick <sessionId> <appId>` | 从群聊会话中移除一个参与者。 | 这会关闭该 app 当前的 relay 连接，并阻止同一个 `appId` 在当前会话中重新加入。 |
 
 `pair` 支持这些公开参数：
@@ -176,11 +177,13 @@ openclaw privateclaw pair --group --foreground
 openclaw privateclaw pair --relay https://your-relay.example.com
 openclaw privateclaw sessions qr <sessionId> --notify
 openclaw privateclaw sessions kill <sessionId>
+openclaw privateclaw sessions killall
 privateclaw-provider sessions qr <sessionId> --open
+privateclaw-provider killall
 privateclaw-provider pair --relay https://your-relay.example.com --foreground
 ```
 
-后台 daemon 会话在 OpenClaw 主进程重启后仍可能继续存活。可以用 `openclaw privateclaw sessions` 或 `privateclaw-provider sessions` 查看它们，需要手动结束时再用 `sessions kill <sessionId>`。
+后台 daemon 会话在 OpenClaw 主进程重启后仍可能继续存活。可以用 `openclaw privateclaw sessions` 或 `privateclaw-provider sessions` 查看它们；想手动结束单个会话时用 `sessions kill <sessionId>`，想一次性清空全部后台 daemon 会话时用 `sessions killall`（或者独立二进制的 `privateclaw-provider killall`）。
 
 ### 3. 运行 App
 

@@ -27,6 +27,7 @@ import { resolveRelayEndpoints } from "./relay-endpoints.js";
 import {
   buildManagedSessionQrLegacyLines,
   buildManagedSessionsReportLines,
+  closeManagedSessionsFromStateDir,
   closeManagedSessionFromStateDir,
   getManagedSessionQrBundleFromStateDir,
   isManagedSessionQrLegacyResult,
@@ -41,6 +42,7 @@ import {
   PRIVATECLAW_CLI_NOTIFY_OPTION_DESCRIPTION,
   PRIVATECLAW_CLI_RELAY_OPTION_DESCRIPTION,
   PRIVATECLAW_CLI_SESSIONS_KILL_DESCRIPTION,
+  PRIVATECLAW_CLI_SESSIONS_KILLALL_DESCRIPTION,
   PRIVATECLAW_CLI_SESSIONS_QR_DESCRIPTION,
 } from "./text.js";
 import type { PrivateClawProviderHandoffState } from "./types.js";
@@ -252,17 +254,21 @@ async function readHandoffState(
 }
 
 function printHelp(): void {
-  console.log(`privateclaw-provider <pair|sessions|kick>
+  console.log(`privateclaw-provider <pair|sessions|kick|killall>
 
 pair [--ttl-ms <ms>] [--label <label>] [--relay <url>] [--group] [--print-only] [--open] [--foreground]
 sessions
 sessions qr <sessionId> [--open] [--notify]
 sessions kill <sessionId>
+sessions killall
+killall
 kick <sessionId> <appId>`);
   console.log(`\n--relay <url>: ${PRIVATECLAW_CLI_RELAY_OPTION_DESCRIPTION}`);
   console.log(`--notify: ${PRIVATECLAW_CLI_NOTIFY_OPTION_DESCRIPTION}`);
   console.log(`sessions qr: ${PRIVATECLAW_CLI_SESSIONS_QR_DESCRIPTION}`);
   console.log(`sessions kill: ${PRIVATECLAW_CLI_SESSIONS_KILL_DESCRIPTION}`);
+  console.log(`sessions killall: ${PRIVATECLAW_CLI_SESSIONS_KILLALL_DESCRIPTION}`);
+  console.log(`killall: ${PRIVATECLAW_CLI_SESSIONS_KILLALL_DESCRIPTION}`);
 }
 
 async function runPairCommand(args: string[]): Promise<void> {
@@ -454,6 +460,10 @@ async function runSessionsCommand(args: string[]): Promise<void> {
     await runSessionsQrCommand(args.slice(1));
     return;
   }
+  if (args[0] === "killall") {
+    await runSessionsKillallCommand(args.slice(1));
+    return;
+  }
   if (args[0] === "kill") {
     await runSessionsKillCommand(args.slice(1));
     return;
@@ -514,6 +524,84 @@ async function runSessionsKillCommand(args: string[]): Promise<void> {
           `Session ${result.session.sessionId} has been terminated.`,
         ),
   );
+}
+
+async function runSessionsKillallCommand(args: string[]): Promise<void> {
+  const parsed = parseArgs({
+    args,
+    allowPositionals: true,
+    options: {
+      help: { type: "boolean", short: "h" },
+    },
+  });
+  if (parsed.values.help) {
+    printHelp();
+    return;
+  }
+  if (parsed.positionals.length > 0) {
+    throw new Error(
+      formatBilingualInline(
+        "`sessions killall` 不接受额外参数。",
+        "`sessions killall` does not accept extra arguments.",
+      ),
+    );
+  }
+
+  const result = await closeManagedSessionsFromStateDir({
+    stateDir: resolvePrivateClawStateDir(),
+    hostKinds: ["pair-daemon"],
+    reason: "operator_terminated_all",
+  });
+
+  if (result.closed.length === 0 && result.failed.length === 0) {
+    console.log(
+      formatBilingualInline(
+        "当前没有需要终止的后台 daemon 会话。",
+        "There are no background daemon sessions to terminate.",
+      ),
+    );
+    return;
+  }
+
+  if (result.closed.length > 0) {
+    console.log(
+      formatBilingualInline(
+        `已终止 ${result.closed.length} 个后台 daemon 会话。`,
+        `Terminated ${result.closed.length} background daemon session(s).`,
+      ),
+    );
+    for (const item of result.closed) {
+      console.log(
+        item.terminatedHost
+          ? formatBilingualInline(
+              `- ${item.session.sessionId}：已通过终止 legacy host ${item.host.kind}#${item.host.pid} 停止。`,
+              `- ${item.session.sessionId}: stopped by terminating the legacy host ${item.host.kind}#${item.host.pid}.`,
+            )
+          : formatBilingualInline(
+              `- ${item.session.sessionId}：已终止。`,
+              `- ${item.session.sessionId}: terminated.`,
+            ),
+      );
+    }
+  }
+
+  if (result.failed.length > 0) {
+    console.error(
+      formatBilingualInline(
+        `${result.failed.length} 个后台 daemon 会话终止失败。`,
+        `${result.failed.length} background daemon session(s) failed to terminate.`,
+      ),
+    );
+    for (const item of result.failed) {
+      console.error(
+        formatBilingualInline(
+          `- ${item.session.sessionId}（${item.host.kind}#${item.host.pid}）：${item.error}`,
+          `- ${item.session.sessionId} (${item.host.kind}#${item.host.pid}): ${item.error}`,
+        ),
+      );
+    }
+    process.exitCode = 1;
+  }
 }
 
 async function runSessionsQrCommand(args: string[]): Promise<void> {
@@ -634,6 +722,8 @@ try {
     await runPairCommand(rest);
   } else if (command === "sessions") {
     await runSessionsCommand(rest);
+  } else if (command === "killall") {
+    await runSessionsKillallCommand(rest);
   } else if (command === "kick") {
     await runKickCommand(rest);
   } else if (command === "help" || command === "--help" || command === "-h") {

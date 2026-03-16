@@ -6,7 +6,11 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { unzipSync } from "fflate";
-import type { BridgeResponse, PrivateClawAgentBridge } from "../types.js";
+import type {
+  BridgeResponse,
+  PrivateClawAgentBridge,
+  PrivateClawAudioTranscriptionRequest,
+} from "../types.js";
 
 type OpenClawThinkingLevel = "off" | "minimal" | "low" | "medium" | "high";
 
@@ -277,36 +281,85 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
     this.log(
       `handle_user_message session=${params.sessionId} textChars=${params.message.length} attachments=${params.attachments?.length ?? 0} promptChars=${promptMessage.length}`,
     );
-    const args = this.buildArgs(params.sessionId, promptMessage);
-    const sessionLogCursor = await this.captureSessionLogCursor(params.sessionId);
+    return this.executePrompt(params.sessionId, promptMessage, {
+      includeArtifacts: true,
+      noDisplayFallbackMessage: params.message,
+    });
+  }
+
+  async transcribeAudioAttachments(
+    params: PrivateClawAudioTranscriptionRequest,
+  ): Promise<string> {
+    const transcriptionSessionId = buildVoiceTranscriptionSessionId(
+      params.sessionId,
+      params.requestId,
+    );
+    this.log(
+      `voice_transcription_start session=${params.sessionId} request=${params.requestId} attachments=${params.attachments.length} sttSession=${transcriptionSessionId}`,
+    );
+    const stagedAttachments = await this.stageAttachments(
+      transcriptionSessionId,
+      params.attachments,
+    );
+    if (stagedAttachments.length === 0) {
+      throw new Error(
+        "OpenClaw voice transcription requires at least one inline audio attachment.",
+      );
+    }
+    const promptMessage = appendStructuredResponseContract(
+      buildAudioTranscriptionPrompt(stagedAttachments),
+    );
+    const response = await this.executePrompt(transcriptionSessionId, promptMessage, {
+      includeArtifacts: false,
+    });
+    const transcript = extractTextFromBridgeResponse(response).trim();
+    if (transcript === "") {
+      throw new Error("OpenClaw voice transcription returned an empty transcript.");
+    }
+    this.log(
+      `voice_transcription_complete session=${params.sessionId} request=${params.requestId} transcriptChars=${transcript.length} attachments=${stagedAttachments.length}`,
+    );
+    return transcript;
+  }
+
+  private async executePrompt(
+    sessionId: string,
+    promptMessage: string,
+    options?: {
+      includeArtifacts?: boolean;
+      noDisplayFallbackMessage?: string;
+    },
+  ): Promise<BridgeResponse> {
+    const args = this.buildArgs(sessionId, promptMessage);
+    const sessionLogCursor = await this.captureSessionLogCursor(sessionId);
     const stdout = await this.execOpenClaw(args);
     let parsed: OpenClawAgentJsonResult | undefined;
     let parseError: unknown;
     try {
       parsed = parseOpenClawAgentJson(stdout);
       this.log(
-        `openclaw_agent_complete session=${params.sessionId} status=${parsed.status ?? "unknown"} summary=${JSON.stringify(parsed.summary ?? "")}`,
+        `openclaw_agent_complete session=${sessionId} status=${parsed.status ?? "unknown"} summary=${JSON.stringify(parsed.summary ?? "")}`,
       );
       if (!parsed.status) {
         this.log(
-          `openclaw_agent_missing_status session=${params.sessionId} topLevelKeys=${Object.keys(parsed).join(",") || "none"}`,
+          `openclaw_agent_missing_status session=${sessionId} topLevelKeys=${Object.keys(parsed).join(",") || "none"}`,
         );
       }
     } catch (error) {
       parseError = error;
       this.log(
-        `openclaw_agent_parse_failed session=${params.sessionId} stdoutChars=${stdout.length} stdoutPreview=${JSON.stringify(stdout.slice(0, 400))}`,
+        `openclaw_agent_parse_failed session=${sessionId} stdoutChars=${stdout.length} stdoutPreview=${JSON.stringify(stdout.slice(0, 400))}`,
       );
     }
-    const collectedMessages = await this.collectSessionMessages(params.sessionId, sessionLogCursor);
+    const collectedMessages = await this.collectSessionMessages(sessionId, sessionLogCursor);
     const recoveredMessages = [
       ...collectedMessages.assistantMessages,
-      ...collectedMessages.artifactMessages,
+      ...(options?.includeArtifacts === false ? [] : collectedMessages.artifactMessages),
     ];
     if (!parsed) {
       if (recoveredMessages.length > 0) {
         this.log(
-          `session_log_fallback session=${params.sessionId} reason=parse_failed recoveredMessages=${recoveredMessages.length}`,
+          `session_log_fallback session=${sessionId} reason=parse_failed recoveredMessages=${recoveredMessages.length}`,
         );
         return toBridgeResponse(recoveredMessages, collectedMessages.assistantData);
       }
@@ -314,16 +367,21 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
     }
     try {
       const response = parseOpenClawAgentResult(parsed);
-      return mergeBridgeResponses(response, collectedMessages.artifactMessages);
+      return options?.includeArtifacts === false
+        ? response
+        : mergeBridgeResponses(response, collectedMessages.artifactMessages);
     } catch (error) {
       if (recoveredMessages.length > 0) {
         this.log(
-          `session_log_fallback session=${params.sessionId} reason=${JSON.stringify(error instanceof Error ? error.message : String(error))} recoveredMessages=${recoveredMessages.length}`,
+          `session_log_fallback session=${sessionId} reason=${JSON.stringify(error instanceof Error ? error.message : String(error))} recoveredMessages=${recoveredMessages.length}`,
         );
         return toBridgeResponse(recoveredMessages, collectedMessages.assistantData);
       }
       if (error instanceof OpenClawAgentNoDisplayPayloadError) {
-        return buildNoDisplayPayloadNotice(params.message, error.parsed);
+        if (options?.noDisplayFallbackMessage) {
+          return buildNoDisplayPayloadNotice(options.noDisplayFallbackMessage, error.parsed);
+        }
+        throw new Error("OpenClaw returned no displayable voice transcription.");
       }
       throw error;
     }
@@ -767,6 +825,13 @@ function normalizeBridgeResponse(response: BridgeResponse): NormalizedBridgeMess
   );
 }
 
+function extractTextFromBridgeResponse(response: BridgeResponse): string {
+  return normalizeBridgeResponse(response)
+    .map((message) => message.text.trim())
+    .filter((text) => text !== "")
+    .join("\n\n");
+}
+
 function toBridgeResponse(
   messages: NormalizedBridgeMessage[],
   data?: unknown,
@@ -846,6 +911,28 @@ function extractAssistantDisplayResult(entry: OpenClawSessionLogEntry): Normaliz
 
 function appendStructuredResponseContract(prompt: string): string {
   return `${prompt}\n\n${buildStructuredResponseContractPrompt()}`;
+}
+
+function buildAudioTranscriptionPrompt(
+  stagedAttachments: ReadonlyArray<StagedAttachment>,
+): string {
+  const lines = [
+    "PrivateClaw voice transcription request.",
+    "Use OpenClaw's speech-to-text or audio understanding capabilities on the exact staged files below.",
+    "Return only the recognized spoken content from the user's audio message.",
+    "- Do not answer the user's request.",
+    "- Do not summarize, explain, or translate unless the speech itself says to do so.",
+    "- Preserve the original language and natural punctuation.",
+    "- If multiple audio attachments are present, transcribe them in order and separate each transcript with a blank line.",
+    "",
+    "Staged audio attachments:",
+  ];
+  for (const attachment of stagedAttachments) {
+    lines.push(`- ${attachment.name}`);
+    lines.push(`  mimeType: ${attachment.effectiveMimeType}`);
+    lines.push(`  workspacePath: ${attachment.workspacePath}`);
+  }
+  return lines.join("\n");
 }
 
 function buildStructuredResponseContractPrompt(): string {
@@ -960,6 +1047,23 @@ function normalizeMediaPath(mediaPath: string): string {
     return fileURLToPath(trimmed);
   }
   return path.isAbsolute(trimmed) ? trimmed : path.resolve(trimmed);
+}
+
+function buildVoiceTranscriptionSessionId(sessionId: string, requestId: string): string {
+  return [
+    "privateclaw-voice-stt",
+    sanitizeSessionIdSegment(sessionId),
+    sanitizeSessionIdSegment(requestId),
+  ].join("-");
+}
+
+function sanitizeSessionIdSegment(value: string): string {
+  const sanitized = value
+    .trim()
+    .replace(/[^A-Za-z0-9_-]+/gu, "-")
+    .replace(/-+/gu, "-")
+    .replace(/^-|-$/gu, "");
+  return sanitized === "" ? randomUUID().slice(0, 8) : sanitized;
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {

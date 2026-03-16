@@ -142,6 +142,28 @@
   "currentAppLabel": "当前应用：{label}",
   "preparingAudioAttachment": "正在准备音频…",
   "preparingVideoAttachment": "正在准备视频…",
+  "switchToVoiceInputTooltip": "语音输入",
+  "switchToTextInputTooltip": "键盘输入",
+  "voiceRecordHoldToSend": "按住说话",
+  "voiceRecordReleaseToSend": "松开发送语音",
+  "voiceRecordSending": "正在发送语音…",
+  "voiceRecordUnavailable": "等待会话完成连接后再录音…",
+  "voiceRecordingPermissionDenied": "发送语音消息需要麦克风权限。",
+  "voiceRecordingUnsupported": "当前设备暂不支持语音录制。",
+  "voiceRecordingTooShort": "请再多按住一会儿再松开发送。",
+  "voiceRecordingTooLarge": "这条语音太大，无法直接发送。",
+  "voiceRecordingCancelled": "已取消语音录制。",
+  "voiceRecordingFailed": "语音录制失败：{error}",
+  "@voiceRecordingFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String",
+        "example": "录音器不可用"
+      }
+    }
+  },
+  "emojiPickerTooltip": "表情",
+  "emojiPickerTitle": "常用表情",
   "@groupChatSummary": {
     "placeholders": {
       "count": {

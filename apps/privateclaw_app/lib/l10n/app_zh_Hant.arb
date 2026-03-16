@@ -130,6 +130,28 @@
   "currentAppLabel": "目前應用程式：{label}",
   "preparingAudioAttachment": "正在準備音訊…",
   "preparingVideoAttachment": "正在準備影片…",
+  "switchToVoiceInputTooltip": "語音輸入",
+  "switchToTextInputTooltip": "鍵盤輸入",
+  "voiceRecordHoldToSend": "按住說話",
+  "voiceRecordReleaseToSend": "放開立即傳送語音",
+  "voiceRecordSending": "正在傳送語音…",
+  "voiceRecordUnavailable": "請等待會話完成連線後再錄音…",
+  "voiceRecordingPermissionDenied": "傳送語音訊息需要麥克風權限。",
+  "voiceRecordingUnsupported": "此裝置暫不支援語音錄製。",
+  "voiceRecordingTooShort": "請再多按住一會兒再放開傳送。",
+  "voiceRecordingTooLarge": "這段語音太大，無法直接傳送。",
+  "voiceRecordingCancelled": "已取消語音錄製。",
+  "voiceRecordingFailed": "語音錄製失敗：{error}",
+  "@voiceRecordingFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String",
+        "example": "錄音器無法使用"
+      }
+    }
+  },
+  "emojiPickerTooltip": "表情",
+  "emojiPickerTitle": "常用表情",
   "@groupChatSummary": {
     "placeholders": {
       "count": {

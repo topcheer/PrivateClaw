@@ -194,6 +194,8 @@ The same public subcommands also exist on the standalone npm binary:
 ```bash
 privateclaw-provider pair --group --foreground
 privateclaw-provider sessions
+privateclaw-provider sessions killall
+privateclaw-provider killall
 privateclaw-provider kick <sessionId> <appId>
 ```
 
@@ -293,10 +295,11 @@ Use:
 
 ```bash
 openclaw privateclaw sessions
+openclaw privateclaw sessions killall
 openclaw privateclaw kick <sessionId> <appId>
 ```
 
-Use the standalone `privateclaw-provider sessions` / `privateclaw-provider kick ...` forms when the user is working outside the OpenClaw alias.
+Use the standalone `privateclaw-provider sessions` / `privateclaw-provider kick ...` forms when the user is working outside the OpenClaw alias. If they need to clear all background daemon sessions at once, use `openclaw privateclaw sessions killall` or `privateclaw-provider killall`.
 
 ## Completion checklist
 

@@ -73,7 +73,7 @@ class ChatMessageBubble extends StatelessWidget {
                   ),
                   const SizedBox(height: 6),
                 ],
-                if (message.isPending) ...<Widget>[
+                if (message.isPending && !isUser) ...<Widget>[
                   const _PendingBubbleIndicator(),
                   const SizedBox(height: 8),
                 ],
@@ -92,6 +92,11 @@ class ChatMessageBubble extends StatelessWidget {
                       ),
                     ),
                   ),
+                ],
+                if (message.isPending && isUser) ...<Widget>[
+                  if (message.text.trim().isNotEmpty || message.attachments.isNotEmpty)
+                    const SizedBox(height: 8),
+                  const _PendingBubbleIndicator(),
                 ],
                 const SizedBox(height: 6),
                 Text(

@@ -27,7 +27,14 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byIcon(Icons.link_off), findsOneWidget);
-    expect(find.byIcon(Icons.terminal), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('composer-input-mode-toggle')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('emoji-picker-button')),
+      findsOneWidget,
+    );
     expect(find.text('Aria'), findsWidgets);
     expect(find.textContaining('Renewal reminder'), findsOneWidget);
   });

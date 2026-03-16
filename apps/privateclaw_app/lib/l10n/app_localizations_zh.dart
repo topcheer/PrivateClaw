@@ -205,6 +205,50 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get preparingVideoAttachment => '正在准备视频…';
+
+  @override
+  String get switchToVoiceInputTooltip => '语音输入';
+
+  @override
+  String get switchToTextInputTooltip => '键盘输入';
+
+  @override
+  String get voiceRecordHoldToSend => '按住说话';
+
+  @override
+  String get voiceRecordReleaseToSend => '松开发送语音';
+
+  @override
+  String get voiceRecordSending => '正在发送语音…';
+
+  @override
+  String get voiceRecordUnavailable => '等待会话完成连接后再录音…';
+
+  @override
+  String get voiceRecordingPermissionDenied => '发送语音消息需要麦克风权限。';
+
+  @override
+  String get voiceRecordingUnsupported => '当前设备暂不支持语音录制。';
+
+  @override
+  String get voiceRecordingTooShort => '请再多按住一会儿再松开发送。';
+
+  @override
+  String get voiceRecordingTooLarge => '这条语音太大，无法直接发送。';
+
+  @override
+  String get voiceRecordingCancelled => '已取消语音录制。';
+
+  @override
+  String voiceRecordingFailed(String error) {
+    return '语音录制失败：$error';
+  }
+
+  @override
+  String get emojiPickerTooltip => '表情';
+
+  @override
+  String get emojiPickerTitle => '常用表情';
 }
 
 /// The translations for Chinese, using the Han script (`zh_Hant`).
@@ -394,4 +438,48 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get preparingVideoAttachment => '正在準備影片…';
+
+  @override
+  String get switchToVoiceInputTooltip => '語音輸入';
+
+  @override
+  String get switchToTextInputTooltip => '鍵盤輸入';
+
+  @override
+  String get voiceRecordHoldToSend => '按住說話';
+
+  @override
+  String get voiceRecordReleaseToSend => '放開立即傳送語音';
+
+  @override
+  String get voiceRecordSending => '正在傳送語音…';
+
+  @override
+  String get voiceRecordUnavailable => '請等待會話完成連線後再錄音…';
+
+  @override
+  String get voiceRecordingPermissionDenied => '傳送語音訊息需要麥克風權限。';
+
+  @override
+  String get voiceRecordingUnsupported => '此裝置暫不支援語音錄製。';
+
+  @override
+  String get voiceRecordingTooShort => '請再多按住一會兒再放開傳送。';
+
+  @override
+  String get voiceRecordingTooLarge => '這段語音太大，無法直接傳送。';
+
+  @override
+  String get voiceRecordingCancelled => '已取消語音錄製。';
+
+  @override
+  String voiceRecordingFailed(String error) {
+    return '語音錄製失敗：$error';
+  }
+
+  @override
+  String get emojiPickerTooltip => '表情';
+
+  @override
+  String get emojiPickerTitle => '常用表情';
 }

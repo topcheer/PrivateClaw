@@ -10,6 +10,7 @@ export interface PrivateClawConversationTurn {
   role: "user" | "assistant" | "system";
   text: string;
   sentAt: string;
+  bridgeText?: string;
   appId?: string;
   participantLabel?: string;
   replyTo?: string;
@@ -31,6 +32,12 @@ export interface BridgeResponseEnvelope {
 
 export type BridgeResponse = string | BridgeResponseEnvelope;
 
+export interface PrivateClawAudioTranscriptionRequest {
+  sessionId: string;
+  requestId: string;
+  attachments: ReadonlyArray<PrivateClawAttachment>;
+}
+
 export interface PrivateClawAgentBridge {
   handleUserMessage(params: {
     sessionId: string;
@@ -39,6 +46,9 @@ export interface PrivateClawAgentBridge {
     attachments?: ReadonlyArray<PrivateClawAttachment>;
     history: ReadonlyArray<PrivateClawConversationTurn>;
   }): Promise<BridgeResponse>;
+  transcribeAudioAttachments?(
+    params: PrivateClawAudioTranscriptionRequest,
+  ): Promise<string>;
 }
 
 export interface PrivateClawProviderOptions {

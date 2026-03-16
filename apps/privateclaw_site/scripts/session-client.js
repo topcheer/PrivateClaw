@@ -138,20 +138,10 @@ export class PrivateClawWebSessionClient extends EventTarget {
         text: trimmed,
         sentAt,
         attachments,
+        isPending: true,
         isOwnMessage: true,
         senderId: this.identity.appId,
         senderLabel: this.identity.displayName,
-      },
-    });
-    this.#dispatch("message", {
-      message: {
-        id: `pending-${clientMessageId}`,
-        sender: "assistant",
-        text: "",
-        sentAt,
-        replyTo: clientMessageId,
-        isPending: true,
-        attachments: [],
       },
     });
   }
@@ -338,6 +328,7 @@ export class PrivateClawWebSessionClient extends EventTarget {
             text: typeof payload.text === "string" ? payload.text : "",
             sentAt: normalizeTimestamp(payload.sentAt),
             replyTo: typeof payload.replyTo === "string" ? payload.replyTo : null,
+            isPending: payload.pending === true,
             attachments: parseAttachments(payload.attachments),
           },
         });

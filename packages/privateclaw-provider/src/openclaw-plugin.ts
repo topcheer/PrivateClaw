@@ -34,6 +34,7 @@ import { resolveRelayEndpoints } from "./relay-endpoints.js";
 import {
   buildManagedSessionQrLegacyLines,
   buildManagedSessionsReportLines,
+  closeManagedSessionsFromStateDir,
   closeManagedSessionFromStateDir,
   getManagedSessionQrBundleFromStateDir,
   isManagedSessionQrLegacyResult,
@@ -59,6 +60,7 @@ import {
   PRIVATECLAW_CLI_ROOT_DESCRIPTION,
   PRIVATECLAW_CLI_SESSIONS_DESCRIPTION,
   PRIVATECLAW_CLI_SESSIONS_KILL_DESCRIPTION,
+  PRIVATECLAW_CLI_SESSIONS_KILLALL_DESCRIPTION,
   PRIVATECLAW_CLI_SESSIONS_QR_DESCRIPTION,
   PRIVATECLAW_CLI_TTL_OPTION_DESCRIPTION,
   PRIVATECLAW_COMMAND_DESCRIPTION,
@@ -886,6 +888,14 @@ class PrivateClawPluginRuntime {
     });
   }
 
+  async closeBackgroundManagedSessions() {
+    return closeManagedSessionsFromStateDir({
+      stateDir: this.ensureStateDir(),
+      hostKinds: ["pair-daemon"],
+      reason: "operator_terminated_all",
+    });
+  }
+
   async printManagedSessionQr(
     sessionId: string,
     params?: {
@@ -1119,6 +1129,65 @@ function createPluginDefinition(
                         `Session ${result.session.sessionId} has been terminated.`,
                       ),
                 );
+              } catch (error) {
+                console.error(formatCommandError(error));
+                process.exitCode = 1;
+              }
+            });
+
+          sessions
+            .command("killall")
+            .description(PRIVATECLAW_CLI_SESSIONS_KILLALL_DESCRIPTION)
+            .action(async () => {
+              try {
+                const result = await runtime.closeBackgroundManagedSessions();
+                if (result.closed.length === 0 && result.failed.length === 0) {
+                  console.log(
+                    formatBilingualInline(
+                      "当前没有需要终止的后台 daemon 会话。",
+                      "There are no background daemon sessions to terminate.",
+                    ),
+                  );
+                  return;
+                }
+                if (result.closed.length > 0) {
+                  console.log(
+                    formatBilingualInline(
+                      `已终止 ${result.closed.length} 个后台 daemon 会话。`,
+                      `Terminated ${result.closed.length} background daemon session(s).`,
+                    ),
+                  );
+                  for (const item of result.closed) {
+                    console.log(
+                      item.terminatedHost
+                        ? formatBilingualInline(
+                            `- ${item.session.sessionId}：已通过终止 legacy host ${item.host.kind}#${item.host.pid} 停止。`,
+                            `- ${item.session.sessionId}: stopped by terminating the legacy host ${item.host.kind}#${item.host.pid}.`,
+                          )
+                        : formatBilingualInline(
+                            `- ${item.session.sessionId}：已终止。`,
+                            `- ${item.session.sessionId}: terminated.`,
+                          ),
+                    );
+                  }
+                }
+                if (result.failed.length > 0) {
+                  console.error(
+                    formatBilingualInline(
+                      `${result.failed.length} 个后台 daemon 会话终止失败。`,
+                      `${result.failed.length} background daemon session(s) failed to terminate.`,
+                    ),
+                  );
+                  for (const item of result.failed) {
+                    console.error(
+                      formatBilingualInline(
+                        `- ${item.session.sessionId}（${item.host.kind}#${item.host.pid}）：${item.error}`,
+                        `- ${item.session.sessionId} (${item.host.kind}#${item.host.pid}): ${item.error}`,
+                      ),
+                    );
+                  }
+                  process.exitCode = 1;
+                }
               } catch (error) {
                 console.error(formatCommandError(error));
                 process.exitCode = 1;

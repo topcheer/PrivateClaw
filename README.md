@@ -176,6 +176,7 @@ If you want to start a session without another chat app, use the provider CLI th
 | `openclaw privateclaw sessions` | List locally managed active sessions. | The output includes the total count plus each session's `type`, `participants`, `state`, `expires`, `host`, and optional `label`. `host` is one of `plugin-service`, `pair-foreground`, or `pair-daemon`. |
 | `openclaw privateclaw sessions qr <sessionId>` | Reprint the QR for a currently managed session. | The QR is rendered in the terminal by default. Add `--open` to also launch the local browser preview, or `--notify` to broadcast the same QR back to the session's currently connected participants as an ephemeral assistant message. |
 | `openclaw privateclaw sessions kill <sessionId>` | Terminate a locally managed session. | On current hosts this closes just the selected session. If an already-running older foreground/background host does not support per-session shutdown yet, the command falls back to terminating that legacy host process. |
+| `openclaw privateclaw sessions killall` | Terminate every background daemon-managed session. | This only targets `pair-daemon` sessions so it does not interrupt foreground hosts or plugin-service sessions. The standalone binary also exposes the same shortcut as `privateclaw-provider killall`. |
 | `openclaw privateclaw kick <sessionId> <appId>` | Remove one participant from a group session. | This closes that app's relay connection and blocks the same `appId` from rejoining the current session. |
 
 `pair` accepts these public flags:
@@ -197,11 +198,13 @@ openclaw privateclaw pair --group --foreground
 openclaw privateclaw pair --relay https://your-relay.example.com
 openclaw privateclaw sessions qr <sessionId> --notify
 openclaw privateclaw sessions kill <sessionId>
+openclaw privateclaw sessions killall
 privateclaw-provider sessions qr <sessionId> --open
+privateclaw-provider killall
 privateclaw-provider pair --relay https://your-relay.example.com --foreground
 ```
 
-Background daemon sessions can outlive OpenClaw main-process restarts. Use `openclaw privateclaw sessions` or `privateclaw-provider sessions` to inspect them, and `sessions kill <sessionId>` when you want to shut one down explicitly.
+Background daemon sessions can outlive OpenClaw main-process restarts. Use `openclaw privateclaw sessions` or `privateclaw-provider sessions` to inspect them, `sessions kill <sessionId>` when you want to shut one down explicitly, and `sessions killall` (or standalone `privateclaw-provider killall`) when you want to clear every background daemon session at once.
 
 ### 3. Run the app
 

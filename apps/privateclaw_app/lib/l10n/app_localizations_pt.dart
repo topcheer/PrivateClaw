@@ -217,6 +217,55 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get preparingVideoAttachment => 'Preparando vídeo…';
+
+  @override
+  String get switchToVoiceInputTooltip => 'Voice input';
+
+  @override
+  String get switchToTextInputTooltip => 'Keyboard input';
+
+  @override
+  String get voiceRecordHoldToSend => 'Hold to Talk';
+
+  @override
+  String get voiceRecordReleaseToSend => 'Release to send';
+
+  @override
+  String get voiceRecordSending => 'Sending voice message…';
+
+  @override
+  String get voiceRecordUnavailable =>
+      'Wait for the session to finish connecting…';
+
+  @override
+  String get voiceRecordingPermissionDenied =>
+      'Microphone access is required for voice messages.';
+
+  @override
+  String get voiceRecordingUnsupported =>
+      'Voice recording is unavailable on this device.';
+
+  @override
+  String get voiceRecordingTooShort =>
+      'Hold a little longer before releasing your voice message.';
+
+  @override
+  String get voiceRecordingTooLarge =>
+      'This voice message is too large to send inline.';
+
+  @override
+  String get voiceRecordingCancelled => 'Voice recording cancelled.';
+
+  @override
+  String voiceRecordingFailed(String error) {
+    return 'Voice recording failed: $error';
+  }
+
+  @override
+  String get emojiPickerTooltip => 'Emoji';
+
+  @override
+  String get emojiPickerTitle => 'Common emoji';
 }
 
 /// The translations for Portuguese, as used in Brazil (`pt_BR`).

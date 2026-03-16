@@ -155,6 +155,7 @@ Public subcommands:
 | `sessions` | `privateclaw-provider sessions` | List active locally managed sessions. | The output includes the total count plus each session's `type`, `participants`, `state`, `expires`, `host`, and optional `label`. |
 | `sessions qr <sessionId>` | `privateclaw-provider sessions qr <sessionId>` | Reprint the QR for a currently managed session. | The QR is rendered in the terminal by default. Add `--open` to also launch the local browser preview, or `--notify` to broadcast the same QR to the session's currently connected participants as an ephemeral assistant message. |
 | `sessions kill <sessionId>` | `privateclaw-provider sessions kill <sessionId>` | Terminate a locally managed session. | On current hosts this closes just the selected session. If an already-running older foreground/background host does not support per-session shutdown yet, the command falls back to terminating that legacy host process. |
+| `sessions killall` | `privateclaw-provider sessions killall` | Terminate every background daemon-managed session. | This only targets `pair-daemon` sessions so it does not interrupt foreground hosts or plugin-service sessions. The standalone binary also exposes the same shortcut as `privateclaw-provider killall`. |
 | `kick <sessionId> <appId>` | `privateclaw-provider kick <sessionId> <appId>` | Remove one participant from a group session. | This also closes that app's relay connection and blocks the same `appId` from rejoining the current session. |
 
 `pair` supports these public flags:
@@ -178,6 +179,8 @@ privateclaw-provider pair --relay https://your-relay.example.com
 privateclaw-provider sessions
 privateclaw-provider sessions qr <sessionId> --open
 privateclaw-provider sessions kill <sessionId>
+privateclaw-provider sessions killall
+privateclaw-provider killall
 privateclaw-provider kick <sessionId> <appId>
 
 # The same commands through the installed OpenClaw plugin
@@ -186,6 +189,7 @@ openclaw privateclaw pair --relay https://your-relay.example.com
 openclaw privateclaw sessions
 openclaw privateclaw sessions qr <sessionId> --notify
 openclaw privateclaw sessions kill <sessionId>
+openclaw privateclaw sessions killall
 openclaw privateclaw kick <sessionId> <appId>
 ```
 
@@ -193,7 +197,7 @@ When a first-time participant joins a group session without providing a name, th
 
 Active participants can use `/session-qr` to re-share the current invite QR while a session is live, and the local operator can do the same from the terminal with `privateclaw-provider sessions qr <sessionId>` or `openclaw privateclaw sessions qr <sessionId>`. Once less than 30 minutes remain, the provider emits a reminder so any participant can run `/renew-session`. In group sessions, `/mute-bot` and `/unmute-bot` pause or resume assistant replies without interrupting participant-to-participant chat delivery.
 
-Background daemon sessions can outlive OpenClaw main-process restarts. Use `privateclaw-provider sessions` or `openclaw privateclaw sessions` to inspect them, and `sessions kill <sessionId>` when you want to stop one explicitly.
+Background daemon sessions can outlive OpenClaw main-process restarts. Use `privateclaw-provider sessions` or `openclaw privateclaw sessions` to inspect them, `sessions kill <sessionId>` when you want to stop one explicitly, and `sessions killall` (or standalone `privateclaw-provider killall`) when you want to clear every background daemon session at once.
 
 After the app attaches, both the mobile app and the mobile web chat show the resolved relay host. They also warn before connecting when an invite points at a non-default relay.
 

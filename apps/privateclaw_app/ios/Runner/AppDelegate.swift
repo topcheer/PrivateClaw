@@ -9,13 +9,18 @@ import Vision
 @main
 @objc class AppDelegate: FlutterAppDelegate {
   private let inviteQrDecoderChannelName = "gg.ai.privateclaw/invite_qr_decoder"
+  private let audioRecorderChannelName = "gg.ai.privateclaw/audio_recorder"
   private let localNotificationsChannelName = "gg.ai.privateclaw/local_notifications"
   private let pathProviderGetDirectoryPathChannelName =
     "dev.flutter.pigeon.path_provider_foundation.PathProviderApi.getDirectoryPath"
   private let pathProviderGetContainerPathChannelName =
     "dev.flutter.pigeon.path_provider_foundation.PathProviderApi.getContainerPath"
+  private let minimumVoiceRecordingDuration: TimeInterval = 0.3
   private var pendingInviteCameraResult: FlutterResult?
   private weak var inviteScannerController: PrivateClawInviteScannerViewController?
+  private var audioRecorder: AVAudioRecorder?
+  private var audioRecorderUrl: URL?
+  private var audioRecorderStartedAt: Date?
 
   override func application(
     _ application: UIApplication,
@@ -24,6 +29,7 @@ import Vision
     configureFirebaseIfNeeded()
     GeneratedPluginRegistrant.register(with: self)
     registerInviteQrDecoder()
+    registerAudioRecorder()
     registerLocalNotificationsFallback()
     registerPathProviderFallback()
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
@@ -67,6 +73,41 @@ import Vision
         self.decodeInviteQr(call: call, result: result)
       case "captureInviteFromCamera":
         self.captureInviteFromCamera(result: result)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+  }
+
+  private func registerAudioRecorder() {
+    guard let controller = window?.rootViewController as? FlutterViewController else {
+      NSLog("[privateclaw-app] Could not register audio recorder channel because the root FlutterViewController is missing.")
+      return
+    }
+
+    let channel = FlutterMethodChannel(
+      name: audioRecorderChannelName,
+      binaryMessenger: controller.binaryMessenger
+    )
+    channel.setMethodCallHandler { [weak self] call, result in
+      guard let self else {
+        result(
+          FlutterError(
+            code: "unavailable",
+            message: "The app delegate is unavailable.",
+            details: nil
+          )
+        )
+        return
+      }
+
+      switch call.method {
+      case "startRecording":
+        self.startAudioRecording(result: result)
+      case "stopRecording":
+        self.stopAudioRecording(discard: false, result: result)
+      case "cancelRecording":
+        self.stopAudioRecording(discard: true, result: result)
       default:
         result(FlutterMethodNotImplemented)
       }
@@ -325,6 +366,230 @@ import Vision
       return
     }
     result(value)
+  }
+
+  private func startAudioRecording(result: @escaping FlutterResult) {
+    guard audioRecorder == nil else {
+      result(
+        FlutterError(
+          code: "busy",
+          message: "A voice recording is already in progress.",
+          details: nil
+        )
+      )
+      return
+    }
+
+    let audioSession = AVAudioSession.sharedInstance()
+    switch audioSession.recordPermission {
+    case .granted:
+      beginAudioRecording(result: result)
+    case .undetermined:
+      audioSession.requestRecordPermission { [weak self] granted in
+        DispatchQueue.main.async {
+          guard let self else {
+            result(
+              FlutterError(
+                code: "unavailable",
+                message: "The app delegate is unavailable.",
+                details: nil
+              )
+            )
+            return
+          }
+          if granted {
+            self.beginAudioRecording(result: result)
+            return
+          }
+          result(
+            FlutterError(
+              code: "permission_denied",
+              message: "Microphone permission is required to record voice messages.",
+              details: nil
+            )
+          )
+        }
+      }
+    case .denied:
+      result(
+        FlutterError(
+          code: "permission_denied",
+          message: "Microphone permission is required to record voice messages.",
+          details: nil
+        )
+      )
+    @unknown default:
+      result(
+        FlutterError(
+          code: "recorder_unavailable",
+          message: "Microphone access is unavailable on this device.",
+          details: nil
+        )
+      )
+    }
+  }
+
+  private func beginAudioRecording(result: @escaping FlutterResult) {
+    let recordingsDirectory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("privateclaw-recordings", isDirectory: true)
+    let outputUrl = recordingsDirectory
+      .appendingPathComponent("voice-note-\(timestampForVoiceRecording()).m4a")
+    do {
+      try FileManager.default.createDirectory(
+        at: recordingsDirectory,
+        withIntermediateDirectories: true,
+        attributes: nil
+      )
+
+      let audioSession = AVAudioSession.sharedInstance()
+      try audioSession.setCategory(
+        .playAndRecord,
+        mode: .default,
+        options: [.defaultToSpeaker, .allowBluetooth]
+      )
+      try audioSession.setActive(true)
+
+      let recorder = try AVAudioRecorder(
+        url: outputUrl,
+        settings: [
+          AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
+          AVSampleRateKey: 44_100,
+          AVNumberOfChannelsKey: 1,
+          AVEncoderBitRateKey: 64_000,
+          AVEncoderAudioQualityKey: AVAudioQuality.medium.rawValue
+        ]
+      )
+      guard recorder.prepareToRecord(), recorder.record() else {
+        throw NSError(
+          domain: "gg.ai.privateclaw.audio_recorder",
+          code: -1,
+          userInfo: [NSLocalizedDescriptionKey: "Unable to start the voice recorder."]
+        )
+      }
+
+      audioRecorder = recorder
+      audioRecorderUrl = outputUrl
+      audioRecorderStartedAt = Date()
+      result(nil)
+    } catch {
+      cleanupAudioRecordingFileIfNeeded(url: outputUrl)
+      audioRecorder = nil
+      audioRecorderUrl = nil
+      audioRecorderStartedAt = nil
+      result(
+        FlutterError(
+          code: "recorder_unavailable",
+          message: error.localizedDescription,
+          details: nil
+        )
+      )
+    }
+  }
+
+  private func stopAudioRecording(
+    discard: Bool,
+    result: @escaping FlutterResult
+  ) {
+    guard let recorder = audioRecorder else {
+      if discard {
+        result(nil)
+        return
+      }
+      result(
+        FlutterError(
+          code: "not_recording",
+          message: "No voice recording is active.",
+          details: nil
+        )
+      )
+      return
+    }
+
+    let outputUrl = audioRecorderUrl
+    let startedAt = audioRecorderStartedAt
+    audioRecorder = nil
+    audioRecorderUrl = nil
+    audioRecorderStartedAt = nil
+
+    recorder.stop()
+    deactivateAudioSession()
+
+    guard let outputUrl else {
+      if discard {
+        result(nil)
+        return
+      }
+      result(
+        FlutterError(
+          code: "recording_failed",
+          message: "Voice recording output is unavailable.",
+          details: nil
+        )
+      )
+      return
+    }
+
+    let duration = startedAt.map { Date().timeIntervalSince($0) } ?? 0
+    let sizeBytes = audioRecordingFileSize(at: outputUrl)
+    if discard {
+      cleanupAudioRecordingFileIfNeeded(url: outputUrl)
+      result(nil)
+      return
+    }
+    if duration < minimumVoiceRecordingDuration || sizeBytes <= 0 {
+      cleanupAudioRecordingFileIfNeeded(url: outputUrl)
+      result(
+        FlutterError(
+          code: "recording_too_short",
+          message: "Hold to record a little longer before releasing.",
+          details: nil
+        )
+      )
+      return
+    }
+
+    result(
+      [
+        "path": outputUrl.path,
+        "mimeType": "audio/mp4"
+      ]
+    )
+  }
+
+  private func deactivateAudioSession() {
+    do {
+      try AVAudioSession.sharedInstance().setActive(
+        false,
+        options: .notifyOthersOnDeactivation
+      )
+    } catch {
+      NSLog("[privateclaw-app] Failed to deactivate audio session: \(error)")
+    }
+  }
+
+  private func audioRecordingFileSize(at url: URL) -> Int64 {
+    let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+    return (attributes?[.size] as? NSNumber)?.int64Value ?? 0
+  }
+
+  private func cleanupAudioRecordingFileIfNeeded(url: URL?) {
+    guard let url else {
+      return
+    }
+    do {
+      if FileManager.default.fileExists(atPath: url.path) {
+        try FileManager.default.removeItem(at: url)
+      }
+    } catch {
+      NSLog("[privateclaw-app] Failed to remove voice recording file: \(error)")
+    }
+  }
+
+  private func timestampForVoiceRecording() -> String {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyyMMdd-HHmmss"
+    return formatter.string(from: Date())
   }
 
   private func topPresentedViewController(from controller: UIViewController) -> UIViewController {

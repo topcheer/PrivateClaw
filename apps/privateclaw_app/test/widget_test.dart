@@ -20,11 +20,21 @@ void main() {
       expect(find.text('Scan QR code'), findsOneWidget);
       expect(find.text('Join session'), findsOneWidget);
       expect(find.byIcon(Icons.attach_file), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('composer-input-mode-toggle')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('emoji-picker-button')),
+        findsOneWidget,
+      );
+      expect(find.byIcon(Icons.send), findsNothing);
 
-      final List<TextField> textFields = tester
-          .widgetList<TextField>(find.byType(TextField))
-          .toList(growable: false);
-      expect(textFields.any((TextField field) => field.maxLines == 1), isTrue);
+      final TextField composerField = tester.widget<TextField>(
+        find.byKey(const ValueKey<String>('composer-input-field')),
+      );
+      expect(composerField.minLines, 1);
+      expect(composerField.maxLines, 5);
     },
   );
 
@@ -240,7 +250,10 @@ void main() {
     );
 
     await tester.pumpAndSettle();
-    await tester.tap(find.byIcon(Icons.terminal));
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('composer-input-field')),
+      '/',
+    );
     await tester.pumpAndSettle();
 
     expect(
@@ -260,6 +273,96 @@ void main() {
     expect(find.text('/mute-bot'), findsNothing);
   });
 
+  testWidgets('composer can switch to voice mode and show hold-to-record UI', (
+    WidgetTester tester,
+  ) async {
+    final DateTime now = DateTime.now().toUtc();
+    final PrivateClawInvite invite = PrivateClawInvite(
+      version: 1,
+      sessionId: 'session-voice',
+      sessionKey: 'test-session-key',
+      appWsUrl: 'wss://relay.privateclaw.us/ws/app?sessionId=session-voice',
+      expiresAt: now.add(const Duration(hours: 1)),
+    );
+
+    await tester.pumpWidget(
+      PrivateClawApp(
+        screenshotConfig: StoreScreenshotConfig(
+          previewData: PrivateClawPreviewData(
+            invite: invite,
+            identity: PrivateClawIdentity(
+              appId: 'app-voice',
+              createdAt: now.subtract(const Duration(days: 1)),
+              displayName: 'Voice Preview',
+            ),
+            status: PrivateClawSessionStatus.active,
+            statusText: 'Connected.',
+            isPairingPanelCollapsed: true,
+          ),
+          localeOverride: const Locale('en'),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('composer-input-mode-toggle')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('voice-record-button')),
+      findsOneWidget,
+    );
+    expect(find.text('Hold to Talk'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('emoji-picker-button')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('emoji picker renders inline instead of opening a modal sheet', (
+    WidgetTester tester,
+  ) async {
+    final DateTime now = DateTime.now().toUtc();
+    final PrivateClawInvite invite = PrivateClawInvite(
+      version: 1,
+      sessionId: 'session-emoji',
+      sessionKey: 'test-session-key',
+      appWsUrl: 'wss://relay.privateclaw.us/ws/app?sessionId=session-emoji',
+      expiresAt: now.add(const Duration(hours: 1)),
+    );
+
+    await tester.pumpWidget(
+      PrivateClawApp(
+        screenshotConfig: StoreScreenshotConfig(
+          previewData: PrivateClawPreviewData(
+            invite: invite,
+            identity: PrivateClawIdentity(
+              appId: 'app-emoji',
+              createdAt: now.subtract(const Duration(days: 1)),
+              displayName: 'Emoji Preview',
+            ),
+            status: PrivateClawSessionStatus.active,
+            statusText: 'Connected.',
+            isPairingPanelCollapsed: true,
+          ),
+          localeOverride: const Locale('en'),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey<String>('emoji-picker-button')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('emoji-picker-panel')),
+      findsOneWidget,
+    );
+    expect(find.text('Common emoji'), findsOneWidget);
+  });
+
   testWidgets('non-default relay invites require confirmation before joining', (
     WidgetTester tester,
   ) async {
@@ -273,9 +376,7 @@ void main() {
 
     await tester.pumpWidget(
       const PrivateClawApp(
-        screenshotConfig: StoreScreenshotConfig(
-          localeOverride: Locale('en'),
-        ),
+        screenshotConfig: StoreScreenshotConfig(localeOverride: Locale('en')),
       ),
     );
 
@@ -283,7 +384,9 @@ void main() {
       find.byKey(const ValueKey<String>('invite-input-field')),
       encodePrivateClawInviteUri(invite),
     );
-    await tester.tap(find.byKey(const ValueKey<String>('connect-session-button')));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('connect-session-button')),
+    );
     await tester.pumpAndSettle();
 
     expect(

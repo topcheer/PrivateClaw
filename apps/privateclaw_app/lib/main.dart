@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
@@ -16,6 +17,7 @@ import 'models/privateclaw_invite.dart';
 import 'models/privateclaw_participant.dart';
 import 'models/privateclaw_slash_command.dart';
 import 'services/privateclaw_active_session_store.dart';
+import 'services/privateclaw_audio_recorder.dart';
 import 'services/privateclaw_debug_bootstrap.dart';
 import 'services/privateclaw_identity_store.dart';
 import 'services/privateclaw_firebase_options.dart';
@@ -30,6 +32,35 @@ const int _maxInlineAttachmentBytes = 5 * 1024 * 1024;
 const Duration _sessionRenewWarningThreshold = Duration(minutes: 30);
 const String _sessionRenewCommandSlash = '/renew-session';
 const String _appBarIconAsset = 'assets/branding/privateclaw_app_icon.png';
+const double _voiceCancelActivationDistance = 120;
+const List<String> _commonEmoji = <String>[
+  '😀',
+  '😂',
+  '🥹',
+  '😍',
+  '🤔',
+  '😴',
+  '😭',
+  '😡',
+  '👍',
+  '👎',
+  '🙏',
+  '👏',
+  '💪',
+  '🎉',
+  '🔥',
+  '❤️',
+  '💯',
+  '✨',
+  '🤖',
+  '🦀',
+  '🐾',
+  '🌙',
+  '☀️',
+  '🍀',
+];
+
+enum _ComposerInputMode { text, voice }
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -136,6 +167,16 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
   PrivateClawIdentity? _identity;
   Timer? _sessionExpiryRefreshTimer;
   bool _isRenewingSession = false;
+  _ComposerInputMode _composerInputMode = _ComposerInputMode.text;
+  bool _isRecordingVoice = false;
+  bool _isStoppingVoiceRecording = false;
+  Future<void>? _voiceRecordingStartFuture;
+  bool _isEmojiPickerVisible = false;
+  double _lastKeyboardInsetHeight = 320;
+  Offset? _voiceHoldStartGlobalPosition;
+  bool _isVoiceCancelArmed = false;
+  bool _isSlashCommandsSheetOpen = false;
+  String _previousComposerText = '';
   final PrivateClawDebugPendingInviteData? _debugPendingInvite =
       loadPrivateClawDebugPendingInviteFromEnvironment();
 
@@ -145,6 +186,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
   bool get _hasDraftContent =>
       _messageController.text.trim().isNotEmpty ||
       _selectedAttachments.isNotEmpty;
+  bool get _isVoiceInputMode => _composerInputMode == _ComposerInputMode.voice;
   bool get _hasSessionSetup => _invite != null;
   bool get _hasManagedSessionContext =>
       _invite != null &&
@@ -284,6 +326,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    unawaited(_cancelVoiceRecording(updateStatus: false, setUiState: false));
     unawaited(_disposeClient(reason: 'widget_disposed', notifyRemote: false));
     _sessionExpiryRefreshTimer?.cancel();
     _inviteController.dispose();
@@ -316,6 +359,9 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       return;
     }
 
+    if (_isRecordingVoice || _isStoppingVoiceRecording) {
+      unawaited(_cancelVoiceRecording(updateStatus: false));
+    }
     unawaited(_suspendActiveSessionForBackground());
   }
 
@@ -372,7 +418,21 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     if (!mounted) {
       return;
     }
+    final String currentText = _messageController.text;
+    final String previousText = _previousComposerText;
+    _previousComposerText = currentText;
     setState(() {});
+
+    final bool shouldAutoOpenSlashCommands =
+        _canSend &&
+        !_isVoiceInputMode &&
+        !_isSlashCommandsSheetOpen &&
+        _availableCommands.isNotEmpty &&
+        previousText.isEmpty &&
+        currentText == '/';
+    if (shouldAutoOpenSlashCommands) {
+      unawaited(_openSlashCommands());
+    }
   }
 
   void _applyPreview(PrivateClawPreviewData previewData) {
@@ -406,6 +466,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
         offset: previewData.composerDraftText.length,
       ),
     );
+    _previousComposerText = previewData.composerDraftText;
   }
 
   Future<void> _disposeClient({
@@ -722,33 +783,69 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
         event.connectionStatus == PrivateClawSessionStatus.idle) {
       unawaited(_activeSessionStore.clear());
     }
+    if (event.connectionStatus != null &&
+        event.connectionStatus != PrivateClawSessionStatus.active &&
+        (_isRecordingVoice || _isStoppingVoiceRecording)) {
+      unawaited(_cancelVoiceRecording(updateStatus: false));
+    }
     _scheduleScrollToBottom();
   }
 
   void _upsertMessage(ChatMessage message) {
+    if (message.isPending && message.replyTo != null) {
+      final int repliedMessageIndex = _messages.indexWhere(
+        (ChatMessage item) =>
+            item.id == message.replyTo && item.sender == ChatSender.user,
+      );
+      if (repliedMessageIndex >= 0) {
+        _messages[repliedMessageIndex] = _messages[repliedMessageIndex].copyWith(
+          isPending: true,
+        );
+        _messages.removeWhere(
+          (ChatMessage item) =>
+              item.sender == ChatSender.assistant &&
+              item.isPending &&
+              item.replyTo == message.replyTo,
+        );
+        return;
+      }
+    }
+
     final int existingMessageIndex = _messages.indexWhere(
       (ChatMessage item) => item.id == message.id,
     );
     if (existingMessageIndex >= 0) {
-      _messages[existingMessageIndex] = message;
+      final ChatMessage existing = _messages[existingMessageIndex];
+      _messages[existingMessageIndex] = message.copyWith(
+        isPending:
+            existing.sender == ChatSender.user &&
+            existing.id == message.id &&
+            existing.isPending
+                ? true
+                : message.isPending,
+      );
       return;
     }
 
     if (message.isPending) {
-      final int existingPendingIndex = _messages.indexWhere(
-        (ChatMessage item) => item.id == message.id,
-      );
-      if (existingPendingIndex >= 0) {
-        _messages[existingPendingIndex] = message;
-        return;
-      }
       _messages.add(message);
       return;
     }
 
     if (message.replyTo != null) {
+      final int repliedMessageIndex = _messages.indexWhere(
+        (ChatMessage item) =>
+            item.id == message.replyTo && item.sender == ChatSender.user,
+      );
+      if (repliedMessageIndex >= 0 && _messages[repliedMessageIndex].isPending) {
+        _messages[repliedMessageIndex] = _messages[repliedMessageIndex]
+            .copyWith(isPending: false);
+      }
       _messages.removeWhere(
-        (ChatMessage item) => item.isPending && item.replyTo == message.replyTo,
+        (ChatMessage item) =>
+            item.sender == ChatSender.assistant &&
+            item.isPending &&
+            item.replyTo == message.replyTo,
       );
     }
     _messages.add(message);
@@ -985,6 +1082,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
 
   Future<void> _disconnect() async {
     final AppLocalizations l10n = AppLocalizations.of(context)!;
+    await _cancelVoiceRecording(updateStatus: false);
     final PrivateClawSessionClient? client = _client;
     if (client != null) {
       await client.unregisterPushRegistration();
@@ -1010,21 +1108,49 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     _sessionExpiryRefreshTimer?.cancel();
   }
 
-  Future<void> _openSlashCommands() async {
-    if (!_canSend || _availableCommands.isEmpty) {
+  Future<void> _openEmojiPicker() async {
+    if (_isVoiceInputMode) {
       return;
     }
 
-    final PrivateClawSlashCommand? command =
-        await showModalBottomSheet<PrivateClawSlashCommand>(
-          context: context,
-          isScrollControlled: true,
-          useSafeArea: true,
-          showDragHandle: true,
-          builder: (BuildContext context) {
-            return _SlashCommandsSheet(commands: _availableCommands);
-          },
-        );
+    final double keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+    if (_isEmojiPickerVisible) {
+      setState(() {
+        _isEmojiPickerVisible = false;
+      });
+      _composerFocusNode.requestFocus();
+      return;
+    }
+
+    setState(() {
+      if (keyboardInset > 0) {
+        _lastKeyboardInsetHeight = keyboardInset;
+      }
+      _isEmojiPickerVisible = true;
+    });
+    _composerFocusNode.unfocus();
+  }
+
+  Future<void> _openSlashCommands() async {
+    if (!_canSend || _availableCommands.isEmpty || _isVoiceInputMode) {
+      return;
+    }
+
+    _isSlashCommandsSheetOpen = true;
+    final PrivateClawSlashCommand? command;
+    try {
+      command = await showModalBottomSheet<PrivateClawSlashCommand>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        showDragHandle: true,
+        builder: (BuildContext context) {
+          return _SlashCommandsSheet(commands: _availableCommands);
+        },
+      );
+    } finally {
+      _isSlashCommandsSheetOpen = false;
+    }
 
     if (!mounted || command == null) {
       return;
@@ -1046,6 +1172,310 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
         (ChatAttachment attachment) => attachment.id == attachmentId,
       );
     });
+  }
+
+  void _toggleComposerInputMode() {
+    if (!_canSend) {
+      return;
+    }
+
+    setState(() {
+      _isEmojiPickerVisible = false;
+      _composerInputMode = _isVoiceInputMode
+          ? _ComposerInputMode.text
+          : _ComposerInputMode.voice;
+    });
+    if (_isVoiceInputMode) {
+      _composerFocusNode.unfocus();
+      return;
+    }
+    _composerFocusNode.requestFocus();
+  }
+
+  void _resetVoiceHoldOverlayState() {
+    _voiceHoldStartGlobalPosition = null;
+    _isVoiceCancelArmed = false;
+  }
+
+  Future<void> _handleVoiceHoldStart(Offset globalPosition) async {
+    if (!_canSend || _isStoppingVoiceRecording || _client == null) {
+      return;
+    }
+
+    setState(() {
+      _isEmojiPickerVisible = false;
+      _voiceHoldStartGlobalPosition = globalPosition;
+      _isVoiceCancelArmed = false;
+    });
+    await _startVoiceRecording();
+  }
+
+  void _handleVoiceHoldMove(Offset globalPosition) {
+    final Offset? start = _voiceHoldStartGlobalPosition;
+    if (start == null) {
+      return;
+    }
+
+    final bool shouldCancel =
+        start.dy - globalPosition.dy >= _voiceCancelActivationDistance;
+    if (shouldCancel == _isVoiceCancelArmed) {
+      return;
+    }
+    setState(() {
+      _isVoiceCancelArmed = shouldCancel;
+    });
+  }
+
+  Future<void> _handleVoiceHoldEnd() async {
+    final bool shouldCancel = _isVoiceCancelArmed;
+    if (mounted) {
+      setState(_resetVoiceHoldOverlayState);
+    } else {
+      _resetVoiceHoldOverlayState();
+    }
+
+    if (shouldCancel) {
+      await _cancelVoiceRecording(updateStatus: false);
+      return;
+    }
+    await _finishVoiceRecordingAndSend();
+  }
+
+  Future<void> _handleVoiceHoldCancel() async {
+    if (mounted) {
+      setState(_resetVoiceHoldOverlayState);
+    } else {
+      _resetVoiceHoldOverlayState();
+    }
+    await _cancelVoiceRecording(updateStatus: false);
+  }
+
+  void _insertEmoji(String emoji) {
+    final TextEditingValue currentValue = _messageController.value;
+    final TextSelection selection = currentValue.selection.isValid
+        ? currentValue.selection
+        : TextSelection.collapsed(offset: currentValue.text.length);
+    final String text = currentValue.text;
+    final int start = selection.start.clamp(0, text.length).toInt();
+    final int end = selection.end.clamp(0, text.length).toInt();
+    final String nextText =
+        '${text.substring(0, start)}$emoji${text.substring(end)}';
+    final int nextOffset = start + emoji.length;
+    _messageController.value = TextEditingValue(
+      text: nextText,
+      selection: TextSelection.collapsed(offset: nextOffset),
+    );
+  }
+
+  void _hideEmojiPicker() {
+    if (!_isEmojiPickerVisible) {
+      return;
+    }
+    setState(() {
+      _isEmojiPickerVisible = false;
+    });
+  }
+
+  Future<void> _startVoiceRecording() async {
+    final AppLocalizations l10n = AppLocalizations.of(context)!;
+    if (!_canSend ||
+        _client == null ||
+        _isRecordingVoice ||
+        _isStoppingVoiceRecording ||
+        _voiceRecordingStartFuture != null) {
+      return;
+    }
+
+    final Future<void> startFuture = PrivateClawAudioRecorder.startRecording();
+    _voiceRecordingStartFuture = startFuture;
+    setState(() {
+      _isRecordingVoice = true;
+    });
+
+    try {
+      await startFuture;
+    } on PrivateClawAudioRecorderPermissionDenied {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isRecordingVoice = false;
+        _resetVoiceHoldOverlayState();
+        _statusText = l10n.voiceRecordingPermissionDenied;
+      });
+    } on UnsupportedError {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isRecordingVoice = false;
+        _resetVoiceHoldOverlayState();
+        _statusText = l10n.voiceRecordingUnsupported;
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isRecordingVoice = false;
+        _resetVoiceHoldOverlayState();
+        _statusText = l10n.voiceRecordingFailed(error.toString());
+      });
+    } finally {
+      if (identical(_voiceRecordingStartFuture, startFuture)) {
+        _voiceRecordingStartFuture = null;
+      }
+    }
+  }
+
+  Future<void> _finishVoiceRecordingAndSend() async {
+    final AppLocalizations l10n = AppLocalizations.of(context)!;
+    if (!_isRecordingVoice || _isStoppingVoiceRecording) {
+      return;
+    }
+
+    setState(() {
+      _isRecordingVoice = false;
+      _isStoppingVoiceRecording = true;
+    });
+
+    try {
+      final Future<void>? startFuture = _voiceRecordingStartFuture;
+      if (startFuture != null) {
+        await startFuture;
+      }
+      final PrivateClawRecordedAudio? recording =
+          await PrivateClawAudioRecorder.stopRecording();
+      if (recording == null) {
+        return;
+      }
+      final File file = File(recording.path);
+      final Uint8List bytes = await file.readAsBytes();
+      await _deleteVoiceRecordingFile(file);
+      if (bytes.isEmpty) {
+        throw StateError('Voice recording is empty.');
+      }
+      if (bytes.length > _maxInlineAttachmentBytes) {
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _statusText = l10n.voiceRecordingTooLarge;
+        });
+        return;
+      }
+
+      final PrivateClawSessionClient? client = _client;
+      if (client == null) {
+        throw StateError('Session is not connected.');
+      }
+
+      final ChatAttachment attachment = ChatAttachment(
+        id: _nextAttachmentId(),
+        name: _voiceRecordingAttachmentName(recording.path),
+        mimeType: recording.mimeType,
+        sizeBytes: bytes.length,
+        dataBase64: base64Encode(bytes),
+      );
+      await client.sendUserMessage(
+        '',
+        attachments: <ChatAttachment>[attachment],
+      );
+      _scheduleScrollToBottom();
+    } on PrivateClawAudioRecorderTooShort {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _statusText = l10n.voiceRecordingTooShort;
+      });
+    } on PrivateClawAudioRecorderPermissionDenied {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _statusText = l10n.voiceRecordingPermissionDenied;
+      });
+    } on UnsupportedError {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _statusText = l10n.voiceRecordingUnsupported;
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _statusText = l10n.voiceRecordingFailed(error.toString());
+      });
+    } finally {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isStoppingVoiceRecording = false;
+      });
+    }
+  }
+
+  Future<void> _cancelVoiceRecording({
+    required bool updateStatus,
+    bool setUiState = true,
+  }) async {
+    if (!_isRecordingVoice && !_isStoppingVoiceRecording) {
+      return;
+    }
+
+    final AppLocalizations? l10n = mounted
+        ? AppLocalizations.of(context)
+        : null;
+    void clearRecordingState() {
+      _isRecordingVoice = false;
+      _isStoppingVoiceRecording = false;
+      _resetVoiceHoldOverlayState();
+      if (updateStatus && l10n != null) {
+        _statusText = l10n.voiceRecordingCancelled;
+      }
+    }
+
+    if (setUiState && mounted) {
+      setState(clearRecordingState);
+    } else {
+      clearRecordingState();
+    }
+    final Future<void>? startFuture = _voiceRecordingStartFuture;
+    if (startFuture != null) {
+      try {
+        await startFuture;
+      } on Object catch (error, stackTrace) {
+        debugPrint(
+          '[privateclaw-app] voice recording start failed before cancel: $error',
+        );
+        debugPrintStack(stackTrace: stackTrace);
+      }
+    }
+    await PrivateClawAudioRecorder.stopRecording(discard: true);
+  }
+
+  Future<void> _deleteVoiceRecordingFile(File file) async {
+    try {
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } on FileSystemException catch (error, stackTrace) {
+      debugPrint('[privateclaw-app] failed to delete voice recording: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
+  String _voiceRecordingAttachmentName(String path) {
+    final String fileName = path.split(Platform.pathSeparator).last;
+    if (fileName.isNotEmpty) {
+      return fileName;
+    }
+    return 'voice-note-${DateFormat('yyyyMMdd-HHmmss').format(DateTime.now())}.m4a';
   }
 
   Widget _buildSessionRenewPrompt(BuildContext context, AppLocalizations l10n) {
@@ -1206,6 +1636,10 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
   Widget build(BuildContext context) {
     final AppLocalizations l10n = AppLocalizations.of(context)!;
     final double keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+    final double emojiPanelHeight = _isEmojiPickerVisible
+        ? (keyboardInset > 0 ? keyboardInset : _lastKeyboardInsetHeight)
+        : 0;
+    final double bottomInset = _isEmojiPickerVisible ? 0 : keyboardInset;
 
     return Scaffold(
       resizeToAvoidBottomInset: false,
@@ -1215,7 +1649,10 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
         title: const _PrivateClawAppBarIcon(),
       ),
       body: GestureDetector(
-        onTap: () => FocusScope.of(context).unfocus(),
+        onTap: () {
+          FocusScope.of(context).unfocus();
+          _hideEmojiPicker();
+        },
         child: SafeArea(
           bottom: false,
           child: Stack(
@@ -1223,19 +1660,75 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
               AnimatedPadding(
                 duration: const Duration(milliseconds: 180),
                 curve: Curves.easeOut,
-                padding: EdgeInsets.only(bottom: keyboardInset),
+                padding: EdgeInsets.only(bottom: bottomInset),
                 child: Column(
                   children: <Widget>[
                     if (!_canCollapsePairingPanel)
                       _buildPairingSection(context, l10n),
                     Expanded(child: _buildMessageList(l10n)),
                     _buildComposer(l10n),
+                    if (_isEmojiPickerVisible)
+                      _buildEmojiPickerPanel(l10n, height: emojiPanelHeight),
                   ],
                 ),
               ),
               if (_canCollapsePairingPanel)
                 _buildManagedSessionOverlay(context, l10n),
+              if (_isRecordingVoice) _buildVoiceRecordingOverlay(context, l10n),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVoiceRecordingOverlay(
+    BuildContext context,
+    AppLocalizations l10n,
+  ) {
+    final ThemeData theme = Theme.of(context);
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: ColoredBox(
+          color: Colors.black.withValues(alpha: 0.18),
+          child: SafeArea(
+            bottom: false,
+            child: Align(
+              alignment: Alignment.bottomCenter,
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 120),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    _VoiceRecordingOverlayChip(
+                      key: const ValueKey<String>('voice-record-cancel-chip'),
+                      label: l10n.relayWarningCancelButton,
+                      icon: Icons.close,
+                      highlighted: _isVoiceCancelArmed,
+                      backgroundColor: _isVoiceCancelArmed
+                          ? theme.colorScheme.errorContainer
+                          : theme.colorScheme.surfaceContainerHigh,
+                      foregroundColor: _isVoiceCancelArmed
+                          ? theme.colorScheme.onErrorContainer
+                          : theme.colorScheme.onSurface,
+                    ),
+                    const SizedBox(height: 12),
+                    _VoiceRecordingOverlayChip(
+                      key: const ValueKey<String>('voice-record-release-chip'),
+                      label: l10n.voiceRecordReleaseToSend,
+                      icon: Icons.north,
+                      highlighted: !_isVoiceCancelArmed,
+                      backgroundColor: _isVoiceCancelArmed
+                          ? theme.colorScheme.surfaceContainerHigh
+                          : theme.colorScheme.primaryContainer,
+                      foregroundColor: _isVoiceCancelArmed
+                          ? theme.colorScheme.onSurfaceVariant
+                          : theme.colorScheme.onPrimaryContainer,
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
         ),
       ),
@@ -1616,6 +2109,9 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
   }
 
   Widget _buildComposer(AppLocalizations l10n) {
+    final ThemeData theme = Theme.of(context);
+    final Color composerControlColor =
+        theme.colorScheme.surfaceContainerHighest;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       child: Column(
@@ -1651,50 +2147,224 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
             crossAxisAlignment: CrossAxisAlignment.end,
             children: <Widget>[
               IconButton(
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
                 onPressed: _canSend ? _pickAttachments : null,
                 icon: const Icon(Icons.attach_file),
               ),
-              if (_availableCommands.isNotEmpty)
-                IconButton(
-                  onPressed: _canSend ? _openSlashCommands : null,
-                  icon: const Icon(Icons.terminal),
+              IconButton(
+                key: const ValueKey<String>('composer-input-mode-toggle'),
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                onPressed: _canSend ? _toggleComposerInputMode : null,
+                icon: Icon(
+                  _isVoiceInputMode ? Icons.keyboard_outlined : Icons.mic_none,
                 ),
+                tooltip: _isVoiceInputMode
+                    ? l10n.switchToTextInputTooltip
+                    : l10n.switchToVoiceInputTooltip,
+              ),
               Expanded(
-                child: TextField(
-                  controller: _messageController,
-                  focusNode: _composerFocusNode,
-                  enabled: _canSend,
-                  minLines: 1,
-                  maxLines: 1,
-                  textInputAction: TextInputAction.send,
-                  onSubmitted: (_) {
-                    unawaited(_sendMessage());
-                  },
-                  decoration: InputDecoration(
-                    hintText: _canSend
-                        ? l10n.sendHintActive
-                        : l10n.sendHintInactive,
-                    border: const OutlineInputBorder(),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              IconButton.filled(
-                onPressed: _canSend && _hasDraftContent ? _sendMessage : null,
-                icon: _hasPendingReply
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                child: _isVoiceInputMode
+                    ? _buildVoiceComposerButton(
+                        l10n,
+                        backgroundColor: composerControlColor,
                       )
-                    : const Icon(Icons.send),
-                tooltip: l10n.sendTooltip,
+                    : DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: composerControlColor,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: <Widget>[
+                            Expanded(
+                              child: TextField(
+                                key: const ValueKey<String>(
+                                  'composer-input-field',
+                                ),
+                                controller: _messageController,
+                                focusNode: _composerFocusNode,
+                                enabled: _canSend,
+                                onTap: _hideEmojiPicker,
+                                keyboardType: TextInputType.multiline,
+                                minLines: 1,
+                                maxLines: 5,
+                                textInputAction: TextInputAction.newline,
+                                decoration: InputDecoration(
+                                  hintText: _canSend
+                                      ? l10n.sendHintActive
+                                      : l10n.sendHintInactive,
+                                  border: InputBorder.none,
+                                  enabledBorder: InputBorder.none,
+                                  focusedBorder: InputBorder.none,
+                                  disabledBorder: InputBorder.none,
+                                  contentPadding: const EdgeInsets.fromLTRB(
+                                    16,
+                                    12,
+                                    4,
+                                    12,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              key: const ValueKey<String>(
+                                'emoji-picker-button',
+                              ),
+                              visualDensity: VisualDensity.compact,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(
+                                minWidth: 40,
+                                minHeight: 40,
+                              ),
+                              onPressed: _canSend ? _openEmojiPicker : null,
+                              icon: const Icon(Icons.emoji_emotions_outlined),
+                              tooltip: l10n.emojiPickerTooltip,
+                            ),
+                          ],
+                        ),
+                      ),
               ),
+              if (!_isVoiceInputMode && _hasDraftContent) ...<Widget>[
+                const SizedBox(width: 4),
+                IconButton.filled(
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 40,
+                    minHeight: 40,
+                  ),
+                  onPressed: _canSend ? _sendMessage : null,
+                  icon: _hasPendingReply
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.send),
+                  tooltip: l10n.sendTooltip,
+                ),
+              ],
             ],
           ),
         ],
       ),
     );
+  }
+
+  Widget _buildEmojiPickerPanel(
+    AppLocalizations l10n, {
+    required double height,
+  }) {
+    final ThemeData theme = Theme.of(context);
+    return SizedBox(
+      key: const ValueKey<String>('emoji-picker-panel'),
+      height: height,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface,
+          border: Border(
+            top: BorderSide(color: theme.colorScheme.outlineVariant),
+          ),
+        ),
+        child: _CommonEmojiSheet(
+          emojis: _commonEmoji,
+          onSelected: (String emoji) {
+            _insertEmoji(emoji);
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVoiceComposerButton(
+    AppLocalizations l10n, {
+    required Color backgroundColor,
+  }) {
+    final ThemeData theme = Theme.of(context);
+    final bool enabled = _canSend && !_isStoppingVoiceRecording;
+    final Color foregroundColor = theme.colorScheme.onSurface;
+
+    return Listener(
+      key: const ValueKey<String>('voice-record-button'),
+      behavior: HitTestBehavior.opaque,
+      onPointerDown: enabled
+          ? (PointerDownEvent event) {
+              unawaited(_handleVoiceHoldStart(event.position));
+            }
+          : null,
+      onPointerMove: enabled
+          ? (PointerMoveEvent event) {
+              _handleVoiceHoldMove(event.position);
+            }
+          : null,
+      onPointerUp: enabled
+          ? (_) {
+              unawaited(_handleVoiceHoldEnd());
+            }
+          : null,
+      onPointerCancel: enabled
+          ? (_) {
+              unawaited(_handleVoiceHoldCancel());
+            }
+          : null,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        constraints: const BoxConstraints(minHeight: 56),
+        decoration: BoxDecoration(
+          color: backgroundColor,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            if (_isStoppingVoiceRecording)
+              SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: foregroundColor,
+                ),
+              )
+            else
+              Icon(
+                _isRecordingVoice ? Icons.mic : Icons.mic_none,
+                color: foregroundColor,
+              ),
+            const SizedBox(width: 12),
+            Flexible(
+              child: Text(
+                _voiceComposerLabel(l10n),
+                key: const ValueKey<String>('voice-record-label'),
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: foregroundColor,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _voiceComposerLabel(AppLocalizations l10n) {
+    if (_isStoppingVoiceRecording) {
+      return l10n.voiceRecordSending;
+    }
+    if (_isRecordingVoice) {
+      return l10n.voiceRecordReleaseToSend;
+    }
+    if (!_canSend) {
+      return l10n.voiceRecordUnavailable;
+    }
+    return l10n.voiceRecordHoldToSend;
   }
 
   IconData _attachmentIcon(ChatAttachment attachment) {
@@ -1747,6 +2417,109 @@ class _PrivateClawAppBarIcon extends StatelessWidget {
         width: 28,
         height: 28,
         fit: BoxFit.cover,
+      ),
+    );
+  }
+}
+
+class _CommonEmojiSheet extends StatelessWidget {
+  const _CommonEmojiSheet({required this.emojis, required this.onSelected});
+
+  final List<String> emojis;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final AppLocalizations l10n = AppLocalizations.of(context)!;
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(l10n.emojiPickerTitle, style: theme.textTheme.titleMedium),
+            const SizedBox(height: 12),
+            SingleChildScrollView(
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: emojis
+                    .map(
+                      (String emoji) => TextButton(
+                        onPressed: () => onSelected(emoji),
+                        style: TextButton.styleFrom(
+                          minimumSize: const Size(48, 48),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                        ),
+                        child: Text(
+                          emoji,
+                          style: theme.textTheme.headlineSmall,
+                        ),
+                      ),
+                    )
+                    .toList(growable: false),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _VoiceRecordingOverlayChip extends StatelessWidget {
+  const _VoiceRecordingOverlayChip({
+    required this.label,
+    required this.icon,
+    required this.highlighted,
+    required this.backgroundColor,
+    required this.foregroundColor,
+    super.key,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool highlighted;
+  final Color backgroundColor;
+  final Color foregroundColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 120),
+      width: 220,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: highlighted
+            ? <BoxShadow>[
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.18),
+                  blurRadius: 16,
+                  offset: const Offset(0, 8),
+                ),
+              ]
+            : const <BoxShadow>[],
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: <Widget>[
+          Icon(icon, color: foregroundColor),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: foregroundColor,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
       ),
     );
   }

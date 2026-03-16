@@ -62,6 +62,11 @@ export const PRIVATECLAW_CLI_SESSIONS_KILL_DESCRIPTION = formatBilingualInline(
   "Terminate a selected active session; for older background daemons, this falls back to terminating the whole daemon host.",
 );
 
+export const PRIVATECLAW_CLI_SESSIONS_KILLALL_DESCRIPTION = formatBilingualInline(
+  "终止全部由后台 daemon 托管的活动会话；不会影响前台 host 或 plugin-service 会话。",
+  "Terminate every active session managed by background daemons without affecting foreground hosts or plugin-service sessions.",
+);
+
 export const PRIVATECLAW_CLI_KICK_DESCRIPTION = formatBilingualInline(
   "从群聊会话中移除指定参与者。",
   "Remove a participant from a group session.",

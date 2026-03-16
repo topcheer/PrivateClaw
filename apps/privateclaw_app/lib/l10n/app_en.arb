@@ -142,6 +142,28 @@
   "currentAppLabel": "This app: {label}",
   "preparingAudioAttachment": "Preparing audio…",
   "preparingVideoAttachment": "Preparing video…",
+  "switchToVoiceInputTooltip": "Voice input",
+  "switchToTextInputTooltip": "Keyboard input",
+  "voiceRecordHoldToSend": "Hold to Talk",
+  "voiceRecordReleaseToSend": "Release to send",
+  "voiceRecordSending": "Sending voice message…",
+  "voiceRecordUnavailable": "Wait for the session to finish connecting…",
+  "voiceRecordingPermissionDenied": "Microphone access is required for voice messages.",
+  "voiceRecordingUnsupported": "Voice recording is unavailable on this device.",
+  "voiceRecordingTooShort": "Hold a little longer before releasing your voice message.",
+  "voiceRecordingTooLarge": "This voice message is too large to send inline.",
+  "voiceRecordingCancelled": "Voice recording cancelled.",
+  "voiceRecordingFailed": "Voice recording failed: {error}",
+  "@voiceRecordingFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String",
+        "example": "recorder unavailable"
+      }
+    }
+  },
+  "emojiPickerTooltip": "Emoji",
+  "emojiPickerTitle": "Common emoji",
   "@groupChatSummary": {
     "placeholders": {
       "count": {

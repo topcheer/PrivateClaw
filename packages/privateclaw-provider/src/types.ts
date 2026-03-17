@@ -38,6 +38,16 @@ export interface PrivateClawAudioTranscriptionRequest {
   attachments: ReadonlyArray<PrivateClawAttachment>;
 }
 
+export interface PrivateClawAudioTranscriber {
+  transcribeAudioAttachments(
+    params: PrivateClawAudioTranscriptionRequest,
+  ): Promise<string>;
+}
+
+export interface PrivateClawVerboseController {
+  enabled: boolean;
+}
+
 export interface PrivateClawAgentBridge {
   handleUserMessage(params: {
     sessionId: string;
@@ -55,11 +65,13 @@ export interface PrivateClawProviderOptions {
   providerWsUrl: string;
   appWsUrl: string;
   bridge: PrivateClawAgentBridge;
+  audioTranscriber?: PrivateClawAudioTranscriber;
   providerId?: string;
   defaultTtlMs?: number;
   providerLabel?: string;
   welcomeMessage?: string;
   commandsProvider?: () => Promise<PrivateClawSlashCommand[]>;
+  verboseController?: PrivateClawVerboseController;
   onLog?: (message: string) => void;
 }
 

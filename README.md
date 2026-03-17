@@ -174,6 +174,7 @@ If you want to start a session without another chat app, use the provider CLI th
 | --- | --- | --- |
 | `openclaw privateclaw pair` | Create a local PrivateClaw session and render the pairing QR in the terminal. | By default the command returns to the shell after printing while the provider keeps the session alive in a background daemon until expiry. Use `--relay <url>` to override the relay just for this session. |
 | `openclaw privateclaw sessions` | List locally managed active sessions. | The output includes the total count plus each session's `type`, `participants`, `state`, `expires`, `host`, and optional `label`. `host` is one of `plugin-service`, `pair-foreground`, or `pair-daemon`. |
+| `openclaw privateclaw sessions follow <sessionId>` | Follow the OpenClaw session log for one managed session. | This tails the session JSONL written by OpenClaw so you can watch the agent-side run in real time while keeping provider logs in the current terminal. |
 | `openclaw privateclaw sessions qr <sessionId>` | Reprint the QR for a currently managed session. | The QR is rendered in the terminal by default. Add `--open` to also launch the local browser preview, or `--notify` to broadcast the same QR back to the session's currently connected participants as an ephemeral assistant message. |
 | `openclaw privateclaw sessions kill <sessionId>` | Terminate a locally managed session. | On current hosts this closes just the selected session. If an already-running older foreground/background host does not support per-session shutdown yet, the command falls back to terminating that legacy host process. |
 | `openclaw privateclaw sessions killall` | Terminate every background daemon-managed session. | This only targets `pair-daemon` sessions so it does not interrupt foreground hosts or plugin-service sessions. The standalone binary also exposes the same shortcut as `privateclaw-provider killall`. |
@@ -183,28 +184,60 @@ If you want to start a session without another chat app, use the provider CLI th
 
 | Flag | Effect |
 | --- | --- |
-| `--ttl-ms <ms>` | Override the session TTL. The default remains 8 hours. |
+| `--ttl-ms <ms>` | Override the session TTL. The default remains 24 hours. |
 | `--label <label>` | Attach an optional relay-side label that also appears in session-management output. |
 | `--relay <url>` | Override the relay base URL just for this command without changing plugin config. |
 | `--group` | Allow multiple PrivateClaw app clients to join the same session. |
 | `--print-only` | Print the invite URI and QR, then exit immediately. This also closes the session instead of leaving it alive. |
 | `--open` | Open a local browser preview page for the generated QR. |
 | `--foreground` | Keep the session in the current terminal until it ends or you press `Ctrl+C`. On supported runtimes, pressing `Ctrl+D` hands the live session off to a detached background daemon without invalidating the QR. |
+| `--verbose` | Emit more detailed provider / bridge debug logs. For live diagnosis, combine it with `--foreground` so the extra logs stay visible in the current terminal. |
 
 For example, to start a local group session and keep it in the foreground until you hand it off or stop it:
 
 ```bash
 openclaw privateclaw pair --group --foreground
+openclaw privateclaw pair --foreground --verbose
 openclaw privateclaw pair --relay https://your-relay.example.com
+openclaw privateclaw sessions follow <sessionId>
 openclaw privateclaw sessions qr <sessionId> --notify
 openclaw privateclaw sessions kill <sessionId>
 openclaw privateclaw sessions killall
 privateclaw-provider sessions qr <sessionId> --open
+privateclaw-provider sessions follow <sessionId>
 privateclaw-provider killall
 privateclaw-provider pair --relay https://your-relay.example.com --foreground
+privateclaw-provider pair --foreground --verbose
 ```
 
 Background daemon sessions can outlive OpenClaw main-process restarts. Use `openclaw privateclaw sessions` or `privateclaw-provider sessions` to inspect them, `sessions kill <sessionId>` when you want to shut one down explicitly, and `sessions killall` (or standalone `privateclaw-provider killall`) when you want to clear every background daemon session at once.
+
+### Voice STT / ASR
+
+When a user sends a voice attachment, PrivateClaw now tries to transcribe it on the provider side before the message enters the normal OpenClaw text flow.
+
+The runtime order is:
+
+1. local `whisper` CLI from `openai-whisper`, when `whisper` is available on the host
+2. provider-side direct STT from the configured OpenClaw audio model or `PRIVATECLAW_STT_*` overrides
+3. the bridge `transcribeAudioAttachments(...)` path as the final fallback
+
+If one provider-side layer fails, PrivateClaw logs the fallback and continues to the next layer instead of failing the whole voice turn immediately. For live diagnosis, use `openclaw privateclaw pair --foreground --verbose` or `privateclaw-provider pair --foreground --verbose`.
+
+If you want provider-side network STT from OpenClaw config, configure the default audio model, for example:
+
+```bash
+openclaw config set tools.media.audio.models '[{"baseUrl":"http://127.0.0.1:8090","model":"whisper-1","headers":{"Authorization":"Bearer local"}}]' --strict-json
+openclaw config validate
+```
+
+Optional local `whisper` overrides:
+
+- `PRIVATECLAW_WHISPER_BIN`
+- `PRIVATECLAW_WHISPER_MODEL`
+- `PRIVATECLAW_WHISPER_LANGUAGE`
+- `PRIVATECLAW_WHISPER_DEVICE`
+- `PRIVATECLAW_WHISPER_MODEL_DIR`
 
 ### 3. Run the app
 

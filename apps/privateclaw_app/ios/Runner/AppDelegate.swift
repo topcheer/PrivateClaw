@@ -5,6 +5,10 @@ import FirebaseCore
 import UIKit
 import UserNotifications
 import Vision
+import audio_session
+import file_picker
+import just_audio
+import video_player_avfoundation
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
@@ -26,8 +30,13 @@ import Vision
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    configureFirebaseIfNeeded()
-    GeneratedPluginRegistrant.register(with: self)
+    let skipFirebasePushSetup = shouldSkipFirebasePushSetup()
+    if skipFirebasePushSetup {
+      NSLog("[privateclaw-app] Screenshot/debug launch detected; skipping Firebase push setup.")
+    } else {
+      configureFirebaseIfNeeded()
+    }
+    registerGeneratedPlugins(skipFirebasePushSetup: skipFirebasePushSetup)
     registerInviteQrDecoder()
     registerAudioRecorder()
     registerLocalNotificationsFallback()
@@ -44,6 +53,62 @@ import Vision
       return
     }
     FirebaseApp.configure()
+  }
+
+  private func registerGeneratedPlugins(skipFirebasePushSetup: Bool) {
+    if !skipFirebasePushSetup {
+      GeneratedPluginRegistrant.register(with: self)
+      return
+    }
+
+    registerPlugin("AudioSessionPlugin") { registrar in
+      AudioSessionPlugin.register(with: registrar)
+    }
+    registerPlugin("FilePickerPlugin") { registrar in
+      FilePickerPlugin.register(with: registrar)
+    }
+    registerPlugin("JustAudioPlugin") { registrar in
+      JustAudioPlugin.register(with: registrar)
+    }
+    registerPlugin("FVPVideoPlayerPlugin") { registrar in
+      FVPVideoPlayerPlugin.register(with: registrar)
+    }
+  }
+
+  private func registerPlugin(
+    _ name: String,
+    registration: (FlutterPluginRegistrar) -> Void
+  ) {
+    guard let pluginRegistrar = registrar(forPlugin: name) else {
+      NSLog("[privateclaw-app] Could not register plugin %@ during screenshot/debug launch.", name)
+      return
+    }
+    registration(pluginRegistrar)
+  }
+
+  private func shouldSkipFirebasePushSetup() -> Bool {
+    let environment = ProcessInfo.processInfo.environment
+    let screenshotScenario =
+      environment["PRIVATECLAW_SCREENSHOT_SCENARIO"]?
+      .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    if !screenshotScenario.isEmpty {
+      return true
+    }
+    return parseDebugBool(environment["PRIVATECLAW_DEBUG_SKIP_NOTIFICATIONS"])
+  }
+
+  private func parseDebugBool(_ value: String?) -> Bool {
+    guard let trimmedValue = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+      !trimmedValue.isEmpty
+    else {
+      return false
+    }
+    switch trimmedValue.lowercased() {
+    case "1", "true", "yes", "on":
+      return true
+    default:
+      return false
+    }
   }
 
   private func registerInviteQrDecoder() {

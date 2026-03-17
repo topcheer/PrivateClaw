@@ -153,6 +153,7 @@ openclaw channels add --channel telegram --token <token>
 | --- | --- | --- |
 | `openclaw privateclaw pair` | 创建一个本地 PrivateClaw 会话，并在终端里渲染配对二维码。 | 默认打印完二维码后就返回 shell，同时 provider 会在后台 daemon 中把会话维持到过期。需要临时覆盖 relay 时，可直接追加 `--relay <url>`。 |
 | `openclaw privateclaw sessions` | 列出当前由本地管理的活动会话。 | 输出包含总会话数，以及每个会话的 `type`、`participants`、`state`、`expires`、`host` 和可选的 `label`。`host` 目前可能是 `plugin-service`、`pair-foreground` 或 `pair-daemon`。 |
+| `openclaw privateclaw sessions follow <sessionId>` | 跟随查看某个本地托管会话的 OpenClaw 日志。 | 这个命令会持续输出 OpenClaw 写入的 session JSONL，方便你实时看 agent 侧执行，同时把 provider 自己的日志留在当前终端里。 |
 | `openclaw privateclaw sessions qr <sessionId>` | 重新打印某个当前活动会话的二维码。 | 默认会直接在终端里渲染二维码；加上 `--open` 会同时打开本地浏览器预览页；加上 `--notify` 会把同一张二维码作为临时 assistant 消息发回这个会话当前在线的所有参与者。 |
 | `openclaw privateclaw sessions kill <sessionId>` | 终止一个当前由本地管理的会话。 | 在当前版本 host 上，它会只关闭目标会话；如果会话仍由较旧的前台/后台 host 托管、还不支持单会话关闭，则会回退为终止那个 legacy host 进程。 |
 | `openclaw privateclaw sessions killall` | 终止全部由后台 daemon 托管的会话。 | 这个命令只会清理 `pair-daemon` 会话，不会影响前台 host 或 plugin-service 会话。独立二进制也提供同样的简写：`privateclaw-provider killall`。 |
@@ -162,28 +163,60 @@ openclaw channels add --channel telegram --token <token>
 
 | 参数 | 作用 |
 | --- | --- |
-| `--ttl-ms <ms>` | 覆盖会话 TTL，默认仍是 8 小时。 |
+| `--ttl-ms <ms>` | 覆盖会话 TTL，默认仍是 24 小时。 |
 | `--label <label>` | 给 relay 侧会话附加一个可选标签，之后也会显示在会话管理输出中。 |
 | `--relay <url>` | 只为这一次命令临时覆盖 relay base URL，不会修改插件配置。 |
 | `--group` | 允许多个 PrivateClaw App 客户端加入同一个会话。 |
 | `--print-only` | 只打印邀请链接和二维码后立即退出；同时也会关闭这个会话，不会继续保持它存活。 |
 | `--open` | 为生成的二维码打开一个本地浏览器预览页。 |
 | `--foreground` | 把会话留在当前终端前台，直到会话结束或你按 `Ctrl+C`。在支持的运行时里，还可以按 `Ctrl+D` 把当前活跃会话无缝切换到后台 daemon。 |
+| `--verbose` | 输出更详细的 provider / bridge 调试日志。实际排查时建议和 `--foreground` 搭配使用，这样额外日志会直接留在当前终端里。 |
 
 例如，想直接从 CLI 启动一个群聊会话，并先留在前台：
 
 ```bash
 openclaw privateclaw pair --group --foreground
+openclaw privateclaw pair --foreground --verbose
 openclaw privateclaw pair --relay https://your-relay.example.com
+openclaw privateclaw sessions follow <sessionId>
 openclaw privateclaw sessions qr <sessionId> --notify
 openclaw privateclaw sessions kill <sessionId>
 openclaw privateclaw sessions killall
 privateclaw-provider sessions qr <sessionId> --open
+privateclaw-provider sessions follow <sessionId>
 privateclaw-provider killall
 privateclaw-provider pair --relay https://your-relay.example.com --foreground
+privateclaw-provider pair --foreground --verbose
 ```
 
 后台 daemon 会话在 OpenClaw 主进程重启后仍可能继续存活。可以用 `openclaw privateclaw sessions` 或 `privateclaw-provider sessions` 查看它们；想手动结束单个会话时用 `sessions kill <sessionId>`，想一次性清空全部后台 daemon 会话时用 `sessions killall`（或者独立二进制的 `privateclaw-provider killall`）。
+
+### 语音 STT / ASR
+
+当用户发送语音附件时，PrivateClaw 现在会优先在 provider 侧完成转录，再把结果送进正常的 OpenClaw 文本对话流程。
+
+当前运行时的优先级是：
+
+1. 主机上已安装 `openai-whisper` 时，优先调用本地 `whisper` CLI
+2. 使用 OpenClaw 默认音频模型配置或 `PRIVATECLAW_STT_*` 覆盖得到的 provider 侧 direct STT
+3. 最后才回退到 bridge 的 `transcribeAudioAttachments(...)` 路径
+
+如果 provider 侧某一层失败，PrivateClaw 会明确记录回退日志，然后继续尝试下一层，而不是立刻让整个语音回合失败。现场排查时，建议使用 `openclaw privateclaw pair --foreground --verbose` 或 `privateclaw-provider pair --foreground --verbose`。
+
+如果你希望使用 OpenClaw 配置里的 provider 侧网络 STT，可以直接配置默认音频模型，例如：
+
+```bash
+openclaw config set tools.media.audio.models '[{"baseUrl":"http://127.0.0.1:8090","model":"whisper-1","headers":{"Authorization":"Bearer local"}}]' --strict-json
+openclaw config validate
+```
+
+本地 `whisper` 还支持这些可选环境变量覆盖：
+
+- `PRIVATECLAW_WHISPER_BIN`
+- `PRIVATECLAW_WHISPER_MODEL`
+- `PRIVATECLAW_WHISPER_LANGUAGE`
+- `PRIVATECLAW_WHISPER_DEVICE`
+- `PRIVATECLAW_WHISPER_MODEL_DIR`
 
 ### 3. 运行 App
 

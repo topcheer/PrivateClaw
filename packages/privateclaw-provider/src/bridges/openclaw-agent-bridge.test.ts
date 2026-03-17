@@ -93,6 +93,27 @@ test("parseOpenClawAgentOutput prefers tagged structured PrivateClaw responses",
   });
 });
 
+test("parseOpenClawAgentOutput tolerates trailing commas inside structured responses", () => {
+  const result = parseOpenClawAgentOutput(
+    JSON.stringify({
+      status: "ok",
+      result: {
+        payloads: [
+          {
+            text: [
+              "<privateclaw-response>",
+              '{"version":1,"messages":[{"text":"voice-reply"},],"data":{}}',
+              "</privateclaw-response>",
+            ].join("\n"),
+          },
+        ],
+      },
+    }),
+  );
+
+  assert.equal(result, "voice-reply");
+});
+
 test("OpenClawAgentBridge invokes openclaw agent with session-aware arguments", async () => {
   let invokedFile = "";
   let invokedArgs: string[] = [];
@@ -155,6 +176,54 @@ test("OpenClawAgentBridge invokes openclaw agent with session-aware arguments", 
     "30",
   ]);
   assert.equal(result, "bridge-ok");
+});
+
+test("OpenClawAgentBridge emits verbose execution logs when enabled", async () => {
+  const logs: string[] = [];
+
+  const bridge = new OpenClawAgentBridge({
+    verboseController: { enabled: true },
+    onLog: (message) => {
+      logs.push(message);
+    },
+    execFileImpl: (_file, _args, _options, callback) => {
+      callback(
+        null,
+        JSON.stringify({
+          status: "ok",
+          result: {
+            payloads: [{ text: "verbose-ok" }],
+          },
+        }),
+        "",
+      );
+    },
+  });
+
+  const result = await bridge.handleUserMessage({
+    sessionId: "verbose-session",
+    message: "hello",
+    history: [],
+    invite: {
+      version: 1,
+      sessionId: "verbose-session",
+      sessionKey: "test",
+      appWsUrl: "ws://127.0.0.1/app?sessionId=verbose-session",
+      expiresAt: new Date().toISOString(),
+    },
+  });
+
+  assert.equal(result, "verbose-ok");
+  assert.ok(
+    logs.some((message) => message.includes("[bridge][verbose] exec_start session=verbose-session")),
+    "verbose bridge logging should include exec_start details",
+  );
+  assert.ok(
+    logs.some((message) =>
+      message.includes("[bridge][verbose] prompt_body_ready session=verbose-session"),
+    ),
+    "verbose bridge logging should include prompt preparation details",
+  );
 });
 
 test("resolveOpenClawLaunchCommand reuses the current OpenClaw CLI script on Windows", () => {
@@ -322,19 +391,15 @@ test("OpenClawAgentBridge recovers structured assistant text from the session lo
             message: {
               role: "assistant",
               content: [
-                {
-                  type: "text",
-                  text: [
-                    "Interim text that should be ignored.",
-                    "<privateclaw-response>",
-                    JSON.stringify({
-                      version: 1,
-                      messages: [{ text: "pixel.png" }],
-                      data: { filename: "pixel.png" },
-                    }),
-                    "</privateclaw-response>",
-                  ].join("\n"),
-                },
+                 {
+                   type: "text",
+                   text: [
+                     "Interim text that should be ignored.",
+                     "<privateclaw-response>",
+                     '{"version":1,"messages":[{"text":"pixel.png"},],"data":{"filename":"pixel.png"}}',
+                     "</privateclaw-response>",
+                   ].join("\n"),
+                 },
               ],
               isError: false,
             },

@@ -1,1 +1,1 @@
-버그 수정, 다국어 개선, 스토어 출시 준비가 포함되었습니다.
+New participant and assistant avatars, stronger STT/ASR fallback (whisper -> provider STT -> bridge), better session debugging, and more reliable screenshot-preview launches.

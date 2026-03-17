@@ -5,6 +5,9 @@ import { parseArgs } from "node:util";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { EchoBridge } from "./bridges/echo-bridge.js";
+import {
+  buildPreferredAudioTranscriber,
+} from "./audio-transcriber.js";
 import { OpenClawAgentBridge } from "./bridges/openclaw-agent-bridge.js";
 import { OpenAICompatibleBridge } from "./bridges/openai-compatible-bridge.js";
 import { WebhookBridge } from "./bridges/webhook-bridge.js";
@@ -26,6 +29,7 @@ import { DEFAULT_RELAY_BASE_URL } from "./relay-defaults.js";
 import { resolveRelayEndpoints } from "./relay-endpoints.js";
 import {
   buildManagedSessionQrLegacyLines,
+  followManagedSessionLogFromStateDir,
   buildManagedSessionsReportLines,
   closeManagedSessionsFromStateDir,
   closeManagedSessionFromStateDir,
@@ -41,11 +45,16 @@ import {
   formatBilingualInline,
   PRIVATECLAW_CLI_NOTIFY_OPTION_DESCRIPTION,
   PRIVATECLAW_CLI_RELAY_OPTION_DESCRIPTION,
+  PRIVATECLAW_CLI_SESSIONS_FOLLOW_DESCRIPTION,
   PRIVATECLAW_CLI_SESSIONS_KILL_DESCRIPTION,
   PRIVATECLAW_CLI_SESSIONS_KILLALL_DESCRIPTION,
   PRIVATECLAW_CLI_SESSIONS_QR_DESCRIPTION,
+  PRIVATECLAW_CLI_VERBOSE_OPTION_DESCRIPTION,
 } from "./text.js";
-import type { PrivateClawProviderHandoffState } from "./types.js";
+import type {
+  PrivateClawProviderHandoffState,
+  PrivateClawVerboseController,
+} from "./types.js";
 
 type BridgeMode =
   | "echo"
@@ -112,6 +121,7 @@ function detectBridgeMode(): BridgeMode {
 function createProvider(params?: {
   providerId?: string;
   relayBaseUrl?: string;
+  verboseController?: PrivateClawVerboseController;
 }): {
   provider: PrivateClawProvider;
   stateDir: string;
@@ -161,6 +171,8 @@ function createProvider(params?: {
           600,
         )
       : undefined;
+  const verboseController = params?.verboseController;
+  const audioTranscriber = buildCliAudioTranscriber();
 
   const bridge =
     bridgeMode === "openclaw-agent"
@@ -175,6 +187,7 @@ function createProvider(params?: {
             ? { timeoutSeconds: openClawAgentTimeoutSeconds }
             : {}),
           ...(openClawAgentLocal ? { local: true } : {}),
+          ...(verboseController ? { verboseController } : {}),
           onLog: (message) => {
             console.log(`[privateclaw-provider] ${message}`);
           },
@@ -212,9 +225,11 @@ function createProvider(params?: {
       providerWsUrl: relayEndpoints.providerWsUrl,
       appWsUrl: relayEndpoints.appWsUrl,
       bridge,
+      ...(audioTranscriber ? { audioTranscriber } : {}),
       ...(params?.providerId ? { providerId: params.providerId } : {}),
       defaultTtlMs: ttlMs,
       providerLabel,
+      ...(verboseController ? { verboseController } : {}),
       commandsProvider: async () => {
         try {
           return await loadAvailableOpenClawCommands();
@@ -229,6 +244,15 @@ function createProvider(params?: {
     }),
     stateDir: resolvePrivateClawStateDir(),
   };
+}
+
+function buildCliAudioTranscriber() {
+  return buildPreferredAudioTranscriber({
+    env: process.env,
+    onLog: (message) => {
+      console.log(`[privateclaw-provider] ${message}`);
+    },
+  });
 }
 
 async function waitForSessionsToDrain(
@@ -256,15 +280,18 @@ async function readHandoffState(
 function printHelp(): void {
   console.log(`privateclaw-provider <pair|sessions|kick|killall>
 
-pair [--ttl-ms <ms>] [--label <label>] [--relay <url>] [--group] [--print-only] [--open] [--foreground]
+pair [--ttl-ms <ms>] [--label <label>] [--relay <url>] [--group] [--print-only] [--open] [--foreground] [--verbose]
 sessions
+sessions follow <sessionId>
 sessions qr <sessionId> [--open] [--notify]
 sessions kill <sessionId>
 sessions killall
 killall
 kick <sessionId> <appId>`);
   console.log(`\n--relay <url>: ${PRIVATECLAW_CLI_RELAY_OPTION_DESCRIPTION}`);
+  console.log(`--verbose: ${PRIVATECLAW_CLI_VERBOSE_OPTION_DESCRIPTION}`);
   console.log(`--notify: ${PRIVATECLAW_CLI_NOTIFY_OPTION_DESCRIPTION}`);
+  console.log(`sessions follow: ${PRIVATECLAW_CLI_SESSIONS_FOLLOW_DESCRIPTION}`);
   console.log(`sessions qr: ${PRIVATECLAW_CLI_SESSIONS_QR_DESCRIPTION}`);
   console.log(`sessions kill: ${PRIVATECLAW_CLI_SESSIONS_KILL_DESCRIPTION}`);
   console.log(`sessions killall: ${PRIVATECLAW_CLI_SESSIONS_KILLALL_DESCRIPTION}`);
@@ -283,6 +310,7 @@ async function runPairCommand(args: string[]): Promise<void> {
       "print-only": { type: "boolean", default: false },
       open: { type: "boolean", default: parseBooleanFlag(process.env.PRIVATECLAW_OPEN_QR) },
       foreground: { type: "boolean", default: false },
+      verbose: { type: "boolean", default: parseBooleanFlag(process.env.PRIVATECLAW_VERBOSE) },
       "daemon-child": { type: "boolean", default: false },
       "result-file": { type: "string" },
       "resume-snapshot-file": { type: "string" },
@@ -302,9 +330,11 @@ async function runPairCommand(args: string[]): Promise<void> {
   const printOnly = parsed.values["print-only"] === true;
   const openInBrowser = parsed.values.open === true;
   const foreground = parsed.values.foreground === true;
+  const verbose = parsed.values.verbose === true;
   const daemonChild = parsed.values["daemon-child"] === true;
   const resultFile = parsed.values["result-file"];
   const resumeSnapshotFile = parsed.values["resume-snapshot-file"];
+  const verboseController = { enabled: verbose } satisfies PrivateClawVerboseController;
 
   if (daemonChild) {
     if (!resultFile) {
@@ -321,10 +351,11 @@ async function runPairCommand(args: string[]): Promise<void> {
           ? {
               providerId: handoffState.providerId,
               ...(relayBaseUrl ? { relayBaseUrl } : {}),
+              verboseController,
             }
           : relayBaseUrl
-            ? { relayBaseUrl }
-            : undefined,
+            ? { relayBaseUrl, verboseController }
+            : { verboseController },
       );
       provider = resolved.provider;
       if (handoffState) {
@@ -373,7 +404,7 @@ async function runPairCommand(args: string[]): Promise<void> {
 
   if (printOnly || foreground) {
     const { provider, stateDir } = createProvider(
-      relayBaseUrl ? { relayBaseUrl } : undefined,
+      relayBaseUrl ? { relayBaseUrl, verboseController } : { verboseController },
     );
     const controlServer =
       printOnly
@@ -405,6 +436,7 @@ async function runPairCommand(args: string[]): Promise<void> {
                   await handoffForegroundPairToBackground({
                     cliModuleUrl: import.meta.url,
                     stateDir,
+                    ...(verbose ? { verbose: true } : {}),
                     env: relayBaseUrl
                       ? {
                           ...process.env,
@@ -443,6 +475,7 @@ async function runPairCommand(args: string[]): Promise<void> {
     ...(label ? { label } : {}),
     ...(groupMode ? { groupMode: true } : {}),
     ...(openInBrowser ? { openInBrowser: true } : {}),
+    ...(verbose ? { verbose: true } : {}),
   });
   printPairInviteBundle(bundle, (line) => {
     console.log(line);
@@ -456,6 +489,10 @@ async function runPairCommand(args: string[]): Promise<void> {
 }
 
 async function runSessionsCommand(args: string[]): Promise<void> {
+  if (args[0] === "follow") {
+    await runSessionsFollowCommand(args.slice(1));
+    return;
+  }
   if (args[0] === "qr") {
     await runSessionsQrCommand(args.slice(1));
     return;
@@ -484,6 +521,37 @@ async function runSessionsCommand(args: string[]): Promise<void> {
   for (const line of buildManagedSessionsReportLines(listings)) {
     console.log(line);
   }
+}
+
+async function runSessionsFollowCommand(args: string[]): Promise<void> {
+  const parsed = parseArgs({
+    args,
+    allowPositionals: true,
+    options: {
+      help: { type: "boolean", short: "h" },
+    },
+  });
+  if (parsed.values.help) {
+    printHelp();
+    return;
+  }
+  const sessionId = parsed.positionals[0];
+  if (!sessionId) {
+    throw new Error(
+      formatBilingualInline(
+        "`sessions follow` 需要提供 sessionId。",
+        "`sessions follow` requires a sessionId.",
+      ),
+    );
+  }
+
+  await followManagedSessionLogFromStateDir({
+    stateDir: resolvePrivateClawStateDir(),
+    sessionId,
+    writeLine: (line: string) => {
+      console.log(line);
+    },
+  });
 }
 
 async function runSessionsKillCommand(args: string[]): Promise<void> {

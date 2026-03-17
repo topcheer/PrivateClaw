@@ -1,1 +1,1 @@
-Correcciones, mejor localización y preparación para el lanzamiento en tiendas.
+New participant and assistant avatars, stronger STT/ASR fallback (whisper -> provider STT -> bridge), better session debugging, and more reliable screenshot-preview launches.

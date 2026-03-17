@@ -57,6 +57,11 @@ export const PRIVATECLAW_CLI_SESSIONS_QR_DESCRIPTION = formatBilingualInline(
   "Print the QR code for a selected session, optionally open a browser preview, and optionally notify the current participants.",
 );
 
+export const PRIVATECLAW_CLI_SESSIONS_FOLLOW_DESCRIPTION = formatBilingualInline(
+  "跟随指定会话的 OpenClaw session JSONL 日志，便于实时排障。",
+  "Follow the OpenClaw session JSONL log for a selected session to debug it in real time.",
+);
+
 export const PRIVATECLAW_CLI_SESSIONS_KILL_DESCRIPTION = formatBilingualInline(
   "终止指定的活动会话；对于旧的后台 daemon，会回退为终止整个 daemon host。",
   "Terminate a selected active session; for older background daemons, this falls back to terminating the whole daemon host.",
@@ -111,6 +116,11 @@ export const PRIVATECLAW_CLI_NOTIFY_OPTION_DESCRIPTION = formatBilingualInline(
 export const PRIVATECLAW_CLI_FOREGROUND_OPTION_DESCRIPTION = formatBilingualInline(
   "保持当前命令在前台运行，直到会话结束或按 Ctrl+C；在支持的运行时里也可按 Ctrl+D 转入后台。",
   "Keep the current command in the foreground until the session ends or you press Ctrl+C; in supported runtimes you can also press Ctrl+D to move it into the background.",
+);
+
+export const PRIVATECLAW_CLI_VERBOSE_OPTION_DESCRIPTION = formatBilingualInline(
+  "输出更详细的 provider / bridge 调试日志。",
+  "Emit more detailed provider / bridge debug logs.",
 );
 
 export const PRIVATECLAW_INVITE_URI_LABEL = formatBilingualInline(
@@ -172,8 +182,8 @@ export function buildPrivateClawCommandErrorMessage(details: string): string {
 }
 
 export const PRIVATECLAW_RENEW_SESSION_DESCRIPTION = formatBilingualInline(
-  "轮换当前 PrivateClaw 会话密钥，并将当前会话延长 8 小时。",
-  "Rotate the current PrivateClaw session key and extend this session by 8 hours.",
+  "轮换当前 PrivateClaw 会话密钥，并将当前会话延长 24 小时。",
+  "Rotate the current PrivateClaw session key and extend this session by 24 hours.",
 );
 
 export const PRIVATECLAW_SESSION_QR_DESCRIPTION = formatBilingualInline(

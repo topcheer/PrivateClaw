@@ -161,6 +161,36 @@ class VoiceTranscribingBridge {
   }
 }
 
+class DirectAudioTranscriber {
+  readonly transcriptionRequests: Array<{ sessionId: string; requestId: string }> = [];
+
+  async transcribeAudioAttachments(params: {
+    sessionId: string;
+    requestId: string;
+  }): Promise<string> {
+    this.transcriptionRequests.push({
+      sessionId: params.sessionId,
+      requestId: params.requestId,
+    });
+    return "你好世界";
+  }
+}
+
+class FailingAudioTranscriber {
+  readonly transcriptionRequests: Array<{ sessionId: string; requestId: string }> = [];
+
+  async transcribeAudioAttachments(params: {
+    sessionId: string;
+    requestId: string;
+  }): Promise<string> {
+    this.transcriptionRequests.push({
+      sessionId: params.sessionId,
+      requestId: params.requestId,
+    });
+    throw new Error("local STT failed");
+  }
+}
+
 function buildVoiceAttachment() {
   return {
     id: "voice-attachment-1",
@@ -259,6 +289,91 @@ test("provider creates one-time invites and replies through the encrypted relay"
   const assistant = await nextRelayPayload(appSocket, invite);
   assert.equal(assistant.kind, "assistant_message");
   assert.match(assistant.text, /你好/);
+
+  appSocket.terminate();
+});
+
+test("provider emits verbose session logs when enabled", async (t) => {
+  const relay = createRelayServer({
+    host: "127.0.0.1",
+    port: 0,
+    sessionTtlMs: 60_000,
+    frameCacheSize: 8,
+  });
+  const { port } = await relay.start();
+  t.after(async () => {
+    await relay.stop();
+  });
+
+  const logs: string[] = [];
+  const provider = new PrivateClawProvider({
+    providerWsUrl: `ws://127.0.0.1:${port}/ws/provider`,
+    appWsUrl: `ws://127.0.0.1:${port}/ws/app`,
+    bridge: new EchoBridge("OpenClaw bridge"),
+    defaultTtlMs: DEFAULT_SESSION_TTL_MS,
+    verboseController: { enabled: true },
+    onLog: (message) => {
+      logs.push(message);
+    },
+  });
+  await provider.connect();
+  t.after(async () => {
+    await provider.dispose();
+  });
+
+  const inviteBundle = await provider.createInviteBundle();
+  const invite = decodeInviteString(inviteBundle.inviteUri);
+  const appSocket = new WebSocket(invite.appWsUrl);
+  const attachedPromise = nextMessage(appSocket);
+  await waitForOpen(appSocket);
+  assert.equal((await attachedPromise).type, "relay:attached");
+
+  appSocket.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "client_hello",
+          appVersion: "flutter-test",
+          deviceLabel: "Verbose Simulator",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+
+  await nextMessages(appSocket, 2);
+
+  assert.ok(
+    logs.some((message) =>
+      message.includes(`[provider][verbose] session_created session=${invite.sessionId}`),
+    ),
+    "verbose provider logging should include session creation details",
+  );
+  assert.ok(
+    logs.some((message) =>
+      message.includes(
+        `[provider][verbose] payload_in session=${invite.sessionId} kind=client_hello`,
+      ),
+    ),
+    "verbose provider logging should include inbound payload details",
+  );
+  assert.ok(
+    logs.some((message) =>
+      message.includes(`[provider][verbose] capabilities_out session=${invite.sessionId}`),
+    ),
+    "verbose provider logging should include capabilities broadcasts",
+  );
+  assert.ok(
+    logs.some((message) =>
+      message.includes(
+        `[provider][verbose] payload_out session=${invite.sessionId} kind=provider_capabilities`,
+      ),
+    ),
+    "verbose provider logging should include outbound payload details",
+  );
 
   appSocket.terminate();
 });
@@ -471,6 +586,195 @@ test("provider acknowledges voice uploads before forwarding transcript-derived r
     bridge.conversationMessages[0] ?? "",
     /speech-to-text transcript of a user's voice message/u,
   );
+  assert.match(bridge.conversationMessages[0] ?? "", /小明说：你好世界/u);
+
+  appSocket.terminate();
+});
+
+test("provider prefers a direct audio transcriber over the bridge STT path", async (t) => {
+  const relay = createRelayServer({
+    host: "127.0.0.1",
+    port: 0,
+    sessionTtlMs: 60_000,
+    frameCacheSize: 8,
+  });
+  const { port } = await relay.start();
+  t.after(async () => {
+    await relay.stop();
+  });
+
+  const bridge = new VoiceTranscribingBridge();
+  const audioTranscriber = new DirectAudioTranscriber();
+  const provider = new PrivateClawProvider({
+    providerWsUrl: `ws://127.0.0.1:${port}/ws/provider`,
+    appWsUrl: `ws://127.0.0.1:${port}/ws/app`,
+    bridge,
+    audioTranscriber,
+    defaultTtlMs: DEFAULT_SESSION_TTL_MS,
+    welcomeMessage: "欢迎来到 PrivateClaw",
+  });
+  await provider.connect();
+  t.after(async () => {
+    await provider.dispose();
+  });
+
+  const inviteBundle = await provider.createInviteBundle();
+  const invite = decodeInviteString(inviteBundle.inviteUri);
+
+  const appUrl = new URL(invite.appWsUrl);
+  appUrl.searchParams.set("appId", "voice-app");
+  const appSocket = new WebSocket(appUrl.toString());
+  const attachedPromise = nextMessage(appSocket);
+  await waitForOpen(appSocket);
+  assert.equal((await attachedPromise).type, "relay:attached");
+
+  appSocket.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "client_hello",
+          appId: "voice-app",
+          displayName: "小明",
+          appVersion: "flutter-test",
+          deviceLabel: "Simulator",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+  await nextMessages(appSocket, 2);
+
+  appSocket.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "user_message",
+          appId: "voice-app",
+          displayName: "小明",
+          text: "",
+          attachments: [buildVoiceAttachment()],
+          clientMessageId: "voice-message-direct-stt",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+
+  const voiceFrames = await nextMessages(appSocket, 3);
+  const assistant = decryptRelayPayload(voiceFrames[2]!, invite);
+  assert.equal(assistant.kind, "assistant_message");
+  assert.match(assistant.text, /小明说：你好世界/u);
+  assert.deepEqual(audioTranscriber.transcriptionRequests, [
+    {
+      sessionId: invite.sessionId,
+      requestId: "voice-message-direct-stt",
+    },
+  ]);
+  assert.deepEqual(bridge.transcriptionRequests, []);
+  assert.equal(bridge.conversationMessages.length, 1);
+  assert.match(bridge.conversationMessages[0] ?? "", /小明说：你好世界/u);
+
+  appSocket.terminate();
+});
+
+test("provider falls back to bridge STT after provider-side transcription fails", async (t) => {
+  const relay = createRelayServer({
+    host: "127.0.0.1",
+    port: 0,
+    sessionTtlMs: 60_000,
+    frameCacheSize: 8,
+  });
+  const { port } = await relay.start();
+  t.after(async () => {
+    await relay.stop();
+  });
+
+  const bridge = new VoiceTranscribingBridge();
+  const audioTranscriber = new FailingAudioTranscriber();
+  const provider = new PrivateClawProvider({
+    providerWsUrl: `ws://127.0.0.1:${port}/ws/provider`,
+    appWsUrl: `ws://127.0.0.1:${port}/ws/app`,
+    bridge,
+    audioTranscriber,
+    defaultTtlMs: DEFAULT_SESSION_TTL_MS,
+    welcomeMessage: "欢迎来到 PrivateClaw",
+  });
+  await provider.connect();
+  t.after(async () => {
+    await provider.dispose();
+  });
+
+  const inviteBundle = await provider.createInviteBundle();
+  const invite = decodeInviteString(inviteBundle.inviteUri);
+
+  const appUrl = new URL(invite.appWsUrl);
+  appUrl.searchParams.set("appId", "voice-app");
+  const appSocket = new WebSocket(appUrl.toString());
+  const attachedPromise = nextMessage(appSocket);
+  await waitForOpen(appSocket);
+  assert.equal((await attachedPromise).type, "relay:attached");
+
+  appSocket.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "client_hello",
+          appId: "voice-app",
+          displayName: "小明",
+          appVersion: "flutter-test",
+          deviceLabel: "Simulator",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+  await nextMessages(appSocket, 2);
+
+  appSocket.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "user_message",
+          appId: "voice-app",
+          displayName: "小明",
+          text: "",
+          attachments: [buildVoiceAttachment()],
+          clientMessageId: "voice-message-provider-fallback",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+
+  const voiceFrames = await nextMessages(appSocket, 3);
+  const assistant = decryptRelayPayload(voiceFrames[2]!, invite);
+  assert.equal(assistant.kind, "assistant_message");
+  assert.match(assistant.text, /小明说：你好世界/u);
+  assert.deepEqual(audioTranscriber.transcriptionRequests, [
+    {
+      sessionId: invite.sessionId,
+      requestId: "voice-message-provider-fallback",
+    },
+  ]);
+  assert.deepEqual(bridge.transcriptionRequests, [
+    {
+      sessionId: invite.sessionId,
+      requestId: "voice-message-provider-fallback",
+    },
+  ]);
+  assert.equal(bridge.conversationMessages.length, 1);
   assert.match(bridge.conversationMessages[0] ?? "", /小明说：你好世界/u);
 
   appSocket.terminate();

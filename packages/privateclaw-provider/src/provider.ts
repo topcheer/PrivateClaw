@@ -42,7 +42,7 @@ import type {
   ProviderSessionState,
 } from "./types.js";
 
-export const DEFAULT_SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+export const DEFAULT_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 const RENEW_SESSION_TTL_MS = DEFAULT_SESSION_TTL_MS;
 const SESSION_RENEWAL_REMINDER_WINDOW_MS = 30 * 60 * 1000;
 const PARTICIPANT_LABEL_MAX_CHARS = 12;
@@ -91,6 +91,14 @@ function normalizeBridgeMessages(
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+function readNonEmptyString(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed === "" ? undefined : trimmed;
 }
 
 function buildMessageId(prefix: string): string {
@@ -193,6 +201,35 @@ function cloneConversationTurn(
   };
 }
 
+function countPayloadAttachments(payload: Record<string, unknown>): number {
+  return Array.isArray(payload.attachments) ? payload.attachments.length : 0;
+}
+
+function toUnknownRecord(value: unknown): Record<string, unknown> {
+  return value as Record<string, unknown>;
+}
+
+function summarizePayload(
+  payload: Parameters<typeof encryptPayload>[0]["payload"],
+): string {
+  const record = toUnknownRecord(payload);
+  const text = typeof record.text === "string" ? record.text : "";
+  const message = typeof record.message === "string" ? record.message : "";
+  const senderAppId = readNonEmptyString(record.senderAppId);
+  const targetAppId = readNonEmptyString(record.targetAppId);
+  const replyTo = readNonEmptyString(record.replyTo);
+  return [
+    `kind=${payload.kind}`,
+    `textChars=${text.length}`,
+    `messageChars=${message.length}`,
+    `attachments=${countPayloadAttachments(record)}`,
+    `replyTo=${JSON.stringify(replyTo ?? "none")}`,
+    `senderAppId=${JSON.stringify(senderAppId ?? "none")}`,
+    `targetAppId=${JSON.stringify(targetAppId ?? "broadcast")}`,
+    `pending=${record.pending === true}`,
+  ].join(" ");
+}
+
 function buildRelayLabel(appWsUrl: string): string | undefined {
   try {
     const url = new URL(appWsUrl);
@@ -260,13 +297,13 @@ function buildRenewalReminderMessage(session: ProviderSessionState): string {
   const command = "/renew-session";
   if (session.groupMode) {
     return formatBilingualText(
-      `这个 PrivateClaw 群聊会话将在 30 分钟内过期（${session.invite.expiresAt}）。任意参与者都可以发送 ${command} 将它延长 8 小时。`,
-      `This PrivateClaw group session will expire in less than 30 minutes (at ${session.invite.expiresAt}). Any participant can send ${command} to extend it by 8 hours.`,
+      `这个 PrivateClaw 群聊会话将在 30 分钟内过期（${session.invite.expiresAt}）。任意参与者都可以发送 ${command} 将它延长 24 小时。`,
+      `This PrivateClaw group session will expire in less than 30 minutes (at ${session.invite.expiresAt}). Any participant can send ${command} to extend it by 24 hours.`,
     );
   }
   return formatBilingualText(
-    `这个 PrivateClaw 会话将在 30 分钟内过期（${session.invite.expiresAt}）。发送 ${command} 可将它延长 8 小时。`,
-    `This PrivateClaw session will expire in less than 30 minutes (at ${session.invite.expiresAt}). Send ${command} to extend it by 8 hours.`,
+    `这个 PrivateClaw 会话将在 30 分钟内过期（${session.invite.expiresAt}）。发送 ${command} 可将它延长 24 小时。`,
+    `This PrivateClaw session will expire in less than 30 minutes (at ${session.invite.expiresAt}). Send ${command} to extend it by 24 hours.`,
   );
 }
 
@@ -580,8 +617,25 @@ export class PrivateClawProvider {
     });
   }
 
+  private isVerboseLoggingEnabled(): boolean {
+    return this.options.verboseController?.enabled === true;
+  }
+
+  private verboseLog(message: string): void {
+    if (!this.isVerboseLoggingEnabled()) {
+      return;
+    }
+    this.options.onLog?.(`[provider][verbose] ${message}`);
+  }
+
   async connect(): Promise<void> {
+    this.verboseLog(
+      `connect_start providerId=${this.relayClient.getProviderId()} relay=${JSON.stringify(this.options.providerWsUrl)}`,
+    );
     await this.relayClient.connect();
+    this.verboseLog(
+      `connect_complete providerId=${this.relayClient.getProviderId()} activeSessions=${this.sessions.size}`,
+    );
   }
 
   async dispose(params?: { closeSessions?: boolean }): Promise<void> {
@@ -750,10 +804,29 @@ export class PrivateClawProvider {
   ): Promise<PreparedUserMessage> {
     const allAttachments = payload.attachments ?? [];
     const audioAttachments = allAttachments.filter(isAudioAttachment);
+    const providerAudioTranscriber = this.options.audioTranscriber;
+    const bridgeAudioTranscriber = this.options.bridge.transcribeAudioAttachments
+      ? {
+          transcribeAudioAttachments: this.options.bridge.transcribeAudioAttachments.bind(
+            this.options.bridge,
+          ),
+        }
+      : undefined;
+    const availableAudioTranscribers = [
+      ...(providerAudioTranscriber
+        ? [{ via: "provider" as const, transcriber: providerAudioTranscriber }]
+        : []),
+      ...(bridgeAudioTranscriber
+        ? [{ via: "bridge" as const, transcriber: bridgeAudioTranscriber }]
+        : []),
+    ];
     if (
       audioAttachments.length === 0 ||
-      !this.options.bridge.transcribeAudioAttachments
+      availableAudioTranscribers.length === 0
     ) {
+      this.verboseLog(
+        `prepared_user_message session=${session.invite.sessionId} request=${payload.clientMessageId} voiceTranscribed=false textChars=${payload.text.length} attachments=${allAttachments.length} bridgeAttachments=${allAttachments.length}`,
+      );
       return {
         text: payload.text,
         ...(allAttachments.length > 0 ? { attachments: allAttachments } : {}),
@@ -761,18 +834,42 @@ export class PrivateClawProvider {
       };
     }
 
-    this.options.onLog?.(
-      `[provider] voice_transcription_start session=${session.invite.sessionId} request=${payload.clientMessageId} audioAttachments=${audioAttachments.length}`,
-    );
-    const transcript = (
-      await this.options.bridge.transcribeAudioAttachments({
-        sessionId: session.invite.sessionId,
-        requestId: payload.clientMessageId,
-        attachments: audioAttachments,
-      })
-    ).trim();
-    if (transcript === "") {
-      throw new Error("OpenClaw STT returned an empty transcript.");
+    let transcript = "";
+    let transcriptVia: "provider" | "bridge" | undefined;
+    const transcriptionFailures: string[] = [];
+    for (let index = 0; index < availableAudioTranscribers.length; index += 1) {
+      const candidate = availableAudioTranscribers[index]!;
+      const nextCandidate = availableAudioTranscribers[index + 1];
+      this.options.onLog?.(
+        `[provider] voice_transcription_start session=${session.invite.sessionId} request=${payload.clientMessageId} audioAttachments=${audioAttachments.length} via=${candidate.via}`,
+      );
+      try {
+        transcript = (
+          await candidate.transcriber.transcribeAudioAttachments({
+            sessionId: session.invite.sessionId,
+            requestId: payload.clientMessageId,
+            attachments: audioAttachments,
+          })
+        ).trim();
+        if (transcript === "") {
+          throw new Error("OpenClaw STT returned an empty transcript.");
+        }
+        transcriptVia = candidate.via;
+        break;
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        transcriptionFailures.push(`${candidate.via}: ${detail}`);
+        if (nextCandidate) {
+          this.options.onLog?.(
+            `[provider] voice_transcription_fallback session=${session.invite.sessionId} request=${payload.clientMessageId} from=${candidate.via} to=${nextCandidate.via} reason=${JSON.stringify(detail.slice(0, 300))}`,
+          );
+        }
+      }
+    }
+    if (!transcriptVia) {
+      throw new Error(
+        `OpenClaw STT failed for ${payload.clientMessageId}: ${transcriptionFailures.join(" | ")}`,
+      );
     }
 
     const text = mergeVoiceTranscriptText(transcript, payload.text);
@@ -784,7 +881,10 @@ export class PrivateClawProvider {
       (attachment) => !isAudioAttachment(attachment),
     );
     this.options.onLog?.(
-      `[provider] voice_transcription_complete session=${session.invite.sessionId} request=${payload.clientMessageId} transcriptChars=${transcript.length} passthroughAttachments=${passthroughAttachments.length}`,
+      `[provider] voice_transcription_complete session=${session.invite.sessionId} request=${payload.clientMessageId} transcriptChars=${transcript.length} passthroughAttachments=${passthroughAttachments.length} via=${transcriptVia}`,
+    );
+    this.verboseLog(
+      `prepared_user_message session=${session.invite.sessionId} request=${payload.clientMessageId} voiceTranscribed=true transcriptChars=${transcript.length} textChars=${payload.text.length} passthroughAttachments=${passthroughAttachments.length} bridgeTextChars=${buildVoiceBridgePromptText(speakerName, text).length}`,
     );
     return {
       text: payload.text,
@@ -885,6 +985,9 @@ export class PrivateClawProvider {
         lastSeenAt: params.sentAt,
       };
       session.participants.set(normalizedAppId, participant);
+      this.verboseLog(
+        `participant_upsert session=${sessionId} appId=${JSON.stringify(normalizedAppId)} isNew=false displayName=${JSON.stringify(participant.displayName)} participants=${session.participants.size}`,
+      );
       return { participant, isNew: false };
     }
 
@@ -902,6 +1005,9 @@ export class PrivateClawProvider {
       lastSeenAt: params.sentAt,
     };
     session.participants.set(normalizedAppId, participant);
+    this.verboseLog(
+      `participant_upsert session=${sessionId} appId=${JSON.stringify(normalizedAppId)} isNew=true displayName=${JSON.stringify(participant.displayName)} participants=${session.participants.size}`,
+    );
     return { participant, isNew: true };
   }
 
@@ -911,6 +1017,9 @@ export class PrivateClawProvider {
     payload: Parameters<typeof encryptPayload>[0]["payload"],
     targetAppId?: string,
   ): Promise<void> {
+    this.verboseLog(
+      `payload_out session=${sessionId} ${summarizePayload(payload)} target=${JSON.stringify(targetAppId ?? "broadcast")}`,
+    );
     await this.relayClient.sendFrame(
       sessionId,
       encryptPayload({
@@ -1262,13 +1371,17 @@ export class PrivateClawProvider {
     const currentParticipant = params?.targetAppId
       ? session.participants.get(params.targetAppId)
       : undefined;
+    const commands = await this.listAvailableCommands(session);
+    this.verboseLog(
+      `capabilities_out session=${sessionId} targetAppId=${JSON.stringify(params?.targetAppId ?? "broadcast")} includeCurrentIdentity=${params?.includeCurrentIdentity === true} commands=${commands.length} participants=${session.participants.size} groupMode=${session.groupMode}`,
+    );
     await this.sendPayload(sessionId, {
       kind: "provider_capabilities",
       sentAt: nowIso(),
       expiresAt: session.invite.expiresAt,
       ...(session.groupMode ? { groupMode: true } : {}),
       ...(session.groupMode ? { botMuted: session.botMuted } : {}),
-      commands: await this.listAvailableCommands(session),
+      commands,
       ...(session.groupMode
         ? { participants: this.listParticipants(session) }
         : {}),
@@ -1289,6 +1402,9 @@ export class PrivateClawProvider {
     targetAppId: string,
   ): Promise<void> {
     const session = this.requireSession(sessionId);
+    this.verboseLog(
+      `history_snapshot_out session=${sessionId} targetAppId=${JSON.stringify(targetAppId)} turns=${session.history.length}`,
+    );
     for (const turn of session.history) {
       switch (turn.role) {
         case "assistant":
@@ -1391,6 +1507,10 @@ export class PrivateClawProvider {
       sessionKey: session.invite.sessionKey,
       envelope,
     });
+    const payloadRecord = toUnknownRecord(payload);
+    this.verboseLog(
+      `payload_in session=${sessionId} kind=${payload.kind} state=${session.state} appId=${JSON.stringify(readNonEmptyString(payloadRecord.appId) ?? "none")} textChars=${typeof payloadRecord.text === "string" ? payloadRecord.text.length : 0} attachments=${countPayloadAttachments(payloadRecord)}`,
+    );
 
     switch (payload.kind) {
       case "client_hello": {
@@ -1416,6 +1536,9 @@ export class PrivateClawProvider {
         const participant = participantState.participant;
         const wasAwaitingHello = session.state !== "active";
         const wasRenewing = Boolean(session.pendingRenewal);
+        this.verboseLog(
+          `client_hello_processed session=${sessionId} appId=${JSON.stringify(participant.appId)} isNew=${participantState.isNew} participants=${session.participants.size} awaitingHello=${wasAwaitingHello} renewing=${wasRenewing} groupMode=${session.groupMode}`,
+        );
         session.state = "active";
         if (wasRenewing) {
           session.history.push({
@@ -1963,6 +2086,9 @@ export class PrivateClawProvider {
       state: "awaiting_hello",
     });
     this.scheduleRenewalReminder(sessionId);
+    this.verboseLog(
+      `session_created session=${sessionId} groupMode=${groupMode} label=${JSON.stringify(params?.label ?? "")} expiresAt=${JSON.stringify(expiresAt)} relayLabel=${JSON.stringify(relayLabel ?? "")} ttlMs=${params?.ttlMs ?? this.options.defaultTtlMs ?? DEFAULT_SESSION_TTL_MS}`,
+    );
     return this.buildInviteBundleForInvite(invite);
   }
 

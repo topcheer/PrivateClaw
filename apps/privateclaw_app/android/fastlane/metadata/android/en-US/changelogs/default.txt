@@ -1,1 +1,1 @@
-Bug fixes, better localization, and release readiness improvements.
+New participant and assistant avatars, stronger STT/ASR fallback (whisper -> provider STT -> bridge), better session debugging, and more reliable screenshot-preview launches.

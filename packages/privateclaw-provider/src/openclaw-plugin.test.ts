@@ -75,6 +75,7 @@ function createMockApi(): {
 
 class FakeCliCommand {
   readonly children = new Map<string, FakeCliCommand>();
+  readonly options: string[] = [];
   actionHandler: ((...args: unknown[]) => void | Promise<void>) | undefined;
 
   constructor(readonly name: string) {}
@@ -94,6 +95,7 @@ class FakeCliCommand {
   }
 
   option(_flags: string, _description?: string, _defaultValue?: string | boolean): FakeCliCommand {
+    this.options.push(_flags);
     return this;
   }
 
@@ -171,7 +173,7 @@ test("privateclaw command writes QR media into the OpenClaw state media director
   const remainingMs = new Date(invite.expiresAt).getTime() - Date.now();
   assert.ok(
     remainingMs > DEFAULT_SESSION_TTL_MS - 60_000,
-    "new sessions should default to roughly 8 hours even when relay default TTL is shorter",
+    "new sessions should default to roughly 24 hours even when relay default TTL is shorter",
   );
   const expectedMediaDir = path.join(stateDir, "media", "privateclaw");
   const mediaPath =
@@ -342,6 +344,10 @@ test("privateclaw command can override the relay per invocation", async (t) => {
     "plugin should register the privateclaw sessions subcommand",
   );
   assert.ok(
+    sessions?.children.get("follow")?.actionHandler,
+    "plugin should register the privateclaw sessions follow subcommand",
+  );
+  assert.ok(
     sessions?.children.get("qr")?.actionHandler,
     "plugin should register the privateclaw sessions qr subcommand",
   );
@@ -407,6 +413,10 @@ test("privateclaw plugin local pair CLI defaults to the long session TTL", async
 
   const pair = privateclaw.children.get("pair");
   assert.ok(pair?.actionHandler, "plugin should register the privateclaw pair subcommand");
+  assert.ok(
+    pair.options.includes("--verbose"),
+    "plugin should expose a --verbose flag on the privateclaw pair subcommand",
+  );
 
   const stateDir = await mkdtemp(path.join(os.tmpdir(), "privateclaw-cli-state-"));
   const previousStateDir = process.env.OPENCLAW_STATE_DIR;
@@ -461,7 +471,7 @@ test("privateclaw plugin local pair CLI defaults to the long session TTL", async
   const remainingMs = new Date(invite.expiresAt).getTime() - Date.now();
   assert.ok(
     remainingMs > DEFAULT_SESSION_TTL_MS - 60_000,
-    "local pair sessions should default to roughly 8 hours even when relay default TTL is shorter",
+    "local pair sessions should default to roughly 24 hours even when relay default TTL is shorter",
   );
   const qrPath = qrPathLine.replace("二维码 PNG 路径 / QR PNG path: ", "");
   const qrPng = await readFile(qrPath);

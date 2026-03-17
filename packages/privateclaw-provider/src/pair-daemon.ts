@@ -111,6 +111,7 @@ export async function spawnBackgroundPairDaemon(params: {
   label?: string;
   groupMode?: boolean;
   openInBrowser?: boolean;
+  verbose?: boolean;
 }): Promise<PrivateClawInviteBundle> {
   const tempDir = await mkdtemp(
     path.join(os.tmpdir(), "privateclaw-pair-daemon-"),
@@ -131,6 +132,7 @@ export async function spawnBackgroundPairDaemon(params: {
       ...(params.label ? ["--label", params.label] : []),
       ...(params.groupMode ? ["--group"] : []),
       ...(params.openInBrowser ? ["--open"] : []),
+      ...(params.verbose ? ["--verbose"] : []),
     ];
 
     await new Promise<void>((resolve, reject) => {
@@ -165,6 +167,7 @@ export async function handoffForegroundPairToBackground(params: {
   env?: NodeJS.ProcessEnv;
   stateDir: string;
   handoffState: PrivateClawProviderHandoffState;
+  verbose?: boolean;
 }): Promise<number> {
   const tempDir = await mkdtemp(
     path.join(os.tmpdir(), "privateclaw-pair-handoff-"),
@@ -183,6 +186,7 @@ export async function handoffForegroundPairToBackground(params: {
       resultPath,
       "--resume-snapshot-file",
       snapshotPath,
+      ...(params.verbose ? ["--verbose"] : []),
     ];
 
     await new Promise<void>((resolve, reject) => {

@@ -5,6 +5,10 @@ import {
   type OpenClawAgentBridgeOptions,
 } from "./bridges/openclaw-agent-bridge.js";
 import {
+  buildPreferredAudioTranscriber,
+  resolvePrivateClawSttConfig,
+} from "./audio-transcriber.js";
+import {
   resolvePrivateClawMediaDir,
   writeInviteQrPng,
 } from "./invite-qr-files.js";
@@ -33,6 +37,7 @@ import { DEFAULT_RELAY_BASE_URL } from "./relay-defaults.js";
 import { resolveRelayEndpoints } from "./relay-endpoints.js";
 import {
   buildManagedSessionQrLegacyLines,
+  followManagedSessionLogFromStateDir,
   buildManagedSessionsReportLines,
   closeManagedSessionsFromStateDir,
   closeManagedSessionFromStateDir,
@@ -59,10 +64,12 @@ import {
   PRIVATECLAW_CLI_RELAY_OPTION_DESCRIPTION,
   PRIVATECLAW_CLI_ROOT_DESCRIPTION,
   PRIVATECLAW_CLI_SESSIONS_DESCRIPTION,
+  PRIVATECLAW_CLI_SESSIONS_FOLLOW_DESCRIPTION,
   PRIVATECLAW_CLI_SESSIONS_KILL_DESCRIPTION,
   PRIVATECLAW_CLI_SESSIONS_KILLALL_DESCRIPTION,
   PRIVATECLAW_CLI_SESSIONS_QR_DESCRIPTION,
   PRIVATECLAW_CLI_TTL_OPTION_DESCRIPTION,
+  PRIVATECLAW_CLI_VERBOSE_OPTION_DESCRIPTION,
   PRIVATECLAW_COMMAND_DESCRIPTION,
   PRIVATECLAW_INVITE_URI_LABEL,
   PRIVATECLAW_PLUGIN_DESCRIPTION,
@@ -72,6 +79,7 @@ import type {
   PrivateClawInviteBundle,
   PrivateClawManagedSession,
   PrivateClawProviderOptions,
+  PrivateClawVerboseController,
 } from "./types.js";
 
 type PrivateClawBridgeMode = "openclaw-agent" | "webhook" | "echo";
@@ -125,6 +133,7 @@ interface PrivateClawPairCliOptions {
   group?: boolean;
   open?: boolean;
   foreground?: boolean;
+  verbose?: boolean;
 }
 
 interface PrivateClawSessionsQrCliOptions {
@@ -313,6 +322,7 @@ function resolvePluginConfig(
 function buildBridge(
   config: ResolvedPrivateClawPluginConfig,
   onLog?: (message: string) => void,
+  verboseController?: PrivateClawVerboseController,
 ): PrivateClawAgentBridge {
   if (config.bridgeMode === "webhook") {
     if (!config.webhookUrl) {
@@ -346,8 +356,36 @@ function buildBridge(
     ...(typeof config.openclawAgentTimeoutSeconds === "number"
       ? { timeoutSeconds: config.openclawAgentTimeoutSeconds }
       : {}),
+    ...(verboseController ? { verboseController } : {}),
     ...(onLog ? { onLog } : {}),
   });
+}
+
+function buildProviderAudioTranscriber(params: {
+  rootConfig?: unknown;
+  onLog?: (message: string) => void;
+  env?: NodeJS.ProcessEnv;
+}) {
+  return buildPreferredAudioTranscriber({
+    rootConfig: params.rootConfig,
+    ...(params.env ? { env: params.env } : {}),
+    ...(params.onLog ? { onLog: params.onLog } : {}),
+  });
+}
+
+function buildDirectAudioTranscriberEnv(rootConfig?: unknown): NodeJS.ProcessEnv | undefined {
+  const sttConfig = resolvePrivateClawSttConfig({ rootConfig });
+  if (!sttConfig) {
+    return undefined;
+  }
+  return {
+    PRIVATECLAW_STT_BASE_URL: sttConfig.baseUrl,
+    PRIVATECLAW_STT_MODEL: sttConfig.model,
+    ...(sttConfig.apiKey ? { PRIVATECLAW_STT_API_KEY: sttConfig.apiKey } : {}),
+    ...(sttConfig.headers
+      ? { PRIVATECLAW_STT_HEADERS: JSON.stringify(sttConfig.headers) }
+      : {}),
+  };
 }
 
 function normalizePairCliOptions(raw: unknown): PrivateClawPairCliOptions {
@@ -369,6 +407,7 @@ function normalizePairCliOptions(raw: unknown): PrivateClawPairCliOptions {
     ...(typeof options.foreground === "boolean"
       ? { foreground: options.foreground }
       : {}),
+    ...(typeof options.verbose === "boolean" ? { verbose: options.verbose } : {}),
   };
 }
 
@@ -481,14 +520,19 @@ function mergeDaemonEnvForRelay(
 function buildProviderOptions(
   pluginConfig: ResolvedPrivateClawPluginConfig,
   api: Pick<OpenClawPluginApiCompat, "logger">,
-): { options: PrivateClawProviderOptions; defaultTtlMs?: number } {
+): {
+  options: PrivateClawProviderOptions;
+  defaultTtlMs?: number;
+  verboseController: PrivateClawVerboseController;
+} {
   const relay = resolveRelayEndpoints(pluginConfig.relayBaseUrl);
   const log = (message: string) => api.logger.info(`[privateclaw] ${message}`);
+  const verboseController = { enabled: false } satisfies PrivateClawVerboseController;
   return {
     options: {
       providerWsUrl: relay.providerWsUrl,
       appWsUrl: relay.appWsUrl,
-      bridge: buildBridge(pluginConfig, log),
+      bridge: buildBridge(pluginConfig, log, verboseController),
       providerLabel: pluginConfig.providerLabel,
       commandsProvider: async () => {
         try {
@@ -501,11 +545,13 @@ function buildProviderOptions(
         }
       },
       ...(pluginConfig.welcomeMessage ? { welcomeMessage: pluginConfig.welcomeMessage } : {}),
+      verboseController,
       onLog: log,
     },
     ...(typeof pluginConfig.sessionTtlMs === "number"
       ? { defaultTtlMs: pluginConfig.sessionTtlMs }
       : {}),
+    verboseController,
   };
 }
 
@@ -569,22 +615,46 @@ class PrivateClawPluginRuntime {
     }
   >();
   private stateDir: string | undefined;
+  private rootConfig: unknown;
   private controlServer: PrivateClawSessionControlServer | undefined;
   private readonly defaultRelayBaseUrl: string;
+  private readonly verboseController: PrivateClawVerboseController | undefined;
 
   constructor(
     private readonly providerOptions: PrivateClawProviderOptions,
     private readonly defaultTtlMs: number = DEFAULT_SESSION_TTL_MS,
     private readonly daemonEnv?: NodeJS.ProcessEnv,
     defaultRelayBaseUrl?: string,
+    verboseController?: PrivateClawVerboseController,
   ) {
     this.defaultRelayBaseUrl =
       readString(defaultRelayBaseUrl) ??
       inferRelayBaseUrlFromAppWsUrl(providerOptions.appWsUrl);
+    this.verboseController = verboseController ?? providerOptions.verboseController;
+  }
+
+  private async withVerboseLogging<T>(
+    verbose: boolean | undefined,
+    action: () => Promise<T>,
+  ): Promise<T> {
+    if (!verbose || !this.verboseController) {
+      return action();
+    }
+    const previous = this.verboseController.enabled;
+    this.verboseController.enabled = true;
+    try {
+      return await action();
+    } finally {
+      this.verboseController.enabled = previous;
+    }
   }
 
   setStateDir(stateDir: string): void {
     this.stateDir = stateDir;
+  }
+
+  setRootConfig(config: unknown): void {
+    this.rootConfig = config;
   }
 
   private ensureStateDir(): string {
@@ -608,11 +678,20 @@ class PrivateClawPluginRuntime {
     let entry = this.providerEntries.get(resolvedRelayBaseUrl);
     if (!entry) {
       const relay = resolveRelayEndpoints(resolvedRelayBaseUrl);
+      const audioTranscriber =
+        this.providerOptions.audioTranscriber ??
+        buildProviderAudioTranscriber({
+          rootConfig: this.rootConfig,
+          ...(this.providerOptions.onLog
+            ? { onLog: this.providerOptions.onLog }
+            : {}),
+        });
       entry = {
         providerOptions: {
           ...this.providerOptions,
           providerWsUrl: relay.providerWsUrl,
           appWsUrl: relay.appWsUrl,
+          ...(audioTranscriber ? { audioTranscriber } : {}),
         },
       };
       this.providerEntries.set(resolvedRelayBaseUrl, entry);
@@ -768,6 +847,7 @@ class PrivateClawPluginRuntime {
     groupMode?: boolean;
     relayBaseUrl?: string;
     openInBrowser?: boolean;
+    verbose?: boolean;
     writeLine?: (line: string) => void;
   }): Promise<PrivateClawInviteBundle> {
     if (!this.daemonEnv) {
@@ -779,7 +859,10 @@ class PrivateClawPluginRuntime {
       );
     }
     const daemonEnv = mergeDaemonEnvForRelay(
-      this.daemonEnv,
+      {
+        ...this.daemonEnv,
+        ...buildDirectAudioTranscriberEnv(this.rootConfig),
+      },
       params?.relayBaseUrl,
     );
 
@@ -794,6 +877,7 @@ class PrivateClawPluginRuntime {
       ...(params?.label ? { label: params.label } : {}),
       ...(params?.groupMode === true ? { groupMode: true } : {}),
       ...(params?.openInBrowser === true ? { openInBrowser: true } : {}),
+      ...(params?.verbose === true ? { verbose: true } : {}),
     });
     printPairInviteBundle(bundle, params?.writeLine ?? ((line) => console.log(line)));
     (params?.writeLine ?? ((line: string) => console.log(line)))(
@@ -813,62 +897,80 @@ class PrivateClawPluginRuntime {
     relayBaseUrl?: string;
     foreground?: boolean;
     openInBrowser?: boolean;
+    verbose?: boolean;
     writeLine?: (line: string) => void;
   }): Promise<PrivateClawInviteBundle> {
-    if (!params?.printOnly) {
-      await this.ensureControlServer("pair-foreground");
-    }
-    const provider = this.getProvider(params?.relayBaseUrl);
-    const handoffEnv = mergeDaemonEnvForRelay(
-      this.daemonEnv,
-      params?.relayBaseUrl,
-    );
-    return runPairSession({
-      provider,
-      ...(typeof params?.ttlMs === "number"
-        ? { ttlMs: params.ttlMs }
-        : { ttlMs: this.defaultTtlMs }),
-      ...(params?.label ? { label: params.label } : {}),
-      ...(typeof params?.printOnly === "boolean" ? { printOnly: params.printOnly } : {}),
-      ...(params?.groupMode === true ? { groupMode: true } : {}),
-      ...(typeof params?.foreground === "boolean"
-        ? { foreground: params.foreground }
-        : {}),
-      ...(typeof params?.openInBrowser === "boolean"
-        ? { openInBrowser: params.openInBrowser }
-        : {}),
-      qrMediaDir: this.getMediaDir(),
-      ...(this.daemonEnv && !params?.printOnly
-        ? {
-            handoffToBackground: async () => {
-              provider.suppressReconnectsForHandoff();
-              try {
-                  await handoffForegroundPairToBackground({
-                    cliModuleUrl: new URL(
-                      import.meta.url.endsWith(".ts") ? "./cli.ts" : "./cli.js",
-                      import.meta.url,
-                    ).href,
-                    stateDir: this.ensureStateDir(),
-                    ...(handoffEnv ? { env: handoffEnv } : {}),
-                    handoffState: provider.exportHandoffState(),
-                  });
-                  return formatBilingualInline(
-                    "当前 PrivateClaw 会话已转入后台。可使用 `openclaw privateclaw sessions` 查看，必要时用 `openclaw privateclaw sessions kill <sessionId>` 终止。",
-                    "The current PrivateClaw session is now running in the background. Use `openclaw privateclaw sessions` to inspect it, and `openclaw privateclaw sessions kill <sessionId>` if you need to terminate it.",
-                  );
-              } catch (error) {
-                provider.resumeReconnectsAfterHandoffFailure();
-                throw error;
-              }
-            },
-          }
-        : {}),
-      ...(params?.writeLine ? { writeLine: params.writeLine } : {}),
+    return this.withVerboseLogging(params?.verbose, async () => {
+      if (!params?.printOnly) {
+        await this.ensureControlServer("pair-foreground");
+      }
+      const provider = this.getProvider(params?.relayBaseUrl);
+      const handoffEnv = mergeDaemonEnvForRelay(
+        {
+          ...this.daemonEnv,
+          ...buildDirectAudioTranscriberEnv(this.rootConfig),
+        },
+        params?.relayBaseUrl,
+      );
+      return runPairSession({
+        provider,
+        ...(typeof params?.ttlMs === "number"
+          ? { ttlMs: params.ttlMs }
+          : { ttlMs: this.defaultTtlMs }),
+        ...(params?.label ? { label: params.label } : {}),
+        ...(typeof params?.printOnly === "boolean" ? { printOnly: params.printOnly } : {}),
+        ...(params?.groupMode === true ? { groupMode: true } : {}),
+        ...(typeof params?.foreground === "boolean"
+          ? { foreground: params.foreground }
+          : {}),
+        ...(typeof params?.openInBrowser === "boolean"
+          ? { openInBrowser: params.openInBrowser }
+          : {}),
+        qrMediaDir: this.getMediaDir(),
+        ...(this.daemonEnv && !params?.printOnly
+          ? {
+              handoffToBackground: async () => {
+                provider.suppressReconnectsForHandoff();
+                try {
+                    await handoffForegroundPairToBackground({
+                      cliModuleUrl: new URL(
+                        import.meta.url.endsWith(".ts") ? "./cli.ts" : "./cli.js",
+                        import.meta.url,
+                      ).href,
+                      stateDir: this.ensureStateDir(),
+                      ...(handoffEnv ? { env: handoffEnv } : {}),
+                      ...(params?.verbose === true ? { verbose: true } : {}),
+                      handoffState: provider.exportHandoffState(),
+                    });
+                    return formatBilingualInline(
+                      "当前 PrivateClaw 会话已转入后台。可使用 `openclaw privateclaw sessions` 查看，必要时用 `openclaw privateclaw sessions kill <sessionId>` 终止。",
+                      "The current PrivateClaw session is now running in the background. Use `openclaw privateclaw sessions` to inspect it, and `openclaw privateclaw sessions kill <sessionId>` if you need to terminate it.",
+                    );
+                } catch (error) {
+                  provider.resumeReconnectsAfterHandoffFailure();
+                  throw error;
+                }
+              },
+            }
+          : {}),
+        ...(params?.writeLine ? { writeLine: params.writeLine } : {}),
+      });
     });
   }
 
   async listManagedSessions() {
     return listManagedSessionsFromStateDir(this.ensureStateDir());
+  }
+
+  async followManagedSessionLog(
+    sessionId: string,
+    params?: { writeLine?: (line: string) => void },
+  ) {
+    await followManagedSessionLogFromStateDir({
+      stateDir: this.ensureStateDir(),
+      sessionId,
+      ...(params?.writeLine ? { writeLine: params.writeLine } : {}),
+    });
   }
 
   async kickManagedParticipant(sessionId: string, appId: string) {
@@ -964,8 +1066,9 @@ function createPluginDefinition(
 
       api.registerService?.({
         id: "privateclaw-provider",
-        start: ({ stateDir }) => {
+        start: ({ stateDir, config }) => {
           runtime.setStateDir(stateDir);
+          runtime.setRootConfig(config);
         },
         stop: async () => {
           await runtime.dispose();
@@ -979,6 +1082,7 @@ function createPluginDefinition(
         requireAuth: true,
         handler: async (ctx: OpenClawPluginCommandContextCompat) => {
           try {
+            runtime.setRootConfig(ctx.config);
             api.logger.info(
               `[privateclaw] /privateclaw invoked via ${ctx.channel}${ctx.senderId ? ` by ${ctx.senderId}` : ""}`,
             );
@@ -1006,7 +1110,8 @@ function createPluginDefinition(
       });
 
       api.registerCli?.(
-        ({ program }) => {
+        ({ program, config }) => {
+          runtime.setRootConfig(config);
           const privateclaw = program
             .command("privateclaw")
             .description(PRIVATECLAW_CLI_ROOT_DESCRIPTION);
@@ -1021,6 +1126,7 @@ function createPluginDefinition(
               .option("--print-only", PRIVATECLAW_CLI_PRINT_ONLY_OPTION_DESCRIPTION)
               .option("--open", PRIVATECLAW_CLI_OPEN_OPTION_DESCRIPTION)
               .option("--foreground", PRIVATECLAW_CLI_FOREGROUND_OPTION_DESCRIPTION)
+              .option("--verbose", PRIVATECLAW_CLI_VERBOSE_OPTION_DESCRIPTION)
               .action(async (rawOptions: unknown) => {
                 const options = normalizePairCliOptions(rawOptions);
                 const ttlMs = parsePositiveIntegerFlag(options.ttlMs, "--ttl-ms");
@@ -1036,6 +1142,9 @@ function createPluginDefinition(
                     : {}),
                   ...(typeof options.open === "boolean"
                   ? { openInBrowser: options.open }
+                  : {}),
+                ...(typeof options.verbose === "boolean"
+                  ? { verbose: options.verbose }
                   : {}),
                 writeLine: (line: string) => {
                   console.log(line);
@@ -1058,6 +1167,32 @@ function createPluginDefinition(
               const listings = await runtime.listManagedSessions();
               for (const line of buildManagedSessionsReportLines(listings)) {
                 console.log(line);
+              }
+            });
+
+          sessions
+            .command("follow")
+            .description(PRIVATECLAW_CLI_SESSIONS_FOLLOW_DESCRIPTION)
+            .argument("<sessionId>")
+            .action(async (sessionIdRaw: unknown) => {
+              try {
+                const sessionId = readString(sessionIdRaw);
+                if (!sessionId) {
+                  throw new Error(
+                    formatBilingualInline(
+                      "`sessions follow` 需要提供 sessionId。",
+                      "`sessions follow` requires a sessionId.",
+                    ),
+                  );
+                }
+                await runtime.followManagedSessionLog(sessionId, {
+                  writeLine: (line: string) => {
+                    console.log(line);
+                  },
+                });
+              } catch (error) {
+                console.error(formatCommandError(error));
+                process.exitCode = 1;
               }
             });
 
@@ -1235,6 +1370,7 @@ export function createOpenClawCompatiblePlugin(
         options.defaultTtlMs,
         undefined,
         inferRelayBaseUrlFromAppWsUrl(options.appWsUrl),
+        options.verboseController,
       ),
   );
 }
@@ -1248,6 +1384,7 @@ export function createPrivateClawPlugin(): OpenClawExtensionPluginCompat {
       resolved.defaultTtlMs,
       buildDaemonEnvFromPluginConfig(pluginConfig),
       pluginConfig.relayBaseUrl,
+      resolved.verboseController,
     );
   });
 }

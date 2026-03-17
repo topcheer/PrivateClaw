@@ -254,6 +254,60 @@ export function resolvePrivateClawControlDir(stateDir: string): string {
   return path.join(resolvePrivateClawStateDir(stateDir), "privateclaw", "control");
 }
 
+async function resolveOpenClawSessionLogPath(params: {
+  stateDir: string;
+  sessionId: string;
+}): Promise<string | undefined> {
+  const agentsDir = path.join(resolvePrivateClawStateDir(params.stateDir), "agents");
+  try {
+    const agentEntries = await readdir(agentsDir, { withFileTypes: true });
+    for (const entry of agentEntries) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+      const candidate = path.join(agentsDir, entry.name, "sessions", `${params.sessionId}.jsonl`);
+      try {
+        await access(candidate);
+        return candidate;
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code === "ENOENT") {
+          continue;
+        }
+        throw error;
+      }
+    }
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") {
+      return undefined;
+    }
+    throw error;
+  }
+
+  return undefined;
+}
+
+async function waitForPollInterval(
+  pollMs: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  if (signal?.aborted) {
+    return;
+  }
+  await new Promise<void>((resolve) => {
+    const timeout = setTimeout(() => {
+      signal?.removeEventListener("abort", handleAbort);
+      resolve();
+    }, pollMs);
+    const handleAbort = () => {
+      clearTimeout(timeout);
+      resolve();
+    };
+    signal?.addEventListener("abort", handleAbort, { once: true });
+  });
+}
+
 export function buildManagedSessionsReportLines(
   listings: ReadonlyArray<PrivateClawDiscoveredSessionListing>,
 ): string[] {
@@ -825,5 +879,102 @@ export async function getManagedSessionQrBundleFromStateDir(params: {
       );
     }
     throw error;
+  }
+}
+
+export async function followManagedSessionLogFromStateDir(params: {
+  stateDir: string;
+  sessionId: string;
+  writeLine?: (line: string) => void;
+  pollMs?: number;
+  signal?: AbortSignal;
+}): Promise<void> {
+  const writeLine = params.writeLine ?? ((line: string) => console.log(line));
+  const pollMs = params.pollMs ?? 250;
+  let sessionLogPath = await resolveOpenClawSessionLogPath({
+    stateDir: params.stateDir,
+    sessionId: params.sessionId,
+  });
+
+  try {
+    await resolveManagedSessionDescriptor({
+      stateDir: params.stateDir,
+      sessionId: params.sessionId,
+    });
+  } catch (error) {
+    if (!sessionLogPath) {
+      throw error;
+    }
+  }
+
+  let announcedWaiting = false;
+  let announcedFollow = false;
+  let sizeBytes = 0;
+  let trailingPartialLine = "";
+
+  for (;;) {
+    if (params.signal?.aborted) {
+      return;
+    }
+
+    if (!sessionLogPath) {
+      sessionLogPath = await resolveOpenClawSessionLogPath({
+        stateDir: params.stateDir,
+        sessionId: params.sessionId,
+      });
+      if (!sessionLogPath) {
+        if (!announcedWaiting) {
+          writeLine(
+            formatBilingualInline(
+              `正在等待会话 ${params.sessionId} 的 OpenClaw session 日志文件出现……`,
+              `Waiting for the OpenClaw session log for session ${params.sessionId} to appear...`,
+            ),
+          );
+          announcedWaiting = true;
+        }
+        await waitForPollInterval(pollMs, params.signal);
+        continue;
+      }
+    }
+
+    if (!announcedFollow) {
+      writeLine(
+        formatBilingualInline(
+          `开始跟随会话 ${params.sessionId} 的 OpenClaw session 日志：${sessionLogPath}`,
+          `Following the OpenClaw session log for session ${params.sessionId}: ${sessionLogPath}`,
+        ),
+      );
+      announcedFollow = true;
+    }
+
+    try {
+      const sessionLogBuffer = await readFile(sessionLogPath);
+      if (sessionLogBuffer.length < sizeBytes) {
+        sizeBytes = 0;
+        trailingPartialLine = "";
+      }
+      const deltaBuffer = sessionLogBuffer.subarray(sizeBytes);
+      if (deltaBuffer.length > 0) {
+        const chunk = trailingPartialLine + deltaBuffer.toString("utf8");
+        const lines = chunk.split(/\r?\n/gu);
+        trailingPartialLine = lines.pop() ?? "";
+        for (const line of lines) {
+          if (line.trim() !== "") {
+            writeLine(line);
+          }
+        }
+        sizeBytes = sessionLogBuffer.length;
+      }
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "ENOENT") {
+        sessionLogPath = undefined;
+        announcedFollow = false;
+        continue;
+      }
+      throw error;
+    }
+
+    await waitForPollInterval(pollMs, params.signal);
   }
 }

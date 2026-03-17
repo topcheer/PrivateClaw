@@ -10,6 +10,7 @@ import type {
   BridgeResponse,
   PrivateClawAgentBridge,
   PrivateClawAudioTranscriptionRequest,
+  PrivateClawVerboseController,
 } from "../types.js";
 
 type OpenClawThinkingLevel = "off" | "minimal" | "low" | "medium" | "high";
@@ -117,6 +118,7 @@ export interface OpenClawAgentBridgeOptions {
   timeoutSeconds?: number;
   stateDir?: string;
   workspaceDir?: string;
+  verboseController?: PrivateClawVerboseController;
   onLog?: (message: string) => void;
   execFileImpl?: OpenClawAgentExecFile;
 }
@@ -268,6 +270,17 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
     this.options.onLog?.(`[bridge] ${message}`);
   }
 
+  private isVerboseLoggingEnabled(): boolean {
+    return this.options.verboseController?.enabled === true;
+  }
+
+  private verboseLog(message: string): void {
+    if (!this.isVerboseLoggingEnabled()) {
+      return;
+    }
+    this.options.onLog?.(`[bridge][verbose] ${message}`);
+  }
+
   async handleUserMessage(params: {
     sessionId: string;
     message: string;
@@ -331,8 +344,12 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
     },
   ): Promise<BridgeResponse> {
     const args = this.buildArgs(sessionId, promptMessage);
+    this.verboseLog(
+      `exec_start session=${sessionId} promptChars=${promptMessage.length} argCount=${args.length} includeArtifacts=${options?.includeArtifacts !== false} agent=${JSON.stringify(this.options.agentId ?? "default")} channel=${JSON.stringify(this.options.channel ?? "default")} local=${this.options.local === true} thinking=${JSON.stringify(this.options.thinking ?? "default")} timeoutSeconds=${this.options.timeoutSeconds ?? "default"}`,
+    );
     const sessionLogCursor = await this.captureSessionLogCursor(sessionId);
     const stdout = await this.execOpenClaw(args);
+    this.verboseLog(`exec_complete session=${sessionId} stdoutChars=${stdout.length}`);
     let parsed: OpenClawAgentJsonResult | undefined;
     let parseError: unknown;
     try {
@@ -356,6 +373,9 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
       ...collectedMessages.assistantMessages,
       ...(options?.includeArtifacts === false ? [] : collectedMessages.artifactMessages),
     ];
+    this.verboseLog(
+      `session_log_delta session=${sessionId} assistantRecovered=${collectedMessages.assistantMessages.length} artifactRecovered=${collectedMessages.artifactMessages.length} includeArtifacts=${options?.includeArtifacts !== false}`,
+    );
     if (!parsed) {
       if (recoveredMessages.length > 0) {
         this.log(
@@ -367,6 +387,9 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
     }
     try {
       const response = parseOpenClawAgentResult(parsed);
+      this.verboseLog(
+        `response_ready session=${sessionId} directMessages=${typeof response === "string" ? 1 : response.messages.length} artifactMessages=${options?.includeArtifacts === false ? 0 : collectedMessages.artifactMessages.length}`,
+      );
       return options?.includeArtifacts === false
         ? response
         : mergeBridgeResponses(response, collectedMessages.artifactMessages);
@@ -390,10 +413,14 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
   private async captureSessionLogCursor(sessionId: string): Promise<OpenClawSessionLogCursor> {
     const sessionLogPath = await this.resolveSessionLogPath(sessionId);
     if (!sessionLogPath) {
+      this.verboseLog(`session_log_cursor_missing session=${sessionId}`);
       return { sizeBytes: 0 };
     }
 
     const stat = await fs.stat(sessionLogPath);
+    this.verboseLog(
+      `session_log_cursor session=${sessionId} logPath=${JSON.stringify(sessionLogPath)} sizeBytes=${stat.size}`,
+    );
     return {
       path: sessionLogPath,
       sizeBytes: stat.size,
@@ -490,6 +517,9 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
         const candidate = path.join(agentsDir, entry.name, "sessions", `${sessionId}.jsonl`);
         try {
           await fs.access(candidate);
+          this.verboseLog(
+            `session_log_resolved session=${sessionId} logPath=${JSON.stringify(candidate)}`,
+          );
           return candidate;
         } catch (error) {
           if (isNodeError(error) && error.code === "ENOENT") {
@@ -505,6 +535,7 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
       throw error;
     }
 
+    this.verboseLog(`session_log_not_found session=${sessionId}`);
     return undefined;
   }
 
@@ -548,6 +579,9 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
     );
     this.log(
       `prompt_ready session=${sessionId} stagedAttachments=${stagedAttachments.length} textChars=${trimmed.length} contractVersion=${PRIVATECLAW_RESPONSE_CONTRACT_VERSION}`,
+    );
+    this.verboseLog(
+      `prompt_body_ready session=${sessionId} promptChars=${promptMessage.length} trimmedTextChars=${trimmed.length} stagedAttachments=${stagedAttachments.length}`,
     );
     return promptMessage;
   }
@@ -975,15 +1009,15 @@ function parseStructuredResponseBlock(raw: string): PrivateClawStructuredRespons
     return undefined;
   }
 
-  try {
-    const parsed = JSON.parse(payload) as PrivateClawStructuredResponse;
-    if (parsed.version !== PRIVATECLAW_RESPONSE_CONTRACT_VERSION || !Array.isArray(parsed.messages)) {
-      return undefined;
-    }
-    return parsed;
-  } catch {
+  const parsed = parseStructuredResponseJson(payload);
+  if (
+    !parsed ||
+    parsed.version !== PRIVATECLAW_RESPONSE_CONTRACT_VERSION ||
+    !Array.isArray(parsed.messages)
+  ) {
     return undefined;
   }
+  return parsed;
 }
 
 function stripStructuredResponseBlock(raw: string): string {
@@ -995,6 +1029,74 @@ function buildStructuredResponseBlockPattern(flags: string): RegExp {
     `${escapeRegExpLiteral(PRIVATECLAW_RESPONSE_TAG_START)}([\\s\\S]*?)${escapeRegExpLiteral(PRIVATECLAW_RESPONSE_TAG_END)}`,
     flags,
   );
+}
+
+function parseStructuredResponseJson(
+  payload: string,
+): PrivateClawStructuredResponse | undefined {
+  try {
+    return JSON.parse(payload) as PrivateClawStructuredResponse;
+  } catch {
+    const normalizedPayload = stripJsonTrailingCommas(payload);
+    if (normalizedPayload === payload) {
+      return undefined;
+    }
+    try {
+      return JSON.parse(normalizedPayload) as PrivateClawStructuredResponse;
+    } catch {
+      return undefined;
+    }
+  }
+}
+
+function stripJsonTrailingCommas(payload: string): string {
+  let normalized = "";
+  let inString = false;
+  let escaped = false;
+
+  for (let index = 0; index < payload.length; index += 1) {
+    const character = payload[index]!;
+
+    if (escaped) {
+      normalized += character;
+      escaped = false;
+      continue;
+    }
+
+    if (inString) {
+      normalized += character;
+      if (character === "\\") {
+        escaped = true;
+      } else if (character === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (character === '"') {
+      normalized += character;
+      inString = true;
+      continue;
+    }
+
+    if (character === ",") {
+      let lookahead = index + 1;
+      while (
+        lookahead < payload.length &&
+        /\s/u.test(payload[lookahead]!)
+      ) {
+        lookahead += 1;
+      }
+      const nextCharacter = payload[lookahead];
+      if (nextCharacter === "]" || nextCharacter === "}") {
+        continue;
+      }
+    }
+
+    normalized += character;
+  }
+
+  return normalized;
 }
 
 function escapeRegExpLiteral(value: string): string {

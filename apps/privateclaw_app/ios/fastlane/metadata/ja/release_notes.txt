@@ -1,1 +1,1 @@
-不具合修正、多言語対応の改善、ストア公開準備を行いました。
+New participant and assistant avatars, stronger STT/ASR fallback (whisper -> provider STT -> bridge), better session debugging, and more reliable screenshot-preview launches.

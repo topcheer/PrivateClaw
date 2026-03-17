@@ -8,6 +8,35 @@ import 'package:privateclaw_app/services/privateclaw_session_client.dart';
 import 'package:privateclaw_app/store_screenshot_preview.dart';
 
 void main() {
+  test('notification bootstrap is skipped for preview launches', () {
+    expect(
+      privateClawShouldSkipNotificationsInDebug(
+        debugSkipNotifications: false,
+        screenshotConfig: const StoreScreenshotConfig(),
+      ),
+      isFalse,
+    );
+    expect(
+      privateClawShouldSkipNotificationsInDebug(
+        debugSkipNotifications: true,
+        screenshotConfig: const StoreScreenshotConfig(),
+      ),
+      isTrue,
+    );
+    expect(
+      privateClawShouldSkipNotificationsInDebug(
+        debugSkipNotifications: false,
+        screenshotConfig: const StoreScreenshotConfig(
+          previewData: PrivateClawPreviewData(
+            status: PrivateClawSessionStatus.idle,
+            statusText: 'Preview',
+          ),
+        ),
+      ),
+      isTrue,
+    );
+  });
+
   testWidgets(
     'PrivateClaw home screen renders icon header and composer actions',
     (WidgetTester tester) async {

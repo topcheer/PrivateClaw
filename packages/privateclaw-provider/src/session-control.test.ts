@@ -21,6 +21,7 @@ import {
   buildManagedSessionQrLegacyLines,
   closeManagedSessionsFromStateDir,
   closeManagedSessionFromStateDir,
+  followManagedSessionLogFromStateDir,
   getManagedSessionQrBundleFromStateDir,
   isManagedSessionQrLegacyResult,
   listManagedSessionsFromStateDir,
@@ -82,6 +83,19 @@ function waitForClose(socket: WebSocket): Promise<void> {
     }
     socket.once("close", () => resolve());
   });
+}
+
+async function waitForCondition(
+  predicate: () => boolean,
+  timeoutMs = 2_000,
+): Promise<void> {
+  const startedAt = Date.now();
+  while (!predicate()) {
+    if (Date.now() - startedAt >= timeoutMs) {
+      throw new Error("Timed out waiting for test condition.");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
 }
 
 async function spawnLegacyManagedSessionHost(params: {
@@ -326,6 +340,72 @@ test("session control can print and notify a managed session QR", async (t) => {
   appOne.close();
   appTwo.close();
   await Promise.all([waitForClose(appOne), waitForClose(appTwo)]);
+});
+
+test("session control can follow a managed OpenClaw session log", async (t) => {
+  const stateDir = await mkdtemp(path.join(os.tmpdir(), "privateclaw-session-control-follow-"));
+  t.after(async () => {
+    await rm(stateDir, { recursive: true, force: true });
+  });
+
+  const sessionId = "follow-session";
+  const child = await spawnLegacyManagedSessionHost({
+    stateDir,
+    sessionId,
+  });
+  t.after(async () => {
+    if (!child.killed && child.exitCode == null) {
+      child.kill("SIGTERM");
+    }
+    if (child.exitCode == null) {
+      await new Promise<void>((resolve) => {
+        child.once("exit", () => resolve());
+      });
+    }
+  });
+
+  const printed: string[] = [];
+  const controller = new AbortController();
+  const followPromise = followManagedSessionLogFromStateDir({
+    stateDir,
+    sessionId,
+    pollMs: 10,
+    signal: controller.signal,
+    writeLine: (line) => {
+      printed.push(line);
+    },
+  });
+
+  const logPath = path.join(stateDir, "agents", "main", "sessions", `${sessionId}.jsonl`);
+  await mkdir(path.dirname(logPath), { recursive: true });
+  const firstLine = JSON.stringify({
+    type: "message",
+    message: {
+      role: "assistant",
+      content: [{ type: "text", text: "hello from follow test" }],
+    },
+  });
+  await writeFile(logPath, `${firstLine}\n`, "utf8");
+  await waitForCondition(() => printed.includes(firstLine));
+
+  const secondLine = JSON.stringify({
+    type: "message",
+    message: {
+      role: "toolResult",
+      content: [{ type: "text", text: "tool output" }],
+    },
+  });
+  await writeFile(logPath, `${firstLine}\n${secondLine}\n`, "utf8");
+  await waitForCondition(() => printed.includes(secondLine));
+
+  controller.abort();
+  await followPromise;
+
+  assert.ok(
+    printed.some((line) => line.includes(`Following the OpenClaw session log for session ${sessionId}`)),
+  );
+  assert.ok(printed.includes(firstLine));
+  assert.ok(printed.includes(secondLine));
 });
 
 test("session control can terminate a managed session", async (t) => {

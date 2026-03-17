@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import 'models/chat_attachment.dart';
@@ -11,13 +13,23 @@ import 'services/privateclaw_session_client.dart';
 class StoreScreenshotConfig {
   const StoreScreenshotConfig({this.previewData, this.localeOverride});
 
-  factory StoreScreenshotConfig.fromEnvironment() {
-    const String scenario = String.fromEnvironment(
-      'PRIVATECLAW_SCREENSHOT_SCENARIO',
-    );
-    const String localeTag = String.fromEnvironment(
-      'PRIVATECLAW_SCREENSHOT_LOCALE',
-    );
+  factory StoreScreenshotConfig.fromEnvironment({
+    Map<String, String>? environment,
+  }) {
+    final Map<String, String> resolvedEnvironment =
+        environment ?? Platform.environment;
+    final String scenario =
+        (_privateClawScreenshotScenarioDefine.isNotEmpty
+                ? _privateClawScreenshotScenarioDefine
+                : resolvedEnvironment[_privateClawScreenshotScenarioEnv])
+            ?.trim() ??
+        '';
+    final String localeTag =
+        (_privateClawScreenshotLocaleDefine.isNotEmpty
+                ? _privateClawScreenshotLocaleDefine
+                : resolvedEnvironment[_privateClawScreenshotLocaleEnv])
+            ?.trim() ??
+        '';
     final Locale? localeOverride = _parseLocaleTag(localeTag);
     return StoreScreenshotConfig(
       previewData: screenshotPreviewDataForScenario(scenario, localeOverride),
@@ -28,6 +40,16 @@ class StoreScreenshotConfig {
   final PrivateClawPreviewData? previewData;
   final Locale? localeOverride;
 }
+
+const String _privateClawScreenshotScenarioEnv =
+    'PRIVATECLAW_SCREENSHOT_SCENARIO';
+const String _privateClawScreenshotScenarioDefine = String.fromEnvironment(
+  _privateClawScreenshotScenarioEnv,
+);
+const String _privateClawScreenshotLocaleEnv = 'PRIVATECLAW_SCREENSHOT_LOCALE';
+const String _privateClawScreenshotLocaleDefine = String.fromEnvironment(
+  _privateClawScreenshotLocaleEnv,
+);
 
 class PrivateClawPreviewData {
   const PrivateClawPreviewData({

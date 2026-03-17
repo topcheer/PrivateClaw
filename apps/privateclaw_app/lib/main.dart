@@ -26,12 +26,12 @@ import 'services/privateclaw_session_client.dart';
 import 'store_screenshot_preview.dart';
 import 'widgets/chat_message_bubble.dart';
 import 'widgets/invite_scanner_sheet.dart';
+import 'widgets/privateclaw_avatar.dart';
 import 'widgets/session_qr_sheet.dart';
 
 const int _maxInlineAttachmentBytes = 5 * 1024 * 1024;
 const Duration _sessionRenewWarningThreshold = Duration(minutes: 30);
 const String _sessionRenewCommandSlash = '/renew-session';
-const String _appBarIconAsset = 'assets/branding/privateclaw_app_icon.png';
 const double _voiceCancelActivationDistance = 120;
 const List<String> _commonEmoji = <String>[
   '😀',
@@ -64,22 +64,35 @@ enum _ComposerInputMode { text, voice }
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  final bool skipNotificationsInDebug =
-      loadPrivateClawDebugSkipNotificationsFromEnvironment();
-  if (privateClawSupportsFirebasePushOnCurrentPlatform()) {
-    FirebaseMessaging.onBackgroundMessage(privateClawBackgroundMessageHandler);
-  }
-  if (!skipNotificationsInDebug) {
-    await PrivateClawNotificationService.instance.bootstrap();
-  }
   final StoreScreenshotConfig screenshotConfig =
       StoreScreenshotConfig.fromEnvironment();
+  final bool skipNotificationsInDebug =
+      privateClawShouldSkipNotificationsInDebug(
+        debugSkipNotifications:
+            loadPrivateClawDebugSkipNotificationsFromEnvironment(),
+        screenshotConfig: screenshotConfig,
+      );
+  if (!skipNotificationsInDebug) {
+    if (privateClawSupportsFirebasePushOnCurrentPlatform()) {
+      FirebaseMessaging.onBackgroundMessage(
+        privateClawBackgroundMessageHandler,
+      );
+    }
+    await PrivateClawNotificationService.instance.bootstrap();
+  }
   runApp(
     PrivateClawApp(
       screenshotConfig: screenshotConfig,
       skipNotificationsInDebug: skipNotificationsInDebug,
     ),
   );
+}
+
+bool privateClawShouldSkipNotificationsInDebug({
+  required bool debugSkipNotifications,
+  required StoreScreenshotConfig screenshotConfig,
+}) {
+  return debugSkipNotifications || screenshotConfig.previewData != null;
 }
 
 bool privateClawShouldSuspendLiveSession(AppLifecycleState state) {
@@ -798,9 +811,8 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
             item.id == message.replyTo && item.sender == ChatSender.user,
       );
       if (repliedMessageIndex >= 0) {
-        _messages[repliedMessageIndex] = _messages[repliedMessageIndex].copyWith(
-          isPending: true,
-        );
+        _messages[repliedMessageIndex] = _messages[repliedMessageIndex]
+            .copyWith(isPending: true);
         _messages.removeWhere(
           (ChatMessage item) =>
               item.sender == ChatSender.assistant &&
@@ -819,10 +831,10 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       _messages[existingMessageIndex] = message.copyWith(
         isPending:
             existing.sender == ChatSender.user &&
-            existing.id == message.id &&
-            existing.isPending
-                ? true
-                : message.isPending,
+                existing.id == message.id &&
+                existing.isPending
+            ? true
+            : message.isPending,
       );
       return;
     }
@@ -837,7 +849,8 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
         (ChatMessage item) =>
             item.id == message.replyTo && item.sender == ChatSender.user,
       );
-      if (repliedMessageIndex >= 0 && _messages[repliedMessageIndex].isPending) {
+      if (repliedMessageIndex >= 0 &&
+          _messages[repliedMessageIndex].isPending) {
         _messages[repliedMessageIndex] = _messages[repliedMessageIndex]
             .copyWith(isPending: false);
       }
@@ -1863,33 +1876,12 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
                 ],
                 if (_identity != null) ...<Widget>[
                   const SizedBox(height: 8),
-                  Text(
-                    l10n.currentAppLabel(
-                      _identity!.displayName ?? _identity!.appId,
-                    ),
-                    style: theme.textTheme.bodySmall,
-                  ),
+                  _buildCurrentIdentitySummary(context, l10n),
                 ],
                 if (_invite?.groupMode == true &&
                     _participants.isNotEmpty) ...<Widget>[
                   const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: _participants
-                        .map(
-                          (PrivateClawParticipant participant) => Chip(
-                            avatar: Icon(
-                              participant.appId == _identity?.appId
-                                  ? Icons.person
-                                  : Icons.group,
-                              size: 18,
-                            ),
-                            label: Text(participant.displayName),
-                          ),
-                        )
-                        .toList(growable: false),
-                  ),
+                  _buildParticipantChips(),
                 ],
                 const SizedBox(height: 12),
                 Container(
@@ -1934,6 +1926,57 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       _identity = loaded;
     }
     return loaded;
+  }
+
+  Widget _buildCurrentIdentitySummary(
+    BuildContext context,
+    AppLocalizations l10n,
+  ) {
+    final PrivateClawIdentity? identity = _identity;
+    if (identity == null) {
+      return const SizedBox.shrink();
+    }
+
+    return Row(
+      children: <Widget>[
+        PrivateClawAvatar.generated(
+          key: const ValueKey<String>('current-identity-avatar'),
+          seedId: identity.appId,
+          label: identity.displayName ?? identity.appId,
+          radius: 14,
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            l10n.currentAppLabel(identity.displayName ?? identity.appId),
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildParticipantChips() {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: _participants
+          .map(
+            (PrivateClawParticipant participant) => Chip(
+              key: ValueKey<String>('participant-chip-${participant.appId}'),
+              avatar: PrivateClawAvatar.generated(
+                key: ValueKey<String>(
+                  'participant-avatar-${participant.appId}',
+                ),
+                seedId: participant.appId,
+                label: participant.displayName,
+                radius: 12,
+              ),
+              label: Text(participant.displayName),
+            ),
+          )
+          .toList(growable: false),
+    );
   }
 
   Widget _buildPairingSection(BuildContext context, AppLocalizations l10n) {
@@ -2023,33 +2066,12 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
               ],
               if (_identity != null) ...<Widget>[
                 const SizedBox(height: 8),
-                Text(
-                  l10n.currentAppLabel(
-                    _identity!.displayName ?? _identity!.appId,
-                  ),
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
+                _buildCurrentIdentitySummary(context, l10n),
               ],
               if (_invite?.groupMode == true &&
                   _participants.isNotEmpty) ...<Widget>[
                 const SizedBox(height: 12),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: _participants
-                      .map(
-                        (PrivateClawParticipant participant) => Chip(
-                          avatar: Icon(
-                            participant.appId == _identity?.appId
-                                ? Icons.person
-                                : Icons.group,
-                            size: 18,
-                          ),
-                          label: Text(participant.displayName),
-                        ),
-                      )
-                      .toList(growable: false),
-                ),
+                _buildParticipantChips(),
               ],
               const SizedBox(height: 12),
               Container(
@@ -2413,7 +2435,7 @@ class _PrivateClawAppBarIcon extends StatelessWidget {
       key: const ValueKey<String>('app-bar-icon'),
       borderRadius: BorderRadius.circular(8),
       child: Image.asset(
-        _appBarIconAsset,
+        privateClawAppIconAsset,
         width: 28,
         height: 28,
         fit: BoxFit.cover,

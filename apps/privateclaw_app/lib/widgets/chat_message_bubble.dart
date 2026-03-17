@@ -11,6 +11,7 @@ import '../l10n/app_localizations.dart';
 import '../models/chat_attachment.dart';
 import '../models/chat_message.dart';
 import '../services/privateclaw_app_directories.dart';
+import 'privateclaw_avatar.dart';
 
 final Map<String, Future<Uri?>> _attachmentUriCache = <String, Future<Uri?>>{};
 final Map<String, ImageProvider<Object>?> _attachmentImageProviderCache =
@@ -44,69 +45,95 @@ class ChatMessageBubble extends StatelessWidget {
       alignment = Alignment.centerLeft;
     }
 
-    return Align(
-      alignment: alignment,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 480),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: bubbleColor,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: isUser
-                  ? (isOwnUserMessage
-                        ? CrossAxisAlignment.end
-                        : CrossAxisAlignment.start)
-                  : CrossAxisAlignment.start,
-              children: <Widget>[
-                if (message.senderLabel != null &&
-                    message.senderLabel!.trim().isNotEmpty &&
-                    !isSystem) ...<Widget>[
-                  Text(
-                    message.senderLabel!,
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                ],
-                if (message.isPending && !isUser) ...<Widget>[
-                  const _PendingBubbleIndicator(),
-                  const SizedBox(height: 8),
-                ],
-                if (message.text.trim().isNotEmpty)
-                  ..._buildTextContent(context),
-                if (message.attachments.isNotEmpty) ...<Widget>[
-                  if (message.text.trim().isNotEmpty)
-                    const SizedBox(height: 12),
-                  ...message.attachments.map(
-                    (ChatAttachment attachment) => Padding(
-                      key: ValueKey<String>('attachment-${attachment.id}'),
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: _AttachmentCard(
-                        key: ValueKey<String>(attachment.id),
-                        attachment: attachment,
-                      ),
-                    ),
-                  ),
-                ],
-                if (message.isPending && isUser) ...<Widget>[
-                  if (message.text.trim().isNotEmpty || message.attachments.isNotEmpty)
-                    const SizedBox(height: 8),
-                  const _PendingBubbleIndicator(),
-                ],
-                const SizedBox(height: 6),
+    final Widget bubble = ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 480),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: bubbleColor,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: isUser
+                ? (isOwnUserMessage
+                      ? CrossAxisAlignment.end
+                      : CrossAxisAlignment.start)
+                : CrossAxisAlignment.start,
+            children: <Widget>[
+              if (message.senderLabel != null &&
+                  message.senderLabel!.trim().isNotEmpty &&
+                  !isSystem) ...<Widget>[
                 Text(
-                  _formatMessageTimestamp(context, message.sentAt),
-                  style: Theme.of(context).textTheme.bodySmall,
+                  message.senderLabel!,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 6),
+              ],
+              if (message.isPending && !isUser) ...<Widget>[
+                const _PendingBubbleIndicator(),
+                const SizedBox(height: 8),
+              ],
+              if (message.text.trim().isNotEmpty) ..._buildTextContent(context),
+              if (message.attachments.isNotEmpty) ...<Widget>[
+                if (message.text.trim().isNotEmpty) const SizedBox(height: 12),
+                ...message.attachments.map(
+                  (ChatAttachment attachment) => Padding(
+                    key: ValueKey<String>('attachment-${attachment.id}'),
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: _AttachmentCard(
+                      key: ValueKey<String>(attachment.id),
+                      attachment: attachment,
+                    ),
+                  ),
                 ),
               ],
-            ),
+              if (message.isPending && isUser) ...<Widget>[
+                if (message.text.trim().isNotEmpty ||
+                    message.attachments.isNotEmpty)
+                  const SizedBox(height: 8),
+                const _PendingBubbleIndicator(),
+              ],
+              const SizedBox(height: 6),
+              Text(
+                _formatMessageTimestamp(context, message.sentAt),
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
           ),
         ),
+      ),
+    );
+
+    if (isSystem) {
+      return Align(alignment: alignment, child: bubble);
+    }
+
+    final Widget avatar = message.sender == ChatSender.assistant
+        ? PrivateClawAvatar.assistant(
+            key: ValueKey<String>('message-avatar-${message.id}'),
+            semanticLabel: 'assistant avatar',
+          )
+        : PrivateClawAvatar.generated(
+            key: ValueKey<String>('message-avatar-${message.id}'),
+            seedId: message.senderId ?? message.id,
+            label: message.senderLabel ?? message.senderId,
+            semanticLabel: message.senderLabel ?? message.senderId,
+          );
+
+    return Align(
+      alignment: alignment,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: <Widget>[
+          if (!isOwnUserMessage) ...<Widget>[avatar, const SizedBox(width: 8)],
+          Flexible(
+            child: Align(alignment: alignment, child: bubble),
+          ),
+          if (isOwnUserMessage) ...<Widget>[const SizedBox(width: 8), avatar],
+        ],
       ),
     );
   }

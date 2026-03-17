@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:privateclaw_app/models/chat_attachment.dart';
 import 'package:privateclaw_app/models/chat_message.dart';
 import 'package:privateclaw_app/widgets/chat_message_bubble.dart';
+import 'package:privateclaw_app/widgets/privateclaw_avatar.dart';
 
 void main() {
   testWidgets('ChatMessageBubble shows a pending assistant indicator', (
@@ -31,29 +32,30 @@ void main() {
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
   });
 
-  testWidgets('ChatMessageBubble keeps own pending text visible with inline wait indicator', (
-    WidgetTester tester,
-  ) async {
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: ChatMessageBubble(
-            message: ChatMessage(
-              id: 'user-pending-1',
-              sender: ChatSender.user,
-              text: '正在发送这条消息',
-              sentAt: DateTime.utc(2026, 1, 1),
-              isPending: true,
-              isOwnMessage: true,
+  testWidgets(
+    'ChatMessageBubble keeps own pending text visible with inline wait indicator',
+    (WidgetTester tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ChatMessageBubble(
+              message: ChatMessage(
+                id: 'user-pending-1',
+                sender: ChatSender.user,
+                text: '正在发送这条消息',
+                sentAt: DateTime.utc(2026, 1, 1),
+                isPending: true,
+                isOwnMessage: true,
+              ),
             ),
           ),
         ),
-      ),
-    );
+      );
 
-    expect(find.text('正在发送这条消息'), findsOneWidget);
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
-  });
+      expect(find.text('正在发送这条消息'), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    },
+  );
 
   testWidgets('ChatMessageBubble renders markdown text and image attachments', (
     WidgetTester tester,
@@ -89,7 +91,12 @@ void main() {
     );
 
     expect(find.text('Bold reply'), findsOneWidget);
-    expect(find.byType(Image), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (Widget widget) => widget is Image && widget.image is MemoryImage,
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('ChatMessageBubble reuses cached inline image providers', (
@@ -105,7 +112,14 @@ void main() {
         ),
       );
       await tester.pump();
-      return tester.widget<Image>(find.byType(Image).first).image;
+      return tester
+          .widgetList<Image>(
+            find.byWidgetPredicate(
+              (Widget widget) => widget is Image && widget.image is MemoryImage,
+            ),
+          )
+          .first
+          .image;
     }
 
     final ImageProvider<Object> firstProvider = await pumpMessage(
@@ -169,5 +183,46 @@ void main() {
 
     expect(find.text('流萤狐'), findsOneWidget);
     expect(find.text('Hello team'), findsOneWidget);
+    expect(find.text('流萤'), findsOneWidget);
+    expect(
+      tester
+          .widget<PrivateClawAvatar>(
+            find.byKey(const ValueKey<String>('message-avatar-participant-1')),
+          )
+          .kind,
+      PrivateClawAvatarKind.generated,
+    );
   });
+
+  testWidgets(
+    'ChatMessageBubble uses the app icon avatar for assistant messages',
+    (WidgetTester tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ChatMessageBubble(
+              message: ChatMessage(
+                id: 'assistant-avatar-1',
+                sender: ChatSender.assistant,
+                text: 'Hello from the assistant',
+                sentAt: DateTime.utc(2026, 1, 1),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('Hello from the assistant'), findsOneWidget);
+      expect(
+        tester
+            .widget<PrivateClawAvatar>(
+              find.byKey(
+                const ValueKey<String>('message-avatar-assistant-avatar-1'),
+              ),
+            )
+            .kind,
+        PrivateClawAvatarKind.assistant,
+      );
+    },
+  );
 }

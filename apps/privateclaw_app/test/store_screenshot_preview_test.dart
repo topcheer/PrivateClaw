@@ -2,8 +2,22 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:privateclaw_app/main.dart';
 import 'package:privateclaw_app/store_screenshot_preview.dart';
+import 'package:privateclaw_app/widgets/privateclaw_avatar.dart';
 
 void main() {
+  test('screenshot preview config can load from runtime environment', () {
+    final StoreScreenshotConfig config = StoreScreenshotConfig.fromEnvironment(
+      environment: const <String, String>{
+        'PRIVATECLAW_SCREENSHOT_SCENARIO': 'group_chat',
+        'PRIVATECLAW_SCREENSHOT_LOCALE': 'en_US',
+      },
+    );
+
+    expect(config.previewData, isNotNull);
+    expect(config.localeOverride, const Locale('en', 'US'));
+    expect(config.previewData?.participants, isNotEmpty);
+  });
+
   testWidgets('group chat preview renders active session controls', (
     WidgetTester tester,
   ) async {
@@ -37,6 +51,15 @@ void main() {
     );
     expect(find.text('Aria'), findsWidgets);
     expect(find.textContaining('Renewal reminder'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('current-identity-avatar')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('participant-avatar-app-aria')),
+      findsOneWidget,
+    );
+    expect(find.byType(PrivateClawAvatar), findsWidgets);
   });
 
   testWidgets('rich media preview renders attachments and a prepared draft', (

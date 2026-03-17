@@ -77,35 +77,44 @@ You can also run the same lanes from the repository root:
 - `npm run store:version`
 - `npm run store:version:shell`
 - `npm run store:check`
-- `npm run store:check:ggai`
 - `npm run ios:testflight`
 - `npm run ios:testflight:upload`
 - `npm run ios:testflight:external`
-- `npm run ios:testflight:ggai`
-- `npm run ios:testflight:upload:ggai`
-- `npm run ios:testflight:external:ggai`
 - `npm run ios:metadata`
 - `npm run ios:release`
 - `npm run ios:release:upload`
-- `npm run ios:release:ggai`
-- `npm run ios:release:upload:ggai`
 - `npm run android:internal`
 - `npm run android:internal:upload`
 - `npm run android:closed`
 - `npm run android:closed:promote`
-- `npm run android:internal:ggai`
-- `npm run android:internal:upload:ggai`
-- `npm run android:closed:ggai`
-- `npm run android:closed:promote:ggai`
 - `npm run android:metadata`
 
 Run `npm run store:check` first to verify that the required App Store Connect / Play Console environment variables and credential file paths are available from the current shell.
 
-If you already keep the same signing material in `~/ggai/GGAiDoodle`, the `*:ggai` scripts will auto-load those local values before running the check or upload lane. Override the lookup root with `PRIVATECLAW_GGAIDOODLE_ROOT=/your/GGAiDoodle/path` when needed.
+Keep your real credentials in an untracked shell file, `.env.local`, or another secret manager. `fastlane.env.example` documents the expected variable names without hard-coding any machine-specific paths. For example:
+
+```bash
+# Example only. Keep the real values outside Git.
+export PRIVATECLAW_APP_STORE_CONNECT_KEY_ID=ABC123XYZ
+export PRIVATECLAW_APP_STORE_CONNECT_ISSUER_ID=00000000-0000-0000-0000-000000000000
+export PRIVATECLAW_APP_STORE_CONNECT_KEY_FILE="$HOME/secrets/AuthKey_ABC123XYZ.p8"
+export PRIVATECLAW_PLAY_STORE_JSON_KEY="$HOME/secrets/play-store-service-account.json"
+export PRIVATECLAW_ANDROID_KEYSTORE_PATH="$HOME/secrets/upload.jks"
+export PRIVATECLAW_ANDROID_KEYSTORE_PASSWORD=...
+export PRIVATECLAW_ANDROID_KEY_ALIAS=upload
+export PRIVATECLAW_ANDROID_KEY_PASSWORD=...
+
+npm run store:check
+eval "$(npm run -s store:version:shell)"
+npm run ios:testflight
+npm run android:closed
+```
+
+If you maintain personal helper scripts for local uploads, keep them in a gitignored location instead of documenting personal paths or workstation setup in the repository README.
 
 Use the `*:upload` variants when you already have a fresh IPA or AAB on disk and only want to retry the store upload without rebuilding first.
 
-For iOS specifically, `ios:release:upload*` now submits the already-uploaded App Store Connect build identified by `PRIVATECLAW_BUILD_NAME` / `PRIVATECLAW_BUILD_NUMBER` for review instead of re-uploading the IPA. Use `ios:release*` when you need to build and upload a new binary first.
+For iOS specifically, `ios:release:upload` now submits the already-uploaded App Store Connect build identified by `PRIVATECLAW_BUILD_NAME` / `PRIVATECLAW_BUILD_NUMBER` for review instead of re-uploading the IPA. Use `ios:release` when you need to build and upload a new binary first.
 
 The TestFlight external promote step defaults to the App Store Connect external tester group `ext`. Override `PRIVATECLAW_TESTFLIGHT_EXTERNAL_GROUPS` with a comma-separated list if you need a different target group set. Set `PRIVATECLAW_TESTFLIGHT_NOTIFY_EXTERNAL_TESTERS=true` if you want the promote step to notify testers immediately.
 

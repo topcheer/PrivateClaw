@@ -493,25 +493,15 @@ Repository-level shortcuts:
 npm run store:version
 npm run store:version:shell
 npm run store:check
-npm run store:check:ggai
 npm run ios:testflight
 npm run ios:testflight:upload
 npm run ios:testflight:external
-npm run ios:testflight:ggai
-npm run ios:testflight:upload:ggai
-npm run ios:testflight:external:ggai
 npm run ios:release
 npm run ios:release:upload
-npm run ios:release:ggai
-npm run ios:release:upload:ggai
 npm run android:internal
 npm run android:internal:upload
 npm run android:closed
 npm run android:closed:promote
-npm run android:internal:ggai
-npm run android:internal:upload:ggai
-npm run android:closed:ggai
-npm run android:closed:promote:ggai
 ```
 
 Supporting metadata-only lanes:
@@ -525,17 +515,36 @@ These commands assume your App Store Connect and Play Console credentials are ex
 
 Run `npm run store:check` first to confirm that the expected credential environment variables, referenced key files, and existing IPA / AAB artifacts are all visible from your current shell before attempting an upload.
 
-If you keep the same local signing material under `~/ggai/GGAiDoodle`, the `*:ggai` variants auto-load the reusable App Store Connect / Play / keystore settings from that project before running the preflight or fastlane lane. Set `PRIVATECLAW_GGAIDOODLE_ROOT` if your local `GGAiDoodle` checkout lives somewhere else.
+Keep any real secret exports in an untracked shell file, `.env.local`, or your preferred secret manager. A generic example looks like this:
+
+```bash
+# Example only. Keep the real values outside Git.
+export PRIVATECLAW_APP_STORE_CONNECT_KEY_ID=ABC123XYZ
+export PRIVATECLAW_APP_STORE_CONNECT_ISSUER_ID=00000000-0000-0000-0000-000000000000
+export PRIVATECLAW_APP_STORE_CONNECT_KEY_FILE="$HOME/secrets/AuthKey_ABC123XYZ.p8"
+export PRIVATECLAW_PLAY_STORE_JSON_KEY="$HOME/secrets/play-store-service-account.json"
+export PRIVATECLAW_ANDROID_KEYSTORE_PATH="$HOME/secrets/upload.jks"
+export PRIVATECLAW_ANDROID_KEYSTORE_PASSWORD=...
+export PRIVATECLAW_ANDROID_KEY_ALIAS=upload
+export PRIVATECLAW_ANDROID_KEY_PASSWORD=...
+
+npm run store:check
+eval "$(npm run -s store:version:shell)"
+npm run ios:testflight
+npm run android:closed
+```
+
+If you prefer local wrapper scripts around these commands, keep them in a gitignored location rather than documenting personal paths or machine-specific setup in the repository README.
 
 The `*:upload` variants skip the rebuild step and upload the existing `apps/privateclaw_app/builds/ios/PrivateClaw.ipa` or `apps/privateclaw_app/build/app/outputs/bundle/release/app-release.aab` directly, which is useful for retrying failed store submissions quickly.
 
-For iOS specifically, `ios:release:upload*` submits the already-uploaded App Store Connect build identified by `PRIVATECLAW_BUILD_NAME` / `PRIVATECLAW_BUILD_NUMBER` for review instead of re-uploading the IPA. Use `ios:release*` when you need to build and upload a fresh binary first.
+For iOS specifically, `ios:release:upload` submits the already-uploaded App Store Connect build identified by `PRIVATECLAW_BUILD_NAME` / `PRIVATECLAW_BUILD_NUMBER` for review instead of re-uploading the IPA. Use `ios:release` when you need to build and upload a fresh binary first.
 
 The TestFlight external promote step defaults to the external tester group `ext`. Override `PRIVATECLAW_TESTFLIGHT_EXTERNAL_GROUPS` with a comma-separated list if you need a different target group set. Set `PRIVATECLAW_TESTFLIGHT_NOTIFY_EXTERNAL_TESTERS=true` if you want the promote step to notify testers immediately, and optionally set `PRIVATECLAW_TESTFLIGHT_CHANGELOG` to attach beta release notes during the external promotion.
 
 Versioning rules:
 
-- `versionName` / iOS marketing version stays on the semantic `major.minor.patch` value in `apps/privateclaw_app/pubspec.yaml` (currently `0.1.0`).
+- `versionName` / iOS marketing version stays on the semantic `major.minor.patch` value in `apps/privateclaw_app/pubspec.yaml`.
 - `buildNumber` / Android `versionCode` auto-increments for each fresh store build as the current UTC seconds offset from `2024-01-01T00:00:00Z`, clamped above the build suffix stored in `pubspec.yaml`.
 - If you want iOS and Android to share the exact same auto-generated build number in one shell session, run `eval "$(npm run -s store:version:shell)"` once before kicking off both upload commands.
 - Optional overrides: set `PRIVATECLAW_BUILD_NAME` and/or `PRIVATECLAW_BUILD_NUMBER` if you need to force a specific version for a one-off release.

@@ -165,20 +165,46 @@ function resolveBaseRef(branch, baseRemote) {
   return "HEAD";
 }
 
-function refreshRemoteBranch(branch, remote) {
+function resolveRemoteBranchTip(branch, remote) {
   ensureRemoteExists(remote);
 
-  const fetchResult = spawnSync("git", ["fetch", remote, branch], {
+  const result = spawnSync("git", ["ls-remote", "--exit-code", remote, `refs/heads/${branch}`], {
     cwd: repoRoot,
-    stdio: "inherit",
     encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
   });
 
-  if (fetchResult.error) {
-    throw fetchResult.error;
+  if (result.error) {
+    throw result.error;
   }
 
-  return refExists(`refs/remotes/${remote}/${branch}`);
+  if (result.status === 2) {
+    return null;
+  }
+
+  if (result.status !== 0) {
+    const stderr = result.stderr?.trim();
+    throw new Error(
+      `Unable to inspect ${remote}/${branch}: ${stderr || `git ls-remote exited with code ${result.status}`}`,
+    );
+  }
+
+  const line = result.stdout
+    .trim()
+    .split("\n")
+    .map((entry) => entry.trim())
+    .find(Boolean);
+
+  if (!line) {
+    throw new Error(`Unable to parse remote tip for ${remote}/${branch}.`);
+  }
+
+  const [sha] = line.split(/\s+/);
+  if (!sha) {
+    throw new Error(`Unable to parse remote tip for ${remote}/${branch}.`);
+  }
+
+  return sha;
 }
 
 function resolveSourceRef(sourceRef) {
@@ -210,9 +236,13 @@ function main() {
     worktreeAdded = true;
 
     for (const remote of remotes) {
-      const hasRemoteBranch = refreshRemoteBranch(branch, remote);
+      const remoteBranchTip = resolveRemoteBranchTip(branch, remote);
       const pushArgs = ["push", remote, `HEAD:refs/heads/${branch}`];
-      pushArgs.push(hasRemoteBranch ? "--force-with-lease" : "--force");
+      pushArgs.push(
+        remoteBranchTip
+          ? `--force-with-lease=refs/heads/${branch}:${remoteBranchTip}`
+          : "--force",
+      );
       runGit(pushArgs, { cwd: tempDir });
     }
 

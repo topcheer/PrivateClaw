@@ -29,6 +29,14 @@ privateclaw-relay
 
 If the default local port `8787` is already occupied, the CLI automatically retries the next free port and prints the final listening URL.
 
+Start the relay and serve the bundled PrivateClaw website from the same process:
+
+```bash
+privateclaw-relay --web
+```
+
+With `--web`, the relay serves the marketing homepage at `/`, the web chat at `/chat/`, and keeps the relay WebSocket endpoints on `/ws/*` unchanged.
+
 Override the bind address or Redis URL:
 
 ```bash
@@ -48,8 +56,15 @@ Expose the local relay through a temporary Cloudflare quick tunnel:
 privateclaw-relay --public cloudflare
 ```
 
+You can combine `--web` with public exposure so the public tunnel opens both the website and the relay on one origin:
+
+```bash
+privateclaw-relay --web --public cloudflare
+privateclaw-relay --web --public tailscale
+```
+
 If the required `tailscale` or `cloudflared` CLI is missing, `privateclaw-relay` prints platform-aware install commands. In an interactive terminal it can also offer to run the supported install/setup commands for you before retrying the tunnel startup.
-After the relay gets a public URL, it also prints the exact `openclaw` commands needed to point PrivateClaw at that relay. If `openclaw` is installed locally, the CLI can offer to run the local provider install/enable/config commands for you before reminding you to restart the gateway/service.
+After the relay gets a public URL, it also prints the exact `openclaw` commands needed to point PrivateClaw at that relay. If `openclaw` is installed locally, the CLI can offer to run the local provider install/enable/config flow, restart the OpenClaw gateway, verify that `privateclaw` is now registered, and then optionally start a new group pairing. When `--web` is enabled, it can open the bundled web chat with the fresh invite prefilled.
 
 ## Tunnel notes
 

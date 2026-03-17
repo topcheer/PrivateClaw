@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import test from "node:test";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { decryptPayload, encryptPayload, generateSessionKey } from "@privateclaw/protocol";
 import WebSocket from "ws";
 import {
@@ -139,6 +142,75 @@ test("relay exposes health endpoints for container platforms", async (t) => {
   };
   assert.equal(railwayHealth.ok, true);
   assert.equal(railwayHealth.sessions, 0);
+});
+
+test("relay optionally serves the bundled website without breaking websocket endpoints", async (t) => {
+  const webRootDir = await mkdtemp(path.join(tmpdir(), "privateclaw-relay-web-"));
+  t.after(async () => {
+    await rm(webRootDir, { recursive: true, force: true });
+  });
+
+  await mkdir(path.join(webRootDir, "chat"), { recursive: true });
+  await mkdir(path.join(webRootDir, "assets"), { recursive: true });
+  await writeFile(
+    path.join(webRootDir, "index.html"),
+    "<!doctype html><title>PrivateClaw Home</title><a href=\"./chat/\">chat</a>",
+  );
+  await writeFile(
+    path.join(webRootDir, "chat", "index.html"),
+    "<!doctype html><title>PrivateClaw Chat</title>",
+  );
+  await writeFile(
+    path.join(webRootDir, "styles.css"),
+    "body { color: rgb(0, 0, 0); }",
+  );
+
+  const relay = createRelayServer({
+    host: "127.0.0.1",
+    port: 0,
+    sessionTtlMs: 60_000,
+    frameCacheSize: 8,
+    webRootDir,
+  });
+  const { port } = await relay.start();
+  t.after(async () => {
+    await relay.stop();
+  });
+
+  const [homeResponse, chatRedirectResponse, chatResponse, stylesResponse] =
+    await Promise.all([
+      fetch(`http://127.0.0.1:${port}/`),
+      fetch(`http://127.0.0.1:${port}/chat`, { redirect: "manual" }),
+      fetch(`http://127.0.0.1:${port}/chat/`),
+      fetch(`http://127.0.0.1:${port}/styles.css`),
+    ]);
+
+  assert.equal(homeResponse.status, 200);
+  assert.match(
+    homeResponse.headers.get("content-type") ?? "",
+    /^text\/html\b/,
+  );
+  assert.match(await homeResponse.text(), /PrivateClaw Home/);
+
+  assert.equal(chatRedirectResponse.status, 301);
+  assert.equal(chatRedirectResponse.headers.get("location"), "/chat/");
+
+  assert.equal(chatResponse.status, 200);
+  assert.match(await chatResponse.text(), /PrivateClaw Chat/);
+
+  assert.equal(stylesResponse.status, 200);
+  assert.match(
+    stylesResponse.headers.get("content-type") ?? "",
+    /^text\/css\b/,
+  );
+
+  const providerSocket = new WebSocket(`ws://127.0.0.1:${port}/ws/provider`);
+  const readyPromise = nextMessage(providerSocket);
+  await waitForOpen(providerSocket);
+  const ready = await readyPromise;
+  assert.equal(ready.type, "relay:provider_ready");
+  providerSocket.close();
+  await waitForClose(providerSocket);
 });
 
 test("relay server creates a session and forwards encrypted frames", async (t) => {

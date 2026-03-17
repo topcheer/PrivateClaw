@@ -17,11 +17,13 @@ test("parseRelayCliArgs accepts serve defaults and public tunnel", () => {
     "9999",
     "--host",
     "0.0.0.0",
+    "--web",
     "--public",
     "cloudflare",
   ]);
 
   assert.equal(parsed.showHelp, false);
+  assert.equal(parsed.serveWeb, true);
   assert.equal(parsed.configOverrides.host, "0.0.0.0");
   assert.equal(parsed.configOverrides.port, 9999);
   assert.equal(parsed.publicTunnel, "cloudflare");
@@ -56,7 +58,9 @@ test("applyRelayCliOverrides merges env config with CLI overrides", () => {
 });
 
 test("renderRelayCliHelp documents the public tunnel flag", () => {
+  assert.match(renderRelayCliHelp(), /--web/);
   assert.match(renderRelayCliHelp(), /--public <tailscale\|cloudflare>/);
+  assert.match(renderRelayCliHelp(), /privateclaw-relay --web/);
   assert.match(renderRelayCliHelp(), /privateclaw-relay --port 8787 --public tailscale/);
   assert.match(renderRelayCliHelp(), /automatically retries the next free port/);
 });

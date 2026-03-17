@@ -23,17 +23,24 @@ export interface RelayProviderSetupPlan {
   introduction: string;
   automaticSteps: RelayProviderSetupStep[];
   manualSteps: RelayProviderSetupStep[];
-  restartNotes: string[];
-  pairingNotes: string[];
+  verificationNotes: string[];
+  pairingCommand: RelayProviderSetupStep;
 }
 
 interface OfferRelayProviderSetupOptions {
   relayBaseUrl: string;
+  webChatUrl?: string;
   onLog?: (line: string) => void;
   isInteractive?: boolean;
   detectLocalOpenClawStatus?: () => Promise<LocalOpenClawStatus>;
   promptToContinue?: (question: string) => Promise<boolean>;
   runStep?: (step: RelayProviderSetupStep) => Promise<void>;
+  runPairingCommand?: (
+    step: RelayProviderSetupStep,
+  ) => Promise<RunOneShotCommandResult>;
+  openBrowser?: (target: string) => Promise<void>;
+  verificationTimeoutMs?: number;
+  verificationPollMs?: number;
 }
 
 interface RunOneShotCommandResult {
@@ -68,6 +75,12 @@ function isInteractiveTerminal(): boolean {
       !process.stdin.destroyed &&
       !process.stdout.destroyed,
   );
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 async function runOneShotCommand(
@@ -115,6 +128,58 @@ async function runOneShotCommand(
   }
 }
 
+async function runStreamingCommand(
+  command: string,
+  args: string[],
+): Promise<RunOneShotCommandResult> {
+  const child = spawn(command, args, {
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let stdoutText = "";
+  let stderrText = "";
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  child.stdout.on("data", (chunk: string) => {
+    stdoutText += chunk;
+    process.stdout.write(chunk);
+  });
+  child.stderr.on("data", (chunk: string) => {
+    stderrText += chunk;
+    process.stderr.write(chunk);
+  });
+  const childError = once(child, "error").then(([error]) => {
+    throw error;
+  });
+  const childClose = once(child, "close").then(([code, signal]) => ({
+    code,
+    signal,
+  }));
+
+  try {
+    const { code, signal } = await Promise.race([childError, childClose]);
+    if (code !== 0) {
+      const combined = `${stdoutText}${stderrText}`.trim();
+      throw new RelayCliUserError(
+        `Command \`${[command, ...args].join(" ")}\` exited with ${
+          code == null ? `signal ${signal ?? "unknown"}` : `code ${code}`
+        }${combined ? `: ${combined}` : "."}`,
+      );
+    }
+    return {
+      stdout: stdoutText,
+      stderr: stderrText,
+      combined: `${stdoutText}${stderrText}`,
+    };
+  } catch (error) {
+    if (isUnavailableCommandError(error)) {
+      throw new RelayCliUserError(
+        `Could not run \`${[command, ...args].join(" ")}\` because \`${command}\` is unavailable or not executable.`,
+      );
+    }
+    throw error;
+  }
+}
+
 async function commandExists(command: string): Promise<boolean> {
   try {
     await runOneShotCommand(command, ["--version"]);
@@ -122,6 +187,20 @@ async function commandExists(command: string): Promise<boolean> {
   } catch (error) {
     return !isUnavailableCommandError(error);
   }
+}
+
+export async function openBrowserTarget(target: string): Promise<void> {
+  const command =
+    process.platform === "win32"
+      ? {
+          file: "cmd.exe",
+          args: ["/d", "/s", "/c", `start "" "${target.replace(/"/gu, '""')}"`],
+        }
+      : process.platform === "darwin"
+        ? { file: "open", args: [target] }
+        : { file: "xdg-open", args: [target] };
+
+  await runOneShotCommand(command.file, command.args);
 }
 
 export async function detectLocalOpenClawStatus(): Promise<LocalOpenClawStatus> {
@@ -173,13 +252,21 @@ export function buildRelayProviderSetupPlan(params: {
     ],
     `openclaw config set plugins.entries.privateclaw.config.relayBaseUrl ${params.relayBaseUrl}`,
   );
-
-  const restartNotes = [
-    "[privateclaw-relay] Restart the running OpenClaw gateway/service now so it reloads the plugin + relay config.",
+  const restartStep = createStep(
+    "Restart the OpenClaw gateway so the plugin + relay config are reloaded",
+    "openclaw",
+    ["gateway", "restart"],
+    "openclaw gateway restart",
+  );
+  const pairingCommand = createStep(
+    "Start a group pairing request",
+    "openclaw",
+    ["privateclaw", "pair", "--group", "--relay", params.relayBaseUrl],
+    `openclaw privateclaw pair --group --relay ${params.relayBaseUrl}`,
+  );
+  const verificationNotes = [
     "[privateclaw-relay] After restart, verify the command registration with: openclaw commands list",
-  ];
-  const pairingNotes = [
-    "[privateclaw-relay] Then create a pairing QR either by sending `/privateclaw` in an existing OpenClaw-backed chat or by running: openclaw privateclaw pair",
+    `[privateclaw-relay] When the provider is ready, start a group pairing with: ${pairingCommand.display}`,
   ];
 
   if (!params.status.openClawAvailable) {
@@ -190,9 +277,9 @@ export function buildRelayProviderSetupPlan(params: {
       introduction:
         "[privateclaw-relay] To connect an OpenClaw machine to this relay, run these commands on the machine where `openclaw` is installed:",
       automaticSteps: [],
-      manualSteps: [installStep, enableStep, configStep],
-      restartNotes,
-      pairingNotes,
+      manualSteps: [installStep, enableStep, configStep, restartStep],
+      verificationNotes,
+      pairingCommand,
     };
   }
 
@@ -203,10 +290,10 @@ export function buildRelayProviderSetupPlan(params: {
       privateClawCommandAvailable: true,
       introduction:
         "[privateclaw-relay] OpenClaw + PrivateClaw are already available locally. Point the provider at this relay with:",
-      automaticSteps: [configStep],
-      manualSteps: [configStep],
-      restartNotes,
-      pairingNotes,
+      automaticSteps: [configStep, restartStep],
+      manualSteps: [configStep, restartStep],
+      verificationNotes,
+      pairingCommand,
     };
   }
 
@@ -216,10 +303,10 @@ export function buildRelayProviderSetupPlan(params: {
     privateClawCommandAvailable: false,
     introduction:
       "[privateclaw-relay] OpenClaw is available locally, but PrivateClaw is not active yet. Configure it with:",
-    automaticSteps: [installStep, enableStep, configStep],
-    manualSteps: [installStep, enableStep, configStep],
-    restartNotes,
-    pairingNotes,
+    automaticSteps: [installStep, enableStep, configStep, restartStep],
+    manualSteps: [installStep, enableStep, configStep, restartStep],
+    verificationNotes,
+    pairingCommand,
   };
 }
 
@@ -229,8 +316,7 @@ export function renderRelayProviderSetupGuidance(
   const lines = [
     plan.introduction,
     ...plan.manualSteps.map((step) => `[privateclaw-relay]   ${step.display}`),
-    ...plan.restartNotes,
-    ...plan.pairingNotes,
+    ...plan.verificationNotes,
   ];
   return lines.join("\n");
 }
@@ -282,6 +368,37 @@ async function runRelayProviderSetupStep(
   }
 }
 
+function extractPrivateClawInviteUri(output: string): string | undefined {
+  return output.match(/privateclaw:\/\/connect\?payload=\S+/u)?.[0];
+}
+
+function buildRelayWebInviteUrl(
+  webChatUrl: string,
+  inviteUri: string,
+): string {
+  const url = new URL(webChatUrl);
+  url.searchParams.set("invite", inviteUri);
+  return url.toString();
+}
+
+async function waitForPrivateClawCommandAvailability(
+  detectStatus: () => Promise<LocalOpenClawStatus>,
+  timeoutMs: number,
+  pollMs: number,
+): Promise<LocalOpenClawStatus> {
+  const deadline = Date.now() + timeoutMs;
+  let status = await detectStatus();
+  while (
+    status.openClawAvailable &&
+    !status.privateClawCommandAvailable &&
+    Date.now() < deadline
+  ) {
+    await delay(pollMs);
+    status = await detectStatus();
+  }
+  return status;
+}
+
 export async function offerRelayProviderSetup(
   options: OfferRelayProviderSetupOptions,
 ): Promise<void> {
@@ -309,6 +426,11 @@ export async function offerRelayProviderSetup(
 
   const promptToContinue = options.promptToContinue ?? promptForConfirmation;
   const runStep = options.runStep ?? runRelayProviderSetupStep;
+  const runPairingCommand = options.runPairingCommand ?? ((step) =>
+    runStreamingCommand(step.command, step.args));
+  const openBrowser = options.openBrowser ?? openBrowserTarget;
+  const verificationTimeoutMs = options.verificationTimeoutMs ?? 15_000;
+  const verificationPollMs = options.verificationPollMs ?? 1_000;
   const configureNow = await promptToContinue(
     plan.privateClawCommandAvailable
       ? `OpenClaw is available locally. Configure the local PrivateClaw provider to use ${options.relayBaseUrl} now?`
@@ -330,7 +452,61 @@ export async function offerRelayProviderSetup(
   options.onLog?.(
     "[privateclaw-relay] Local OpenClaw configuration commands completed.",
   );
-  for (const line of [...plan.restartNotes, ...plan.pairingNotes]) {
+  const refreshedStatus = await waitForPrivateClawCommandAvailability(
+    detectStatus,
+    verificationTimeoutMs,
+    verificationPollMs,
+  );
+  if (!refreshedStatus.privateClawCommandAvailable) {
+    throw new RelayCliUserError(
+      "OpenClaw restarted, but `privateclaw` still does not appear in `openclaw commands list`. Confirm the gateway finished restarting cleanly, then rerun `privateclaw-relay`.",
+    );
+  }
+  options.onLog?.(
+    "[privateclaw-relay] Verified `privateclaw` is now available via `openclaw commands list`.",
+  );
+  for (const line of plan.verificationNotes) {
     options.onLog?.(line);
+  }
+
+  const startGroupPairing = await promptToContinue(
+    "PrivateClaw is ready locally. Start a new group pairing now?",
+  );
+  if (!startGroupPairing) {
+    options.onLog?.(
+      "[privateclaw-relay] Skipping automatic group pairing for now.",
+    );
+    return;
+  }
+
+  options.onLog?.(
+    `[privateclaw-relay] Running: ${plan.pairingCommand.display}`,
+  );
+  const pairingResult = await runPairingCommand(plan.pairingCommand);
+  const inviteUri = extractPrivateClawInviteUri(pairingResult.combined);
+  if (!inviteUri) {
+    options.onLog?.(
+      "[privateclaw-relay] Created the group pairing request, but could not extract the invite URI from the command output for automatic browser launch.",
+    );
+    return;
+  }
+
+  if (!options.webChatUrl) {
+    options.onLog?.(
+      "[privateclaw-relay] Group pairing is ready. Start the relay with `--web` next time if you want this CLI to open the web chat automatically with the invite prefilled.",
+    );
+    return;
+  }
+
+  const webInviteUrl = buildRelayWebInviteUrl(options.webChatUrl, inviteUri);
+  options.onLog?.(
+    `[privateclaw-relay] Opening web chat with the new invite: ${webInviteUrl}`,
+  );
+  try {
+    await openBrowser(webInviteUrl);
+  } catch (error) {
+    options.onLog?.(
+      `[privateclaw-relay] Could not open the browser automatically: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 }

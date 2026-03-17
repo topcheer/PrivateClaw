@@ -16,7 +16,7 @@ test("buildRelayProviderSetupPlan prints remote OpenClaw commands when openclaw 
   });
 
   assert.equal(plan.localOpenClaw, false);
-  assert.equal(plan.manualSteps.length, 3);
+  assert.equal(plan.manualSteps.length, 4);
   assert.match(
     renderRelayProviderSetupGuidance(plan),
     /openclaw plugins install @privateclaw\/privateclaw@latest/,
@@ -24,6 +24,14 @@ test("buildRelayProviderSetupPlan prints remote OpenClaw commands when openclaw 
   assert.match(
     renderRelayProviderSetupGuidance(plan),
     /openclaw config set plugins\.entries\.privateclaw\.config\.relayBaseUrl https:\/\/relay\.example\.com/,
+  );
+  assert.match(
+    renderRelayProviderSetupGuidance(plan),
+    /openclaw gateway restart/,
+  );
+  assert.equal(
+    plan.pairingCommand.display,
+    "openclaw privateclaw pair --group --relay https://relay.example.com",
   );
 });
 
@@ -37,39 +45,78 @@ test("buildRelayProviderSetupPlan uses config-only flow when local privateclaw i
   });
 
   assert.equal(plan.localOpenClaw, true);
-  assert.equal(plan.automaticSteps.length, 1);
+  assert.equal(plan.automaticSteps.length, 2);
   assert.equal(
     plan.automaticSteps[0]?.display,
     "openclaw config set plugins.entries.privateclaw.config.relayBaseUrl https://relay.example.com",
   );
+  assert.equal(
+    plan.automaticSteps[1]?.display,
+    "openclaw gateway restart",
+  );
 });
 
-test("offerRelayProviderSetup runs install + enable + config when local privateclaw is inactive", async () => {
+test("offerRelayProviderSetup runs install + enable + config + restart, then starts group pairing", async () => {
   const executed: string[] = [];
+  const pairings: string[] = [];
+  const browserTargets: string[] = [];
   const logs: string[] = [];
+  const prompts = [true, true];
+  let detectCalls = 0;
 
   await offerRelayProviderSetup({
     relayBaseUrl: "https://relay.example.com",
+    webChatUrl: "https://relay.example.com/chat/",
     onLog: (line) => {
       logs.push(line);
     },
     isInteractive: true,
-    detectLocalOpenClawStatus: async () => ({
-      openClawAvailable: true,
-      privateClawCommandAvailable: false,
-    }),
-    promptToContinue: async () => true,
+    detectLocalOpenClawStatus: async () => {
+      detectCalls += 1;
+      if (detectCalls === 1) {
+        return {
+          openClawAvailable: true,
+          privateClawCommandAvailable: false,
+        };
+      }
+      return {
+        openClawAvailable: true,
+        privateClawCommandAvailable: true,
+      };
+    },
+    promptToContinue: async () => prompts.shift() ?? false,
     runStep: async (step) => {
       executed.push(step.display);
     },
+    runPairingCommand: async (step) => {
+      pairings.push(step.display);
+      return {
+        stdout: "邀请链接 / Invite URI: privateclaw://connect?payload=test-invite\n",
+        stderr: "",
+        combined:
+          "邀请链接 / Invite URI: privateclaw://connect?payload=test-invite\n",
+      };
+    },
+    openBrowser: async (target) => {
+      browserTargets.push(target);
+    },
+    verificationTimeoutMs: 10,
+    verificationPollMs: 0,
   });
 
   assert.deepEqual(executed, [
     "openclaw plugins install @privateclaw/privateclaw@latest",
     "openclaw plugins enable privateclaw",
     "openclaw config set plugins.entries.privateclaw.config.relayBaseUrl https://relay.example.com",
+    "openclaw gateway restart",
   ]);
-  assert.match(logs.join("\n"), /Restart the running OpenClaw gateway\/service now/);
+  assert.deepEqual(pairings, [
+    "openclaw privateclaw pair --group --relay https://relay.example.com",
+  ]);
+  assert.deepEqual(browserTargets, [
+    "https://relay.example.com/chat/?invite=privateclaw%3A%2F%2Fconnect%3Fpayload%3Dtest-invite",
+  ]);
+  assert.match(logs.join("\n"), /Verified `privateclaw` is now available/);
 });
 
 test("offerRelayProviderSetup only prints guidance when openclaw is unavailable locally", async () => {
@@ -118,4 +165,22 @@ test("offerRelayProviderSetup respects declined local configuration", async () =
 
   assert.deepEqual(executed, []);
   assert.match(logs.join("\n"), /Skipping automatic OpenClaw configuration/);
+});
+
+test("offerRelayProviderSetup throws if privateclaw is still unavailable after restart", async () => {
+  await assert.rejects(
+    offerRelayProviderSetup({
+      relayBaseUrl: "https://relay.example.com",
+      isInteractive: true,
+      detectLocalOpenClawStatus: async () => ({
+        openClawAvailable: true,
+        privateClawCommandAvailable: false,
+      }),
+      promptToContinue: async () => true,
+      runStep: async () => undefined,
+      verificationTimeoutMs: 10,
+      verificationPollMs: 0,
+    }),
+    /still does not appear in `openclaw commands list`/,
+  );
 });

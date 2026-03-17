@@ -3,6 +3,7 @@ export interface RelayServerConfig {
   port: number;
   sessionTtlMs: number;
   frameCacheSize: number;
+  webRootDir?: string;
   instanceId?: string;
   redisUrl?: string;
   fcmServiceAccountJson?: string;

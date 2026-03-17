@@ -252,13 +252,15 @@ For a direct Node.js run:
 ```bash
 npm run dev:relay
 npx @privateclaw/privateclaw-relay
+privateclaw-relay --web
 privateclaw-relay --public cloudflare
 privateclaw-relay --public tailscale
 ```
 
 The published relay package exposes the `privateclaw-relay` binary, so you can boot a local relay without cloning the whole repository. Adding `--public cloudflare` starts a temporary Cloudflare quick tunnel, and `--public tailscale` enables Tailscale Funnel for the relay port. If the default local port `8787` is already in use, the CLI automatically retries the next free port and prints the final listening URL.
+Adding `--web` also serves the bundled PrivateClaw website from the same process, with the homepage on `/`, the web chat on `/chat/`, and the relay WebSocket endpoints still isolated under `/ws/*`.
 If `tailscale` or `cloudflared` is missing, the CLI prints OS-aware install commands and, in an interactive terminal on supported setups, can offer to install/configure the dependency before retrying the public tunnel.
-After a public relay URL is ready, the CLI also prints the exact OpenClaw + PrivateClaw provider setup commands. If `openclaw` is available locally, it can offer to run the local provider install/enable/config flow for you before reminding you to restart the gateway/service.
+After a public relay URL is ready, the CLI also prints the exact OpenClaw + PrivateClaw provider setup commands. If `openclaw` is available locally, it can offer to run the local provider install/enable/config flow, restart the gateway, verify that `privateclaw` is registered, and then optionally start a new group pairing. With `--web`, it can also open the bundled web chat with that fresh invite already embedded in the URL.
 
 ### 3. Link the local provider checkout into OpenClaw
 

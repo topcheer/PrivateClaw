@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { createServer } from "node:http";
+import {
+  createServer,
+  type IncomingMessage,
+  type ServerResponse,
+} from "node:http";
 import type { AddressInfo } from "node:net";
 import type {
   AppToRelayMessage,
@@ -34,6 +38,7 @@ import {
   type RelaySessionRecord,
   type RelaySessionStore,
 } from "./session-store.js";
+import { serveRelayWebRequest } from "./relay-web.js";
 
 const HEARTBEAT_INTERVAL_MS = 15_000;
 const PUSH_WAKE_COOLDOWN_MS = 5_000;
@@ -1054,38 +1059,60 @@ export function createRelayServer(
   let startedUrl = "";
   let started = false;
 
-  const server = createServer((request, response) => {
+  async function handleHttpRequest(
+    request: IncomingMessage,
+    response: ServerResponse,
+  ): Promise<void> {
     const url = new URL(
       request.url ?? "/",
       `http://${request.headers.host ?? `${config.host}:${startedPort}`}`,
     );
 
-    if (
-      request.method === "GET" &&
-      (url.pathname === "/healthz" || url.pathname === "/api/health")
-    ) {
-      void sessionHub
-        .countSessions()
-        .then((sessions) => {
-          response.writeHead(200, { "content-type": "application/json" });
-          response.end(
-            JSON.stringify({ ok: true, sessions, instanceId: clusterNodeId }),
-          );
-        })
-        .catch((error) => {
-          response.writeHead(500, { "content-type": "application/json" });
-          response.end(
-            JSON.stringify({
-              ok: false,
-              error: error instanceof Error ? error.message : String(error),
-            }),
-          );
-        });
-      return;
-    }
+    try {
+      if (
+        request.method === "GET" &&
+        (url.pathname === "/healthz" || url.pathname === "/api/health")
+      ) {
+        const sessions = await sessionHub.countSessions();
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(
+          JSON.stringify({ ok: true, sessions, instanceId: clusterNodeId }),
+        );
+        return;
+      }
 
-    response.writeHead(404, { "content-type": "application/json" });
-    response.end(JSON.stringify({ error: "not_found" }));
+      if (config.webRootDir) {
+        const handled = await serveRelayWebRequest({
+          request,
+          response,
+          url,
+          webRootDir: config.webRootDir,
+        });
+        if (handled) {
+          return;
+        }
+      }
+
+      response.writeHead(404, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: "not_found" }));
+    } catch (error) {
+      console.error("[privateclaw-relay] failed to handle HTTP request", error);
+      if (response.headersSent) {
+        response.end();
+        return;
+      }
+      response.writeHead(500, { "content-type": "application/json" });
+      response.end(
+        JSON.stringify({
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+    }
+  }
+
+  const server = createServer((request, response) => {
+    void handleHttpRequest(request, response);
   });
 
   const providerWss = new WebSocketServer({ noServer: true });

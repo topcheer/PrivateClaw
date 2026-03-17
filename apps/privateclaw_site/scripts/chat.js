@@ -1141,6 +1141,17 @@ async function connectWithInvite(rawInvite) {
   }
 }
 
+function consumeInviteFromLocation() {
+  const currentUrl = new URL(window.location.href);
+  const invite = currentUrl.searchParams.get("invite")?.trim();
+  if (!invite) {
+    return null;
+  }
+  currentUrl.searchParams.delete("invite");
+  window.history.replaceState({}, document.title, currentUrl.toString());
+  return invite;
+}
+
 async function handleDisconnect() {
   if (state.client) {
     await state.client.disconnect({ reason: "user_disconnect" });
@@ -1301,3 +1312,9 @@ onLocaleChange(renderPage);
 
 setStatus("idle");
 renderPage();
+
+const inviteFromLocation = consumeInviteFromLocation();
+if (inviteFromLocation) {
+  elements.inviteInput.value = inviteFromLocation;
+  void connectWithInvite(inviteFromLocation);
+}

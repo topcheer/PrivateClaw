@@ -9,6 +9,7 @@ COPY services/relay-server/package.json services/relay-server/package.json
 RUN npm ci
 
 COPY packages/privateclaw-protocol packages/privateclaw-protocol
+COPY apps/privateclaw_site apps/privateclaw_site
 COPY services/relay-server services/relay-server
 
 RUN npm run build --workspace @privateclaw/protocol \

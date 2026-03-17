@@ -227,13 +227,15 @@ npm run docker:relay
 ```bash
 npm run dev:relay
 npx @privateclaw/privateclaw-relay
+privateclaw-relay --web
 privateclaw-relay --public cloudflare
 privateclaw-relay --public tailscale
 ```
 
 发布后的 relay npm 包会暴露 `privateclaw-relay` 这个二进制，因此不克隆整个仓库也可以直接启动本地 relay。加上 `--public cloudflare` 会启动一个临时的 Cloudflare quick tunnel；加上 `--public tailscale` 会为当前 relay 端口启用 Tailscale Funnel。如果默认本地端口 `8787` 已经被占用，CLI 会自动顺延到下一个可用端口，并打印最终监听地址。
+加上 `--web` 之后，同一个进程还会把 PrivateClaw 网站一并托管出来：首页在 `/`，网页聊天入口在 `/chat/`，而 relay 的 WebSocket 端点仍然保持在 `/ws/*` 下，不会互相冲突。
 如果本机缺少 `tailscale` 或 `cloudflared`，CLI 现在会按操作系统打印更友好的安装命令；在支持的交互式终端里，还可以继续询问是否直接安装/配置，然后自动重试启动公网 tunnel。
-拿到公网 relay URL 之后，CLI 现在还会直接打印 OpenClaw + PrivateClaw provider 的配置命令。如果本机已经安装了 `openclaw`，它还可以继续询问是否直接帮你执行本地 provider 的安装 / 启用 / 配置流程，然后提醒你重启 gateway/service。
+拿到公网 relay URL 之后，CLI 现在还会直接打印 OpenClaw + PrivateClaw provider 的配置命令。如果本机已经安装了 `openclaw`，它还可以继续询问是否直接帮你执行本地 provider 的安装 / 启用 / 配置，自动重启 gateway，确认 `privateclaw` 命令已经注册好，然后可选地直接发起一个新的群配对。配合 `--web` 时，它还可以直接打开已经带好 invite 的网页聊天地址。
 
 ### 3. 把本地 provider 仓库联到 OpenClaw
 

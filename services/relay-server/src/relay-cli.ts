@@ -3,6 +3,7 @@ import { RelayCliUserError } from "./cli-error.js";
 import { loadRelayConfig, type RelayServerConfig } from "./config.js";
 import { offerRelayProviderSetup } from "./provider-setup.js";
 import { createRelayServer } from "./relay-server.js";
+import { resolveRelayWebRootDir } from "./relay-web.js";
 import {
   ensureRelayTunnelDependencyAvailable,
   ensureRelayTunnelProviderConfigured,
@@ -20,6 +21,7 @@ const DEFAULT_PORT_FALLBACK_ATTEMPTS = 50;
 
 export interface RelayCliOptions {
   showHelp: boolean;
+  serveWeb: boolean;
   configOverrides: Partial<RelayServerConfig>;
   publicTunnel?: RelayTunnelProvider;
 }
@@ -55,17 +57,19 @@ function parsePositiveIntegerFlag(
 }
 
 export function renderRelayCliHelp(): string {
-  return `privateclaw-relay [serve] [--host <host>] [--port <port>] [--ttl-ms <ms>] [--frame-cache-size <count>] [--redis-url <url>] [--public <tailscale|cloudflare>]
+  return `privateclaw-relay [serve] [--host <host>] [--port <port>] [--ttl-ms <ms>] [--frame-cache-size <count>] [--redis-url <url>] [--web] [--public <tailscale|cloudflare>]
 
 Start the local PrivateClaw relay server.
 
 Examples:
   privateclaw-relay
+  privateclaw-relay --web
   privateclaw-relay --port 8787 --public tailscale
   privateclaw-relay serve --host 0.0.0.0 --redis-url redis://127.0.0.1:6379
 
 Notes:
   default local port     automatically retries the next free port when 8787 is busy
+  --web                 also serves the bundled PrivateClaw website at / and /chat/
   --public tailscale   enables Tailscale Funnel for the relay port
   --public cloudflare  starts a temporary Cloudflare quick tunnel
 `;
@@ -81,6 +85,7 @@ export function parseRelayCliArgs(args: string[]): RelayCliOptions {
       "ttl-ms": { type: "string" },
       "frame-cache-size": { type: "string" },
       "redis-url": { type: "string" },
+      web: { type: "boolean" },
       public: { type: "string" },
       help: { type: "boolean", short: "h" },
     },
@@ -90,6 +95,7 @@ export function parseRelayCliArgs(args: string[]): RelayCliOptions {
   if (command === "help") {
     return {
       showHelp: true,
+      serveWeb: false,
       configOverrides: {},
     };
   }
@@ -102,6 +108,7 @@ export function parseRelayCliArgs(args: string[]): RelayCliOptions {
   if (parsed.values.help) {
     return {
       showHelp: true,
+      serveWeb: false,
       configOverrides: {},
     };
   }
@@ -128,6 +135,7 @@ export function parseRelayCliArgs(args: string[]): RelayCliOptions {
 
   return {
     showHelp: false,
+    serveWeb: parsed.values.web ?? false,
     configOverrides: {
       ...(parsed.values.host?.trim()
         ? { host: parsed.values.host.trim() }
@@ -239,6 +247,12 @@ export async function runRelayCli(args: string[]): Promise<void> {
   }
 
   const config = applyRelayCliOverrides(loadRelayConfig(), parsed.configOverrides);
+  const effectiveConfig = parsed.serveWeb
+    ? {
+        ...config,
+        webRootDir: resolveRelayWebRootDir(),
+      }
+    : config;
   const allowPortFallback = shouldAllowRelayCliPortFallback(parsed);
   let relayServer: RelayServerInstance | undefined;
   let tunnel: RelayTunnelHandle | undefined;
@@ -264,7 +278,7 @@ export async function runRelayCli(args: string[]): Promise<void> {
 
   try {
     const startedRelay = await startRelayServerWithPortFallback({
-      config,
+      config: effectiveConfig,
       allowPortFallback,
       onLog: (line) => {
         console.log(line);
@@ -273,6 +287,14 @@ export async function runRelayCli(args: string[]): Promise<void> {
     relayServer = startedRelay.relayServer;
     const { port, url } = startedRelay;
     console.log(`[privateclaw-relay] listening on ${url}`);
+    if (parsed.serveWeb) {
+      console.log(
+        `[privateclaw-relay] web home: ${new URL("/", url).toString()}`,
+      );
+      console.log(
+        `[privateclaw-relay] web chat: ${new URL("/chat/", url).toString()}`,
+      );
+    }
 
     if (!parsed.publicTunnel) {
       return;
@@ -360,6 +382,14 @@ export async function runRelayCli(args: string[]): Promise<void> {
     }
     if (tunnel.publicUrl) {
       console.log(`[privateclaw-relay] public URL: ${tunnel.publicUrl}`);
+      if (parsed.serveWeb) {
+        console.log(
+          `[privateclaw-relay] public web home: ${new URL("/", tunnel.publicUrl).toString()}`,
+        );
+        console.log(
+          `[privateclaw-relay] public web chat: ${new URL("/chat/", tunnel.publicUrl).toString()}`,
+        );
+      }
     }
     for (const note of tunnel.notes) {
       console.log(`[privateclaw-relay] ${note}`);
@@ -367,6 +397,9 @@ export async function runRelayCli(args: string[]): Promise<void> {
     if (tunnel.publicUrl) {
       await offerRelayProviderSetup({
         relayBaseUrl: tunnel.publicUrl,
+        ...(parsed.serveWeb
+          ? { webChatUrl: new URL("/chat/", tunnel.publicUrl).toString() }
+          : {}),
         onLog: (line) => {
           console.log(line);
         },

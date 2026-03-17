@@ -14,6 +14,7 @@ export interface RelayProviderSetupStep {
 export interface LocalOpenClawStatus {
   openClawAvailable: boolean;
   privateClawCommandAvailable: boolean;
+  privateClawPluginPresent?: boolean;
 }
 
 export interface RelayProviderSetupPlan {
@@ -26,6 +27,13 @@ export interface RelayProviderSetupPlan {
   verificationNotes: string[];
   pairingCommand: RelayProviderSetupStep;
 }
+
+type OneShotCommandRunner = (
+  command: string,
+  args: string[],
+) => Promise<RunOneShotCommandResult>;
+
+const PRIVATECLAW_VERIFICATION_COMMAND = "openclaw privateclaw pair --help";
 
 interface OfferRelayProviderSetupOptions {
   relayBaseUrl: string;
@@ -128,6 +136,10 @@ async function runOneShotCommand(
   }
 }
 
+function outputMentionsPrivateClawCommand(output: string): boolean {
+  return /\/?privateclaw\b/iu.test(output);
+}
+
 async function runStreamingCommand(
   command: string,
   args: string[],
@@ -180,12 +192,46 @@ async function runStreamingCommand(
   }
 }
 
-async function commandExists(command: string): Promise<boolean> {
+async function commandExists(
+  command: string,
+  runCommand: OneShotCommandRunner = runOneShotCommand,
+): Promise<boolean> {
   try {
-    await runOneShotCommand(command, ["--version"]);
+    await runCommand(command, ["--version"]);
     return true;
   } catch (error) {
     return !isUnavailableCommandError(error);
+  }
+}
+
+async function detectPrivateClawCommandAvailability(
+  runCommand: OneShotCommandRunner,
+): Promise<boolean> {
+  try {
+    const commands = await runCommand("openclaw", ["commands", "list"]);
+    if (outputMentionsPrivateClawCommand(commands.combined)) {
+      return true;
+    }
+  } catch {
+    // Newer OpenClaw builds may not expose `openclaw commands list`.
+  }
+
+  try {
+    await runCommand("openclaw", ["privateclaw", "pair", "--help"]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function detectPrivateClawPluginPresence(
+  runCommand: OneShotCommandRunner,
+): Promise<boolean> {
+  try {
+    await runCommand("openclaw", ["plugins", "info", "privateclaw"]);
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -203,26 +249,27 @@ export async function openBrowserTarget(target: string): Promise<void> {
   await runOneShotCommand(command.file, command.args);
 }
 
-export async function detectLocalOpenClawStatus(): Promise<LocalOpenClawStatus> {
-  if (!(await commandExists("openclaw"))) {
+export async function detectLocalOpenClawStatus(
+  runCommand: OneShotCommandRunner = runOneShotCommand,
+): Promise<LocalOpenClawStatus> {
+  if (!(await commandExists("openclaw", runCommand))) {
     return {
       openClawAvailable: false,
       privateClawCommandAvailable: false,
     };
   }
 
-  try {
-    const commands = await runOneShotCommand("openclaw", ["commands", "list"]);
-    return {
-      openClawAvailable: true,
-      privateClawCommandAvailable: /\bprivateclaw\b/u.test(commands.combined),
-    };
-  } catch {
-    return {
-      openClawAvailable: true,
-      privateClawCommandAvailable: false,
-    };
-  }
+  const [privateClawCommandAvailable, privateClawPluginPresent] =
+    await Promise.all([
+      detectPrivateClawCommandAvailability(runCommand),
+      detectPrivateClawPluginPresence(runCommand),
+    ]);
+
+  return {
+    openClawAvailable: true,
+    privateClawCommandAvailable,
+    privateClawPluginPresent,
+  };
 }
 
 export function buildRelayProviderSetupPlan(params: {
@@ -234,6 +281,12 @@ export function buildRelayProviderSetupPlan(params: {
     "openclaw",
     ["plugins", "install", "@privateclaw/privateclaw@latest"],
     "openclaw plugins install @privateclaw/privateclaw@latest",
+  );
+  const updateStep = createStep(
+    "Update the existing PrivateClaw OpenClaw plugin",
+    "openclaw",
+    ["plugins", "update", "privateclaw"],
+    "openclaw plugins update privateclaw",
   );
   const enableStep = createStep(
     "Enable the PrivateClaw OpenClaw plugin",
@@ -265,7 +318,7 @@ export function buildRelayProviderSetupPlan(params: {
     `openclaw privateclaw pair --group --relay ${params.relayBaseUrl}`,
   );
   const verificationNotes = [
-    "[privateclaw-relay] After restart, verify the command registration with: openclaw commands list",
+    `[privateclaw-relay] After restart, verify the command registration with: ${PRIVATECLAW_VERIFICATION_COMMAND}`,
     `[privateclaw-relay] When the provider is ready, start a group pairing with: ${pairingCommand.display}`,
   ];
 
@@ -302,9 +355,21 @@ export function buildRelayProviderSetupPlan(params: {
     localOpenClaw: true,
     privateClawCommandAvailable: false,
     introduction:
-      "[privateclaw-relay] OpenClaw is available locally, but PrivateClaw is not active yet. Configure it with:",
-    automaticSteps: [installStep, enableStep, configStep, restartStep],
-    manualSteps: [installStep, enableStep, configStep, restartStep],
+      params.status.privateClawPluginPresent
+        ? "[privateclaw-relay] OpenClaw can already see a local PrivateClaw plugin, but the command is not active yet. Refresh/configure it with:"
+        : "[privateclaw-relay] OpenClaw is available locally, but PrivateClaw is not active yet. Configure it with:",
+    automaticSteps: [
+      ...(params.status.privateClawPluginPresent ? [updateStep] : [installStep]),
+      enableStep,
+      configStep,
+      restartStep,
+    ],
+    manualSteps: [
+      ...(params.status.privateClawPluginPresent ? [updateStep] : [installStep]),
+      enableStep,
+      configStep,
+      restartStep,
+    ],
     verificationNotes,
     pairingCommand,
   };
@@ -434,7 +499,9 @@ export async function offerRelayProviderSetup(
   const configureNow = await promptToContinue(
     plan.privateClawCommandAvailable
       ? `OpenClaw is available locally. Configure the local PrivateClaw provider to use ${options.relayBaseUrl} now?`
-      : `OpenClaw is available locally. Install/configure the local PrivateClaw provider for ${options.relayBaseUrl} now?`,
+      : status.privateClawPluginPresent
+        ? `OpenClaw is available locally. Update/configure the local PrivateClaw provider for ${options.relayBaseUrl} now?`
+        : `OpenClaw is available locally. Install/configure the local PrivateClaw provider for ${options.relayBaseUrl} now?`,
   );
 
   if (!configureNow) {
@@ -459,11 +526,11 @@ export async function offerRelayProviderSetup(
   );
   if (!refreshedStatus.privateClawCommandAvailable) {
     throw new RelayCliUserError(
-      "OpenClaw restarted, but `privateclaw` still does not appear in `openclaw commands list`. Confirm the gateway finished restarting cleanly, then rerun `privateclaw-relay`.",
+      `OpenClaw restarted, but \`privateclaw\` still does not respond to \`${PRIVATECLAW_VERIFICATION_COMMAND}\`. Confirm the gateway finished restarting cleanly, then rerun \`privateclaw-relay\`.`,
     );
   }
   options.onLog?.(
-    "[privateclaw-relay] Verified `privateclaw` is now available via `openclaw commands list`.",
+    `[privateclaw-relay] Verified \`privateclaw\` is now available via \`${PRIVATECLAW_VERIFICATION_COMMAND}\`.`,
   );
   for (const line of plan.verificationNotes) {
     options.onLog?.(line);

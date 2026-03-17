@@ -64,7 +64,7 @@ privateclaw-relay --web --public tailscale
 ```
 
 If the required `tailscale` or `cloudflared` CLI is missing, `privateclaw-relay` prints platform-aware install commands. In an interactive terminal it can also offer to run the supported install/setup commands for you before retrying the tunnel startup.
-After the relay gets a public URL, it also prints the exact `openclaw` commands needed to point PrivateClaw at that relay. If `openclaw` is installed locally, the CLI can offer to run the local provider install/enable/config flow, restart the OpenClaw gateway, verify that `privateclaw` is now registered, and then optionally start a new group pairing. When `--web` is enabled, it can open the bundled web chat with the fresh invite prefilled.
+After the relay gets a public URL, it also prints the exact `openclaw` commands needed to point PrivateClaw at that relay. If `openclaw` is installed locally, the CLI can offer to run the local provider install-or-update/enable/config flow, restart the OpenClaw gateway, verify that `privateclaw` is now registered, and then optionally start a new group pairing. When `--web` is enabled, it can open the bundled web chat with the fresh invite prefilled.
 
 ## Tunnel notes
 

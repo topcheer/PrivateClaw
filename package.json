@@ -7,7 +7,7 @@
     "services/*"
   ],
   "scripts": {
-    "build": "npm run build --workspace @privateclaw/protocol && npm run build --workspace @privateclaw/relay-server && npm run build --workspace @privateclaw/privateclaw",
+    "build": "npm run build --workspace @privateclaw/protocol && npm run build --workspace @privateclaw/privateclaw-relay && npm run build --workspace @privateclaw/privateclaw",
     "docker:relay": "scripts/with-relay-env.sh docker compose up --build relay",
     "relay:promote": "node scripts/promote-relay-branch.mjs",
     "hooks:install": "git config core.hooksPath .githooks",
@@ -21,8 +21,8 @@
     "store:screenshots": "scripts/capture-store-screenshots.sh all",
     "store:screenshots:ios": "scripts/capture-store-screenshots.sh ios",
     "store:screenshots:android": "scripts/capture-store-screenshots.sh android",
-    "test": "npm run test --workspace @privateclaw/protocol && npm run test --workspace @privateclaw/relay-server && npm run test --workspace @privateclaw/privateclaw && (cd apps/privateclaw_app && flutter test)",
-    "dev:relay": "npm run dev --workspace @privateclaw/relay-server",
+    "test": "npm run test --workspace @privateclaw/protocol && npm run test --workspace @privateclaw/privateclaw-relay && npm run test --workspace @privateclaw/privateclaw && (cd apps/privateclaw_app && flutter test)",
+    "dev:relay": "npm run dev --workspace @privateclaw/privateclaw-relay",
     "demo:provider": "npm run demo --workspace @privateclaw/privateclaw",
     "ios:testflight": "cd apps/privateclaw_app/ios && fastlane beta",
     "ios:testflight:upload": "cd apps/privateclaw_app/ios && fastlane upload_beta",
@@ -48,10 +48,12 @@
     "android:metadata:ggai": "scripts/with-ggai-store-env.sh --cwd apps/privateclaw_app/android fastlane metadata",
     "publish:protocol": "npm publish --workspace @privateclaw/protocol --access public",
     "publish:protocol:dry-run": "npm publish --dry-run --workspace @privateclaw/protocol --access public",
+    "publish:relay": "npm publish --workspace @privateclaw/privateclaw-relay --access public",
+    "publish:relay:dry-run": "npm publish --dry-run --workspace @privateclaw/privateclaw-relay --access public",
     "publish:provider": "npm publish --workspace @privateclaw/privateclaw --access public",
     "publish:provider:dry-run": "npm publish --dry-run --workspace @privateclaw/privateclaw --access public",
-    "publish:npm": "npm run publish:protocol && npm run publish:provider",
-    "publish:npm:dry-run": "npm run publish:protocol:dry-run && npm run publish:provider:dry-run"
+    "publish:npm": "npm run publish:protocol && npm run publish:relay && npm run publish:provider",
+    "publish:npm:dry-run": "npm run publish:protocol:dry-run && npm run publish:relay:dry-run && npm run publish:provider:dry-run"
   },
   "devDependencies": {
     "@types/node": "^24.7.2",

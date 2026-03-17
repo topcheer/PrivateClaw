@@ -1,20 +1,14 @@
-import { loadRelayConfig } from "./config.js";
-import { createRelayServer } from "./relay-server.js";
+#!/usr/bin/env node
 
-const relayServer = createRelayServer(loadRelayConfig());
-const { url } = await relayServer.start();
+import { RelayCliUserError } from "./cli-error.js";
+import { runRelayCli } from "./relay-cli.js";
 
-console.log(`[privateclaw-relay] listening on ${url}`);
-
-async function shutdown(signal: string): Promise<void> {
-  console.log(`[privateclaw-relay] received ${signal}, shutting down`);
-  await relayServer.stop();
-  process.exit(0);
+try {
+  await runRelayCli(process.argv.slice(2));
+} catch (error) {
+  if (error instanceof RelayCliUserError) {
+    console.error(error.message);
+    process.exit(1);
+  }
+  throw error;
 }
-
-process.on("SIGINT", () => {
-  void shutdown("SIGINT");
-});
-process.on("SIGTERM", () => {
-  void shutdown("SIGTERM");
-});

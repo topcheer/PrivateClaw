@@ -24,7 +24,7 @@ For Android closed alpha, Google Play only grants access after the tester has jo
 
 The repository contains:
 
-- `services/relay-server`: a blind WebSocket relay for encrypted session traffic.
+- `services/relay-server`: the blind WebSocket relay source, published as `@privateclaw/privateclaw-relay`.
 - `packages/privateclaw-provider`: the OpenClaw-facing provider runtime and plugin package published as `@privateclaw/privateclaw`.
 - `packages/privateclaw-protocol`: the shared invite, envelope, and control-message types.
 - `apps/privateclaw_app`: the Flutter mobile client.
@@ -251,7 +251,14 @@ For a direct Node.js run:
 
 ```bash
 npm run dev:relay
+npx @privateclaw/privateclaw-relay
+privateclaw-relay --public cloudflare
+privateclaw-relay --public tailscale
 ```
+
+The published relay package exposes the `privateclaw-relay` binary, so you can boot a local relay without cloning the whole repository. Adding `--public cloudflare` starts a temporary Cloudflare quick tunnel, and `--public tailscale` enables Tailscale Funnel for the relay port. If the default local port `8787` is already in use, the CLI automatically retries the next free port and prints the final listening URL.
+If `tailscale` or `cloudflared` is missing, the CLI prints OS-aware install commands and, in an interactive terminal on supported setups, can offer to install/configure the dependency before retrying the public tunnel.
+After a public relay URL is ready, the CLI also prints the exact OpenClaw + PrivateClaw provider setup commands. If `openclaw` is available locally, it can offer to run the local provider install/enable/config flow for you before reminding you to restart the gateway/service.
 
 ### 3. Link the local provider checkout into OpenClaw
 
@@ -348,6 +355,20 @@ docker run --rm \
   ghcr.io/topcheer/privateclaw-relay:main
 ```
 
+### Published relay npm package
+
+The relay is also packaged for npm as `@privateclaw/privateclaw-relay`.
+
+```bash
+npm install -g @privateclaw/privateclaw-relay
+privateclaw-relay
+privateclaw-relay --public cloudflare
+privateclaw-relay --public tailscale
+```
+
+`--public cloudflare` relies on a local `cloudflared` install and creates a temporary quick tunnel. `--public tailscale` relies on a local `tailscale` install plus Funnel being enabled for your tailnet. If `8787` is already occupied during local startup, `privateclaw-relay` automatically retries the next free port.
+When either tunnel CLI is missing, `privateclaw-relay` now prints OS-aware install guidance and can offer an interactive install flow on supported platforms.
+
 ### Relay environment variables
 
 The relay reads the following variables directly from the process environment:
@@ -419,9 +440,10 @@ flutter build ios --simulator
 
 - npm provider package: `@privateclaw/privateclaw`
 - npm protocol package: `@privateclaw/protocol`
+- relay npm package: `@privateclaw/privateclaw-relay`
 - relay container image: `ghcr.io/topcheer/privateclaw-relay`
 
-Maintainership note: `@privateclaw/privateclaw` pulls `@privateclaw/protocol` during plugin installation, so publish the protocol package first:
+Maintainership note: `@privateclaw/privateclaw` pulls `@privateclaw/protocol` during plugin installation, and the relay package ships alongside the provider on version tags, so the usual release order is `protocol -> relay -> provider`:
 
 ```bash
 npm run publish:npm:dry-run

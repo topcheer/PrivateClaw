@@ -1,11 +1,18 @@
 {
-  "name": "@privateclaw/relay-server",
-  "version": "0.1.0",
-  "description": "Blind WebSocket relay for PrivateClaw encrypted sessions",
+  "name": "@privateclaw/privateclaw-relay",
+  "version": "0.1.3",
+  "description": "Blind WebSocket relay for PrivateClaw encrypted sessions with local CLI startup and optional Tailscale Funnel or Cloudflare Tunnel exposure",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "files": ["dist"],
+  "bin": {
+    "privateclaw-relay": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    ".env.example",
+    "README.md"
+  ],
   "license": "MIT",
   "engines": {
     "node": ">=20"
@@ -14,11 +21,25 @@
     "build": "tsc -p tsconfig.json",
     "dev": "tsx src/cli.ts",
     "start": "node dist/cli.js",
+    "prepack": "npm run build",
     "test": "node --import tsx --test src/**/*.test.ts"
   },
   "dependencies": {
-    "@privateclaw/protocol": "^0.1.0",
+    "@privateclaw/protocol": "^0.1.2",
     "ioredis": "^5.8.1",
     "ws": "^8.18.3"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/topcheer/PrivateClaw.git",
+    "directory": "services/relay-server"
+  },
+  "homepage": "https://github.com/topcheer/PrivateClaw/tree/main/services/relay-server",
+  "bugs": {
+    "url": "https://github.com/topcheer/PrivateClaw/issues"
   }
 }

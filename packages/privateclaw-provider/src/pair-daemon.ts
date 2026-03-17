@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,10 +29,44 @@ interface PairDaemonHandoffSuccessResult {
 
 type PairDaemonHandoffResult = PairDaemonHandoffSuccessResult | PairDaemonErrorResult;
 
-async function resolveCliInvocation(
+async function pathExists(filePath: string): Promise<boolean> {
+  try {
+    await access(filePath, constants.F_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function resolveBuiltCliCandidate(cliPath: string): string | null {
+  if (path.extname(cliPath) !== ".ts") {
+    return null;
+  }
+
+  const sourceDir = path.dirname(cliPath);
+  if (path.basename(sourceDir) !== "src") {
+    return null;
+  }
+
+  return path.join(
+    path.dirname(sourceDir),
+    "dist",
+    `${path.basename(cliPath, ".ts")}.js`,
+  );
+}
+
+export async function resolveCliInvocation(
   cliModuleUrl: string,
 ): Promise<{ command: string; args: string[] }> {
   const cliPath = fileURLToPath(cliModuleUrl);
+  const builtCliPath = resolveBuiltCliCandidate(cliPath);
+  if (builtCliPath && (await pathExists(builtCliPath))) {
+    return {
+      command: process.execPath,
+      args: [builtCliPath],
+    };
+  }
+
   return path.extname(cliPath) === ".ts"
     ? {
         command: process.execPath,

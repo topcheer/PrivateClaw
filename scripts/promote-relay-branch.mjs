@@ -11,21 +11,20 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, "..");
 
 function printUsage() {
-  console.log(`Usage: npm run relay:promote -- [options] [commit-ish ...]
+  console.log(`Usage: npm run relay:promote -- [options] [source-ref]
 
-Cherry-pick relay-related commits onto the deployment branch and push it to the configured remotes.
-When no commit is provided, the command promotes HEAD.
+Force-sync the deployment branch to a chosen source ref and push it to the configured remotes.
+When no source ref is provided, the command syncs HEAD.
 
 Options:
   --branch NAME         Target branch name (default: railway-relay)
-  --base-remote REMOTE  Remote used to fetch the latest target branch (default: origin)
+  --base-remote REMOTE  Remote used to inspect the latest target branch tip (default: origin)
   --remote REMOTE       Remote to push after promotion; repeatable (default: origin, upstream)
   --help                Show this help message
 
 Examples:
   npm run relay:promote
   npm run relay:promote -- 0123abcd
-  npm run relay:promote -- 0123abcd 89ef4567
   npm run relay:promote -- --branch staging-relay --remote origin -- 0123abcd
 `);
 }
@@ -34,7 +33,7 @@ function parseArgs(argv) {
   let branch = "railway-relay";
   let baseRemote = "origin";
   const remotes = ["origin", "upstream"];
-  const commits = [];
+  const sourceRefs = [];
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -75,7 +74,7 @@ function parseArgs(argv) {
     }
 
     if (arg === "--") {
-      commits.push(...argv.slice(index + 1));
+      sourceRefs.push(...argv.slice(index + 1));
       break;
     }
 
@@ -83,14 +82,20 @@ function parseArgs(argv) {
       throw new Error(`Unknown option: ${arg}`);
     }
 
-    commits.push(arg);
+    sourceRefs.push(arg);
+  }
+
+  if (sourceRefs.length > 1) {
+    throw new Error(
+      "relay:promote now accepts at most one source ref because it fully syncs the deployment branch instead of cherry-picking commits.",
+    );
   }
 
   return {
     branch,
     baseRemote,
     remotes: [...new Set(remotes)],
-    commits: commits.length > 0 ? commits : ["HEAD"],
+    sourceRef: sourceRefs[0] ?? "HEAD",
   };
 }
 
@@ -160,6 +165,28 @@ function resolveBaseRef(branch, baseRemote) {
   return "HEAD";
 }
 
+function refreshRemoteBranch(branch, remote) {
+  ensureRemoteExists(remote);
+
+  const fetchResult = spawnSync("git", ["fetch", remote, branch], {
+    cwd: repoRoot,
+    stdio: "inherit",
+    encoding: "utf8",
+  });
+
+  if (fetchResult.error) {
+    throw fetchResult.error;
+  }
+
+  return refExists(`refs/remotes/${remote}/${branch}`);
+}
+
+function resolveSourceRef(sourceRef) {
+  return runGit(["rev-parse", "--verify", `${sourceRef}^{commit}`], {
+    captureStdout: true,
+  });
+}
+
 function main() {
   const topLevel = runGit(["rev-parse", "--show-toplevel"], {
     captureStdout: true,
@@ -169,22 +196,24 @@ function main() {
     throw new Error(`Expected repository root ${repoRoot}, got ${topLevel}`);
   }
 
-  const { branch, baseRemote, remotes, commits } = parseArgs(process.argv.slice(2));
+  const { branch, baseRemote, remotes, sourceRef } = parseArgs(process.argv.slice(2));
   const baseRef = resolveBaseRef(branch, baseRemote);
+  const resolvedSourceRef = resolveSourceRef(sourceRef);
   const tempDir = mkdtempSync(path.join(os.tmpdir(), "privateclaw-relay-"));
   let worktreeAdded = false;
   let cleanupWorktree = false;
 
-  console.log(`Promoting ${commits.join(", ")} onto ${branch} from ${baseRef}`);
+  console.log(`Syncing ${branch} to ${resolvedSourceRef} (source: ${sourceRef}, current target base: ${baseRef})`);
 
   try {
-    runGit(["worktree", "add", "--detach", tempDir, baseRef]);
+    runGit(["worktree", "add", "--detach", tempDir, resolvedSourceRef]);
     worktreeAdded = true;
-    runGit(["cherry-pick", ...commits], { cwd: tempDir });
 
     for (const remote of remotes) {
-      ensureRemoteExists(remote);
-      runGit(["push", remote, `HEAD:refs/heads/${branch}`], { cwd: tempDir });
+      const hasRemoteBranch = refreshRemoteBranch(branch, remote);
+      const pushArgs = ["push", remote, `HEAD:refs/heads/${branch}`];
+      pushArgs.push(hasRemoteBranch ? "--force-with-lease" : "--force");
+      runGit(pushArgs, { cwd: tempDir });
     }
 
     cleanupWorktree = true;

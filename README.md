@@ -334,12 +334,12 @@ If your Railway relay service is pinned to the `railway-relay` branch, you can p
 npm run relay:promote
 ```
 
-That command cherry-picks the current `HEAD` onto `railway-relay` inside a temporary `git worktree`, then pushes the branch to both `origin` and `upstream`.
+That command checks out the chosen source ref in a temporary `git worktree`, then force-syncs `railway-relay` to that exact commit on both `origin` and `upstream`.
 
-To promote specific relay commits instead of `HEAD`:
+To sync `railway-relay` to a specific committed ref instead of `HEAD`:
 
 ```bash
-npm run relay:promote -- <commit> [<commit>...]
+npm run relay:promote -- <commit>
 ```
 
 Set the Railway relay service source branch to `railway-relay`, and keep regular app, site, and provider work on `main`.

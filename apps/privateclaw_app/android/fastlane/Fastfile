@@ -99,6 +99,7 @@ platform :android do
   lane :promote_closed do
     upload_to_play_store(
       package_name: "gg.ai.privateclaw",
+      version_code: privateclaw_build_number.to_i,
       track: privateclaw_play_promote_from_track,
       track_promote_to: privateclaw_play_closed_track,
       release_status: privateclaw_play_release_status("completed"),

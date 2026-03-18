@@ -28,6 +28,7 @@ type OpenAICompatibleRole = "system" | "user" | "assistant";
 function normalizeRole(role: PrivateClawConversationTurn["role"]): OpenAICompatibleRole {
   switch (role) {
     case "assistant":
+    case "thinking":
       return "assistant";
     case "system":
       return "system";

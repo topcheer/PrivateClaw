@@ -59,6 +59,52 @@ function parseParticipants(value) {
     }));
 }
 
+function parseThinkingStatus(value) {
+  switch (value) {
+    case "started":
+    case "streaming":
+    case "completed":
+    case "failed":
+      return value;
+    default:
+      return "completed";
+  }
+}
+
+function parseThinkingEntryKind(value) {
+  switch (value) {
+    case "thought":
+    case "action":
+    case "result":
+    case "error":
+      return value;
+    default:
+      return null;
+  }
+}
+
+function parseThinkingEntries(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((item) => item && typeof item === "object")
+    .flatMap((item) => {
+      const kind = parseThinkingEntryKind(item.kind);
+      if (!kind) {
+        return [];
+      }
+      return [{
+        id: typeof item.id === "string" ? item.id : createMessageId("thinking-entry"),
+        kind,
+        title: typeof item.title === "string" ? item.title : "",
+        text: typeof item.text === "string" ? item.text : "",
+        sentAt: normalizeTimestamp(item.sentAt),
+        toolName: typeof item.toolName === "string" ? item.toolName : null,
+      }];
+    });
+}
+
 export class PrivateClawWebSessionClient extends EventTarget {
   constructor(invite, { identity }) {
     super();
@@ -263,6 +309,7 @@ export class PrivateClawWebSessionClient extends EventTarget {
           appVersion: "privateclaw_web/0.1.0",
           appId: this.identity.appId,
           deviceLabel: "PrivateClaw Web",
+          supportsThinkingTrace: true,
           ...(this.identity.displayName ? { displayName: this.identity.displayName } : {}),
           sentAt: new Date().toISOString(),
         });
@@ -330,6 +377,23 @@ export class PrivateClawWebSessionClient extends EventTarget {
             replyTo: typeof payload.replyTo === "string" ? payload.replyTo : null,
             isPending: payload.pending === true,
             attachments: parseAttachments(payload.attachments),
+          },
+        });
+        return;
+      }
+      case "thinking_message": {
+        this.#dispatch("message", {
+          message: {
+            id: typeof payload.messageId === "string" ? payload.messageId : this.#nextLocalMessageId(),
+            sender: "assistant",
+            text: "",
+            sentAt: normalizeTimestamp(payload.sentAt),
+            replyTo: typeof payload.replyTo === "string" ? payload.replyTo : null,
+            isPending: false,
+            attachments: [],
+            thinkingStatus: parseThinkingStatus(payload.status),
+            thinkingSummary: typeof payload.summary === "string" ? payload.summary : "",
+            thinkingEntries: parseThinkingEntries(payload.entries),
           },
         });
         return;
@@ -429,6 +493,7 @@ export class PrivateClawWebSessionClient extends EventTarget {
           appVersion: "privateclaw_web/0.1.0",
           appId: this.identity.appId,
           deviceLabel: "PrivateClaw Web",
+          supportsThinkingTrace: true,
           ...(this.identity.displayName ? { displayName: this.identity.displayName } : {}),
           sentAt: new Date().toISOString(),
         });

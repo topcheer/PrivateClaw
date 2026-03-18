@@ -1,6 +1,10 @@
-import type { PrivateClawAttachment } from "@privateclaw/protocol";
+import type {
+  PrivateClawAttachment,
+  PrivateClawThinkingEntry,
+} from "@privateclaw/protocol";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -10,6 +14,7 @@ import type {
   BridgeResponse,
   PrivateClawAgentBridge,
   PrivateClawAudioTranscriptionRequest,
+  PrivateClawThinkingTraceSnapshot,
   PrivateClawVerboseController,
 } from "../types.js";
 
@@ -51,6 +56,8 @@ interface OpenClawSessionLogCursor {
 
 interface OpenClawSessionLogEntry {
   type?: string;
+  id?: string;
+  timestamp?: string;
   message?: {
     role?: string;
     toolName?: string;
@@ -65,8 +72,16 @@ interface OpenClawSessionLogEntry {
   };
 }
 
+interface PrivateClawStructuredMessageAttachment {
+  name?: string;
+  mimeType?: string;
+  dataBase64?: string;
+  filePath?: string;
+}
+
 interface PrivateClawStructuredMessage {
   text?: string | null;
+  attachments?: PrivateClawStructuredMessageAttachment[];
 }
 
 interface PrivateClawStructuredResponse {
@@ -85,10 +100,23 @@ interface NormalizedBridgeMessage {
   readonly attachments?: PrivateClawAttachment[];
 }
 
+interface ExtractedAssistantDisplayResult {
+  readonly result: NormalizedBridgeResult;
+  readonly isStructured: boolean;
+}
+
 interface CollectedSessionMessages {
   readonly assistantMessages: NormalizedBridgeMessage[];
+  readonly structuredAssistantMessages: NormalizedBridgeMessage[];
   readonly assistantData?: unknown;
   readonly artifactMessages: NormalizedBridgeMessage[];
+  readonly nextCursor: OpenClawSessionLogCursor;
+  readonly traceEntries: PrivateClawThinkingEntry[];
+}
+
+interface SessionLogEntriesResult {
+  readonly entries: OpenClawSessionLogEntry[];
+  readonly nextCursor: OpenClawSessionLogCursor;
 }
 
 class OpenClawAgentNoDisplayPayloadError extends Error {
@@ -137,6 +165,9 @@ const XML_ENTITY_PATTERN = /&(amp|lt|gt|quot|apos|#\d+|#x[0-9a-f]+);/giu;
 const PRIVATECLAW_RESPONSE_CONTRACT_VERSION = 1;
 const PRIVATECLAW_RESPONSE_TAG_START = "<privateclaw-response>";
 const PRIVATECLAW_RESPONSE_TAG_END = "</privateclaw-response>";
+const LIVE_TRACE_POLL_INTERVAL_MS = 150;
+const MAX_TRACE_ENTRY_CHARS = 3200;
+const MAX_TRACE_SUMMARY_CHARS = 180;
 const DOCX_MIME_TYPES = new Set<string>([
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ]);
@@ -153,9 +184,14 @@ const TEXT_LIKE_MIME_TYPES = new Set<string>([
   "image/svg+xml",
 ]);
 
-export function parseOpenClawAgentOutput(stdout: string): BridgeResponse {
+export function parseOpenClawAgentOutput(
+  stdout: string,
+  options?: {
+    workspaceDir?: string;
+  },
+): BridgeResponse {
   const parsed = parseOpenClawAgentJson(stdout);
-  return parseOpenClawAgentResult(parsed);
+  return parseOpenClawAgentResult(parsed, options);
 }
 
 export function resolveOpenClawLaunchCommand(options: {
@@ -192,15 +228,34 @@ export function resolveOpenClawLaunchCommand(options: {
 }
 
 function parseOpenClawAgentJson(stdout: string): OpenClawAgentJsonResult {
-  return JSON.parse(stdout) as OpenClawAgentJsonResult;
+  const trimmed = stdout.trim();
+  try {
+    return JSON.parse(trimmed) as OpenClawAgentJsonResult;
+  } catch (error) {
+    const embeddedPayload = extractEmbeddedJsonPayload(trimmed);
+    if (!embeddedPayload) {
+      throw error;
+    }
+    return JSON.parse(embeddedPayload) as OpenClawAgentJsonResult;
+  }
 }
 
-function parseOpenClawAgentResult(parsed: OpenClawAgentJsonResult): BridgeResponse {
-  const result = extractDisplayResult(parsed);
+function parseOpenClawAgentResult(
+  parsed: OpenClawAgentJsonResult,
+  options?: {
+    workspaceDir?: string;
+  },
+): BridgeResponse {
+  const result = extractDisplayResult(parsed, options);
   return toBridgeResponse(result.messages, result.data);
 }
 
-function extractDisplayResult(parsed: OpenClawAgentJsonResult): NormalizedBridgeResult {
+function extractDisplayResult(
+  parsed: OpenClawAgentJsonResult,
+  options?: {
+    workspaceDir?: string;
+  },
+): NormalizedBridgeResult {
   const payloads = parsed.result?.payloads ?? parsed.payloads ?? [];
   const hasAlternatePayloadShape = !parsed.status && payloads.length > 0;
   if (parsed.status && parsed.status !== "ok") {
@@ -219,7 +274,7 @@ function extractDisplayResult(parsed: OpenClawAgentJsonResult): NormalizedBridge
       if (typeof candidate !== "string") {
         return [];
       }
-      const result = parseStructuredResponseResult(candidate);
+      const result = parseStructuredResponseResult(candidate, options);
       return result ? [result] : [];
     }),
   );
@@ -247,6 +302,7 @@ function extractDisplayResult(parsed: OpenClawAgentJsonResult): NormalizedBridge
 }
 
 export class OpenClawAgentBridge implements PrivateClawAgentBridge {
+  readonly supportsThinkingTrace = true;
   private readonly executable: string;
   private readonly executableArgs: string[];
   private readonly executableUsesShell: boolean;
@@ -285,6 +341,9 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
     sessionId: string;
     message: string;
     attachments?: ReadonlyArray<PrivateClawAttachment>;
+    onThinkingTrace?: (
+      snapshot: PrivateClawThinkingTraceSnapshot,
+    ) => void | Promise<void>;
   }): Promise<BridgeResponse> {
     const promptMessage = await this.buildPromptMessage(
       params.sessionId,
@@ -297,6 +356,9 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
     return this.executePrompt(params.sessionId, promptMessage, {
       includeArtifacts: true,
       noDisplayFallbackMessage: params.message,
+      ...(params.onThinkingTrace
+        ? { onThinkingTrace: params.onThinkingTrace }
+        : {}),
     });
   }
 
@@ -341,14 +403,66 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
     options?: {
       includeArtifacts?: boolean;
       noDisplayFallbackMessage?: string;
+      onThinkingTrace?: (
+        snapshot: PrivateClawThinkingTraceSnapshot,
+      ) => void | Promise<void>;
     },
   ): Promise<BridgeResponse> {
     const args = this.buildArgs(sessionId, promptMessage);
     this.verboseLog(
       `exec_start session=${sessionId} promptChars=${promptMessage.length} argCount=${args.length} includeArtifacts=${options?.includeArtifacts !== false} agent=${JSON.stringify(this.options.agentId ?? "default")} channel=${JSON.stringify(this.options.channel ?? "default")} local=${this.options.local === true} thinking=${JSON.stringify(this.options.thinking ?? "default")} timeoutSeconds=${this.options.timeoutSeconds ?? "default"}`,
     );
-    const sessionLogCursor = await this.captureSessionLogCursor(sessionId);
-    const stdout = await this.execOpenClaw(args);
+    let sessionLogCursor = await this.captureSessionLogCursor(sessionId);
+    let latestTraceEntries: PrivateClawThinkingEntry[] = [];
+    const emitThinkingTrace = async (
+      newEntries: ReadonlyArray<PrivateClawThinkingEntry>,
+    ): Promise<void> => {
+      if (!options?.onThinkingTrace || newEntries.length === 0) {
+        return;
+      }
+      latestTraceEntries = [...latestTraceEntries, ...newEntries];
+      await options.onThinkingTrace({
+        entries: latestTraceEntries.map((entry) => ({ ...entry })),
+        sentAt: latestTraceEntries[latestTraceEntries.length - 1]?.sentAt ?? nowIso(),
+        summary: summarizeThinkingTrace(latestTraceEntries),
+      });
+    };
+    const stdoutPromise = this.execOpenClaw(args);
+    if (options?.onThinkingTrace) {
+      let pending = true;
+      void stdoutPromise.then(
+        () => {
+          pending = false;
+        },
+        () => {
+          pending = false;
+        },
+      );
+      while (pending) {
+        await delay(LIVE_TRACE_POLL_INTERVAL_MS);
+        if (!pending) {
+          break;
+        }
+        const liveMessages = await this.collectSessionMessages(sessionId, sessionLogCursor, {
+          allowTrailingPartial: false,
+        });
+        sessionLogCursor = liveMessages.nextCursor;
+        await emitThinkingTrace(liveMessages.traceEntries);
+      }
+    }
+    let stdout: string;
+    try {
+      stdout = await stdoutPromise;
+    } catch (error) {
+      if (options?.onThinkingTrace) {
+        const finalTraceDelta = await this.collectSessionMessages(sessionId, sessionLogCursor, {
+          allowTrailingPartial: true,
+        });
+        sessionLogCursor = finalTraceDelta.nextCursor;
+        await emitThinkingTrace(finalTraceDelta.traceEntries);
+      }
+      throw error;
+    }
     this.verboseLog(`exec_complete session=${sessionId} stdoutChars=${stdout.length}`);
     let parsed: OpenClawAgentJsonResult | undefined;
     let parseError: unknown;
@@ -368,7 +482,10 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
         `openclaw_agent_parse_failed session=${sessionId} stdoutChars=${stdout.length} stdoutPreview=${JSON.stringify(stdout.slice(0, 400))}`,
       );
     }
-    const collectedMessages = await this.collectSessionMessages(sessionId, sessionLogCursor);
+    const collectedMessages = await this.collectSessionMessages(sessionId, sessionLogCursor, {
+      allowTrailingPartial: true,
+    });
+    await emitThinkingTrace(collectedMessages.traceEntries);
     const recoveredMessages = [
       ...collectedMessages.assistantMessages,
       ...(options?.includeArtifacts === false ? [] : collectedMessages.artifactMessages),
@@ -386,13 +503,30 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
       throw parseError;
     }
     try {
-      const response = parseOpenClawAgentResult(parsed);
+      const response = parseOpenClawAgentResult(parsed, {
+        workspaceDir: this.workspaceDir,
+      });
+      const authoritativeResponse =
+        collectedMessages.structuredAssistantMessages.length > 0
+          ? toBridgeResponse(
+              collectedMessages.structuredAssistantMessages,
+              collectedMessages.assistantData,
+            )
+          : response;
+      if (collectedMessages.structuredAssistantMessages.length > 0) {
+        this.log(
+          `session_log_structured_override session=${sessionId} directMessages=${typeof response === "string" ? 1 : response.messages.length} recoveredMessages=${collectedMessages.structuredAssistantMessages.length}`,
+        );
+      }
       this.verboseLog(
-        `response_ready session=${sessionId} directMessages=${typeof response === "string" ? 1 : response.messages.length} artifactMessages=${options?.includeArtifacts === false ? 0 : collectedMessages.artifactMessages.length}`,
+        `response_ready session=${sessionId} directMessages=${typeof response === "string" ? 1 : response.messages.length} authoritativeMessages=${typeof authoritativeResponse === "string" ? 1 : authoritativeResponse.messages.length} artifactMessages=${options?.includeArtifacts === false ? 0 : collectedMessages.artifactMessages.length}`,
       );
       return options?.includeArtifacts === false
-        ? response
-        : mergeBridgeResponses(response, collectedMessages.artifactMessages);
+        ? authoritativeResponse
+        : mergeBridgeResponses(
+            authoritativeResponse,
+            collectedMessages.artifactMessages,
+          );
     } catch (error) {
       if (recoveredMessages.length > 0) {
         this.log(
@@ -430,47 +564,49 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
   private async collectSessionMessages(
     sessionId: string,
     cursor: OpenClawSessionLogCursor,
+    options?: {
+      allowTrailingPartial?: boolean;
+    },
   ): Promise<CollectedSessionMessages> {
-    const sessionLogPath = cursor.path ?? (await this.resolveSessionLogPath(sessionId));
-    if (!sessionLogPath) {
-      this.log(`artifact_log_missing session=${sessionId}`);
+    const { entries, nextCursor } = await this.readSessionLogEntries(sessionId, cursor, options);
+    if (entries.length === 0) {
+      if (!nextCursor.path) {
+        this.log(`artifact_log_missing session=${sessionId}`);
+      }
       return {
         assistantMessages: [],
+        structuredAssistantMessages: [],
         artifactMessages: [],
+        nextCursor,
+        traceEntries: [],
       };
     }
 
-    const sessionLogBuffer = await fs.readFile(sessionLogPath);
-    const deltaBuffer =
-      cursor.path === sessionLogPath
-        ? sessionLogBuffer.subarray(Math.min(cursor.sizeBytes, sessionLogBuffer.length))
-        : sessionLogBuffer;
-    if (deltaBuffer.length === 0) {
-      return {
-        assistantMessages: [],
-        artifactMessages: [],
-      };
-    }
-
-    const entries = deltaBuffer
-      .toString("utf8")
-      .split(/\r?\n/gu)
-      .map((line) => line.trim())
-      .filter((line) => line !== "")
-      .map((line) => JSON.parse(line) as OpenClawSessionLogEntry);
-
-    const assistantResults = entries.map((entry) => extractAssistantDisplayResult(entry));
-    const assistantMessages = assistantResults.flatMap((result) => result.messages);
+    const assistantResults = entries.map((entry) =>
+      extractAssistantDisplayResult(entry, {
+        workspaceDir: this.workspaceDir,
+      }),
+    );
+    const assistantMessages = assistantResults.flatMap(
+      (result) => result.result.messages,
+    );
+    const structuredAssistantMessages = assistantResults
+      .filter((result) => result.isStructured)
+      .flatMap((result) => result.result.messages);
+    const traceEntries = entries.flatMap((entry) => {
+      const traceEntry = extractThinkingTraceEntry(entry);
+      return traceEntry ? [traceEntry] : [];
+    });
 
     const seenPaths = new Set<string>();
     const attachments: PrivateClawAttachment[] = [];
     for (const entry of entries) {
       for (const mediaPath of extractMediaPaths(entry)) {
-        const normalizedPath = normalizeMediaPath(mediaPath);
+        const normalizedPath = normalizeMediaPath(mediaPath, this.workspaceDir);
         if (seenPaths.has(normalizedPath)) {
           continue;
         }
-        const attachment = await buildAttachmentFromMediaPath(normalizedPath);
+        const attachment = await buildAttachmentFromMediaPath(normalizedPath, this.workspaceDir);
         this.log(
           `artifact_recovered session=${sessionId} mediaPath=${JSON.stringify(mediaPath)} normalizedPath=${JSON.stringify(normalizedPath)} name=${JSON.stringify(attachment.name)} mimeType=${attachment.mimeType} sizeBytes=${attachment.sizeBytes}`,
         );
@@ -483,26 +619,99 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
       attachments.length > 0
         ? [{ text: "", attachments } satisfies NormalizedBridgeMessage]
         : [];
-    const assistantData = combineStructuredData(assistantResults).data;
+    const assistantData = combineStructuredData(
+      assistantResults
+        .filter((result) => result.isStructured)
+        .map((result) => result.result),
+    ).data;
 
     if (attachments.length === 0) {
       this.log(
-        `artifact_scan_complete session=${sessionId} entries=${entries.length} assistantRecovered=${assistantMessages.length} recovered=0 logPath=${JSON.stringify(sessionLogPath)}`,
+        `artifact_scan_complete session=${sessionId} entries=${entries.length} assistantRecovered=${assistantMessages.length} recovered=0 logPath=${JSON.stringify(nextCursor.path ?? "missing")}`,
       );
       return {
         assistantMessages,
+        structuredAssistantMessages,
         ...(assistantData !== undefined ? { assistantData } : {}),
         artifactMessages,
+        nextCursor,
+        traceEntries,
       };
     }
 
     this.log(
-      `artifact_scan_complete session=${sessionId} entries=${entries.length} assistantRecovered=${assistantMessages.length} recovered=${attachments.length} logPath=${JSON.stringify(sessionLogPath)}`,
+      `artifact_scan_complete session=${sessionId} entries=${entries.length} assistantRecovered=${assistantMessages.length} recovered=${attachments.length} logPath=${JSON.stringify(nextCursor.path ?? "missing")}`,
     );
     return {
       assistantMessages,
+      structuredAssistantMessages,
       ...(assistantData !== undefined ? { assistantData } : {}),
       artifactMessages,
+      nextCursor,
+      traceEntries,
+    };
+  }
+
+  private async readSessionLogEntries(
+    sessionId: string,
+    cursor: OpenClawSessionLogCursor,
+    options?: {
+      allowTrailingPartial?: boolean;
+    },
+  ): Promise<SessionLogEntriesResult> {
+    const sessionLogPath = cursor.path ?? (await this.resolveSessionLogPath(sessionId));
+    if (!sessionLogPath) {
+      return {
+        entries: [],
+        nextCursor: cursor,
+      };
+    }
+
+    const sessionLogBuffer = await fs.readFile(sessionLogPath);
+    const startOffset =
+      cursor.path === sessionLogPath
+        ? Math.min(cursor.sizeBytes, sessionLogBuffer.length)
+        : 0;
+    const deltaBuffer = sessionLogBuffer.subarray(startOffset);
+    if (deltaBuffer.length === 0) {
+      return {
+        entries: [],
+        nextCursor: {
+          path: sessionLogPath,
+          sizeBytes: sessionLogBuffer.length,
+        },
+      };
+    }
+
+    const deltaText = deltaBuffer.toString("utf8");
+    let parseText = deltaText;
+    let nextSize = sessionLogBuffer.length;
+    if (!options?.allowTrailingPartial && !deltaText.endsWith("\n")) {
+      const lastNewlineIndex = deltaText.lastIndexOf("\n");
+      if (lastNewlineIndex < 0) {
+        return {
+          entries: [],
+          nextCursor: {
+            path: sessionLogPath,
+            sizeBytes: startOffset,
+          },
+        };
+      }
+      parseText = deltaText.slice(0, lastNewlineIndex + 1);
+      nextSize = startOffset + Buffer.byteLength(parseText, "utf8");
+    }
+
+    const entries = parseText
+      .split(/\r?\n/gu)
+      .map((line) => line.trim())
+      .filter((line) => line !== "")
+      .map((line) => JSON.parse(line) as OpenClawSessionLogEntry);
+    return {
+      entries,
+      nextCursor: {
+        path: sessionLogPath,
+        sizeBytes: nextSize,
+      },
     };
   }
 
@@ -831,17 +1040,80 @@ function mergeBridgeResponses(
   primary: BridgeResponse,
   supplemental: NormalizedBridgeMessage[],
 ): BridgeResponse {
-  if (supplemental.length === 0) {
+  const dedupedSupplemental = dedupeSupplementalMessages(primary, supplemental);
+  if (dedupedSupplemental.length === 0) {
     return primary;
   }
 
   return toBridgeResponse(
     [
       ...normalizeBridgeResponse(primary),
-      ...supplemental,
+      ...dedupedSupplemental,
     ],
     extractBridgeResponseData(primary),
   );
+}
+
+function dedupeSupplementalMessages(
+  primary: BridgeResponse,
+  supplemental: NormalizedBridgeMessage[],
+): NormalizedBridgeMessage[] {
+  if (supplemental.length === 0) {
+    return supplemental;
+  }
+
+  const seenInlineData = new Set<string>();
+  const seenUris = new Set<string>();
+  for (const message of normalizeBridgeResponse(primary)) {
+    for (const attachment of message.attachments ?? []) {
+      const inlineData = attachment.dataBase64?.trim();
+      if (inlineData) {
+        seenInlineData.add(
+          `${attachment.mimeType}:${attachment.sizeBytes}:${inlineData}`,
+        );
+      }
+      const uri = attachment.uri?.trim();
+      if (uri) {
+        seenUris.add(uri);
+      }
+    }
+  }
+
+  return supplemental.flatMap((message) => {
+    const dedupedAttachments = (message.attachments ?? []).filter((attachment) => {
+      const inlineData = attachment.dataBase64?.trim();
+      if (inlineData) {
+        const key = `${attachment.mimeType}:${attachment.sizeBytes}:${inlineData}`;
+        if (seenInlineData.has(key)) {
+          return false;
+        }
+        seenInlineData.add(key);
+        return true;
+      }
+
+      const uri = attachment.uri?.trim();
+      if (uri) {
+        if (seenUris.has(uri)) {
+          return false;
+        }
+        seenUris.add(uri);
+      }
+      return true;
+    });
+
+    if (message.text.trim() === "" && dedupedAttachments.length === 0) {
+      return [];
+    }
+
+    return [
+      {
+        text: message.text,
+        ...(dedupedAttachments.length > 0
+          ? { attachments: dedupedAttachments }
+          : {}),
+      } satisfies NormalizedBridgeMessage,
+    ];
+  });
 }
 
 function normalizeBridgeResponse(response: BridgeResponse): NormalizedBridgeMessage[] {
@@ -890,6 +1162,109 @@ function toBridgeResponse(
   };
 }
 
+function nowIso(): string {
+  return new Date().toISOString();
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function truncateThinkingTraceText(text: string): string {
+  if (text.length <= MAX_TRACE_ENTRY_CHARS) {
+    return text;
+  }
+  const hiddenChars = text.length - MAX_TRACE_ENTRY_CHARS;
+  return [
+    text.slice(0, MAX_TRACE_ENTRY_CHARS).trimEnd(),
+    "",
+    `… truncated ${hiddenChars} more characters`,
+  ].join("\n");
+}
+
+function truncateThinkingSummary(text: string): string {
+  const trimmed = text.trim();
+  if (trimmed.length <= MAX_TRACE_SUMMARY_CHARS) {
+    return trimmed;
+  }
+  return `${trimmed.slice(0, MAX_TRACE_SUMMARY_CHARS - 1).trimEnd()}…`;
+}
+
+function readEntryTextContent(entry: OpenClawSessionLogEntry): string {
+  return (entry.message?.content ?? [])
+    .flatMap((contentItem) =>
+      contentItem.type === "text" && typeof contentItem.text === "string"
+        ? [contentItem.text.trim()]
+        : [],
+    )
+    .filter((text) => text !== "")
+    .join("\n\n");
+}
+
+function summarizeThinkingTrace(entries: ReadonlyArray<PrivateClawThinkingEntry>): string {
+  const latestEntry = entries[entries.length - 1];
+  if (!latestEntry) {
+    return "";
+  }
+  const firstLine =
+    latestEntry.text
+      .split(/\r?\n/gu)
+      .map((line: string) => line.trim())
+      .find((line: string) => line !== "") ??
+    latestEntry.title;
+  if (latestEntry.kind === "action" && latestEntry.toolName) {
+    return truncateThinkingSummary(`${latestEntry.toolName}: ${firstLine}`);
+  }
+  return truncateThinkingSummary(firstLine);
+}
+
+function extractThinkingTraceEntry(
+  entry: OpenClawSessionLogEntry,
+): PrivateClawThinkingEntry | undefined {
+  if (entry.type !== "message" || !entry.message) {
+    return undefined;
+  }
+  const entryId = entry.id?.trim() || `trace-${randomUUID()}`;
+  const sentAt = entry.timestamp?.trim() || nowIso();
+  if (entry.message.role === "assistant") {
+    const text = truncateThinkingTraceText(
+      stripStructuredResponseBlock(readEntryTextContent(entry)),
+    );
+    if (text === "") {
+      return undefined;
+    }
+    return {
+      id: entryId,
+      kind: entry.message.isError ? "error" : "thought",
+      title: entry.message.isError ? "Assistant error" : "Thinking",
+      text,
+      sentAt,
+    };
+  }
+  if (entry.message.role !== "toolResult") {
+    return undefined;
+  }
+  const toolName = entry.message.toolName?.trim();
+  const toolText = readEntryTextContent(entry).replace(/^MEDIA:.+$/gmu, "").trim();
+  return {
+    id: entryId,
+    kind: entry.message.isError ? "error" : "action",
+    title: toolName ? `Tool • ${toolName}` : entry.message.isError ? "Tool error" : "Tool",
+    text: truncateThinkingTraceText(
+      toolText ||
+        (entry.message.isError
+          ? "The tool call failed."
+          : toolName
+            ? `Tool ${toolName} completed.`
+            : "Tool completed."),
+    ),
+    sentAt,
+    ...(toolName ? { toolName } : {}),
+  };
+}
+
 function extractMediaPaths(entry: OpenClawSessionLogEntry): string[] {
   if (entry.type !== "message" || entry.message?.role !== "toolResult" || entry.message.isError) {
     return [];
@@ -916,31 +1291,32 @@ function extractMediaPaths(entry: OpenClawSessionLogEntry): string[] {
   return [...mediaPaths];
 }
 
-function extractAssistantDisplayResult(entry: OpenClawSessionLogEntry): NormalizedBridgeResult {
+function extractAssistantDisplayResult(
+  entry: OpenClawSessionLogEntry,
+  options?: {
+    workspaceDir?: string;
+  },
+): ExtractedAssistantDisplayResult {
   if (entry.type !== "message" || entry.message?.role !== "assistant" || entry.message.isError) {
-    return { messages: [] };
+    return { result: { messages: [] }, isStructured: false };
   }
 
-  const parts = (entry.message.content ?? [])
-    .flatMap((contentItem) =>
-      contentItem.type === "text" && typeof contentItem.text === "string"
-        ? [contentItem.text.trim()]
-        : [],
-    )
-    .filter((text) => text !== "");
-
-  if (parts.length === 0) {
-    return { messages: [] };
+  const rawText = readEntryTextContent(entry);
+  if (rawText === "") {
+    return { result: { messages: [] }, isStructured: false };
   }
-
-  const rawText = parts.join("\n\n");
-  const structuredResult = parseStructuredResponseResult(rawText);
+  const structuredResult = parseStructuredResponseResult(
+    rawText,
+    options?.workspaceDir ? { workspaceDir: options.workspaceDir } : undefined,
+  );
   if (structuredResult) {
-    return structuredResult;
+    return { result: structuredResult, isStructured: true };
   }
 
   const fallbackText = stripStructuredResponseBlock(rawText);
-  return fallbackText !== "" ? { messages: [{ text: fallbackText }] } : { messages: [] };
+  return fallbackText !== ""
+    ? { result: { messages: [{ text: fallbackText }] }, isStructured: false }
+    : { result: { messages: [] }, isStructured: false };
 }
 
 function appendStructuredResponseContract(prompt: string): string {
@@ -977,21 +1353,100 @@ function buildStructuredResponseContractPrompt(): string {
     `- Use this JSON shape: {\"version\":${PRIVATECLAW_RESPONSE_CONTRACT_VERSION},\"messages\":[{\"text\":\"...\"}],\"data\":{}}`,
     "- Always include at least one messages entry.",
     "- Put user-visible text only in messages[].text.",
+    "- To send images/files, add an attachments array to the message: {\"text\":\"...\",\"attachments\":[{\"name\":\"file.png\",\"mimeType\":\"image/png\",\"filePath\":\"relative/path/in/current/workspace/or/absolute/local/path\"}]}",
+    "- Or use dataBase64 for inline binary: {\"name\":\"file.png\",\"mimeType\":\"image/png\",\"dataBase64\":\"...\"}",
+    "- Never put channel-specific markup such as <qqimg>...</qqimg>, markdown image syntax, or raw local file paths inside messages[].text. Put files only in messages[].attachments.",
     "- Use data for optional machine-readable extraction results that PrivateClaw may consume in future file-processing flows.",
     "- Do not wrap the JSON in markdown fences.",
   ].join("\n");
 }
 
-function parseStructuredResponseResult(raw: string): NormalizedBridgeResult | undefined {
+function resolveStructuredAttachments(
+  rawAttachments?: PrivateClawStructuredMessageAttachment[],
+  options?: {
+    workspaceDir?: string;
+  },
+): PrivateClawAttachment[] {
+  if (!rawAttachments || rawAttachments.length === 0) {
+    return [];
+  }
+  const workspaceDir = path.resolve(options?.workspaceDir ?? DEFAULT_WORKSPACE_DIR);
+  const attachments: PrivateClawAttachment[] = [];
+  for (const raw of rawAttachments) {
+    if (raw.dataBase64?.trim()) {
+      const trimmedData = raw.dataBase64.trim();
+      attachments.push({
+        id: `structured-attachment-${randomUUID()}`,
+        name: raw.name ?? "attachment",
+        mimeType: raw.mimeType ?? GENERIC_BINARY_MIME,
+        sizeBytes: Buffer.byteLength(trimmedData, "base64"),
+        dataBase64: trimmedData,
+      });
+    } else if (raw.filePath) {
+      try {
+        const filePath = resolveStructuredAttachmentFilePath(raw.filePath, workspaceDir);
+        if (!filePath) {
+          continue;
+        }
+        const fileBytes = readFileSync(filePath);
+        attachments.push({
+          id: `structured-attachment-${randomUUID()}`,
+          name: raw.name ?? path.basename(filePath) ?? "attachment",
+          mimeType: raw.mimeType ?? inferMimeTypeFromFileName(raw.name ?? filePath) ?? GENERIC_BINARY_MIME,
+          sizeBytes: fileBytes.byteLength,
+          dataBase64: fileBytes.toString("base64"),
+        });
+      } catch {
+        // Skip unreadable files
+      }
+    }
+  }
+  return attachments;
+}
+
+function resolveStructuredAttachmentFilePath(
+  rawFilePath: string,
+  workspaceDir: string,
+): string | undefined {
+  const trimmedPath = rawFilePath.trim();
+  if (trimmedPath === "") {
+    return undefined;
+  }
+
+  if (path.isAbsolute(trimmedPath)) {
+    return path.normalize(trimmedPath);
+  }
+
+  const resolvedPath = normalizeMediaPath(trimmedPath, workspaceDir);
+  return isPathInsideDirectory(workspaceDir, resolvedPath) ? resolvedPath : undefined;
+}
+
+function parseStructuredResponseResult(
+  raw: string,
+  options?: {
+    workspaceDir?: string;
+  },
+): NormalizedBridgeResult | undefined {
   const structured = parseStructuredResponseBlock(raw);
   if (!structured?.messages || structured.messages.length === 0) {
     return undefined;
   }
 
-  const messages = structured.messages.flatMap((message) => {
+  const messages: NormalizedBridgeMessage[] = [];
+  for (const message of structured.messages) {
     const text = typeof message.text === "string" ? message.text.trim() : "";
-    return text !== "" ? [{ text }] : [];
-  });
+    const qqimgResult = extractInlineQqimgAttachments(text, options);
+    const attachments = [
+      ...resolveStructuredAttachments(message.attachments, options),
+      ...qqimgResult.attachments,
+    ];
+    if (qqimgResult.text !== "" || attachments.length > 0) {
+      messages.push({
+        text: qqimgResult.text,
+        ...(attachments.length > 0 ? { attachments } : {}),
+      });
+    }
+  }
   if (messages.length === 0) {
     return undefined;
   }
@@ -1003,8 +1458,7 @@ function parseStructuredResponseResult(raw: string): NormalizedBridgeResult | un
 }
 
 function parseStructuredResponseBlock(raw: string): PrivateClawStructuredResponse | undefined {
-  const match = raw.match(buildStructuredResponseBlockPattern("u"));
-  const payload = match?.[1]?.trim();
+  const payload = extractStructuredResponsePayload(raw);
   if (!payload) {
     return undefined;
   }
@@ -1021,7 +1475,11 @@ function parseStructuredResponseBlock(raw: string): PrivateClawStructuredRespons
 }
 
 function stripStructuredResponseBlock(raw: string): string {
-  return raw.replace(buildStructuredResponseBlockPattern("gu"), "").trim();
+  let stripped = raw;
+  for (const pattern of buildStructuredResponseBlockPatterns("gu")) {
+    stripped = stripped.replace(pattern, "");
+  }
+  return stripped.trim();
 }
 
 function buildStructuredResponseBlockPattern(flags: string): RegExp {
@@ -1029,6 +1487,111 @@ function buildStructuredResponseBlockPattern(flags: string): RegExp {
     `${escapeRegExpLiteral(PRIVATECLAW_RESPONSE_TAG_START)}([\\s\\S]*?)${escapeRegExpLiteral(PRIVATECLAW_RESPONSE_TAG_END)}`,
     flags,
   );
+}
+
+function buildStructuredResponseBlockPatterns(flags: string): RegExp[] {
+  const startTag = escapeRegExpLiteral(PRIVATECLAW_RESPONSE_TAG_START);
+  return [
+    buildStructuredResponseBlockPattern(flags),
+    new RegExp(`${startTag}([\\s\\S]*?)${startTag}`, flags),
+  ];
+}
+
+function extractStructuredResponsePayload(raw: string): string | undefined {
+  for (const pattern of buildStructuredResponseBlockPatterns("u")) {
+    const payload = raw.match(pattern)?.[1]?.trim();
+    if (payload) {
+      return payload;
+    }
+  }
+  return undefined;
+}
+
+function extractInlineQqimgAttachments(
+  text: string,
+  options?: {
+    workspaceDir?: string;
+  },
+): {
+  text: string;
+  attachments: PrivateClawAttachment[];
+} {
+  if (!text.includes("<qqimg>")) {
+    return { text, attachments: [] };
+  }
+
+  const attachments: PrivateClawAttachment[] = [];
+  for (const match of text.matchAll(/<qqimg>([\s\S]*?)<\/qqimg>/giu)) {
+    const rawValue = match[1]?.trim();
+    if (!rawValue) {
+      continue;
+    }
+    const attachment = resolveInlineQqimgAttachment(rawValue, options);
+    if (attachment) {
+      attachments.push(attachment);
+    }
+  }
+
+  return {
+    text: text
+      .replace(/<qqimg>[\s\S]*?<\/qqimg>/giu, "")
+      .replace(/\n{3,}/gu, "\n\n")
+      .trim(),
+    attachments,
+  };
+}
+
+function resolveInlineQqimgAttachment(
+  rawValue: string,
+  options?: {
+    workspaceDir?: string;
+  },
+): PrivateClawAttachment | undefined {
+  const workspaceDir = path.resolve(options?.workspaceDir ?? DEFAULT_WORKSPACE_DIR);
+
+  if (!path.isAbsolute(rawValue)) {
+    try {
+      const parsedUrl = new URL(rawValue);
+      if (parsedUrl.protocol === "file:") {
+        const filePath = fileURLToPath(parsedUrl);
+        const fileBytes = readFileSync(filePath);
+        return {
+          id: `structured-attachment-${randomUUID()}`,
+          name: path.basename(filePath) || "attachment",
+          mimeType: inferMimeTypeFromFileName(filePath) ?? GENERIC_BINARY_MIME,
+          sizeBytes: fileBytes.byteLength,
+          dataBase64: fileBytes.toString("base64"),
+        };
+      }
+      const fileName = path.basename(parsedUrl.pathname) || "attachment";
+      return {
+        id: `structured-attachment-${randomUUID()}`,
+        name: fileName,
+        mimeType: inferMimeTypeFromFileName(fileName) ?? GENERIC_BINARY_MIME,
+        sizeBytes: 0,
+        uri: parsedUrl.toString(),
+      };
+    } catch {
+      // Not a URL. Fall through to local file handling.
+    }
+  }
+
+  try {
+    const filePath = resolveStructuredAttachmentFilePath(rawValue, workspaceDir);
+    if (!filePath) {
+      return undefined;
+    }
+    const fileBytes = readFileSync(filePath);
+    return {
+      id: `structured-attachment-${randomUUID()}`,
+      name: path.basename(filePath) || "attachment",
+      mimeType: inferMimeTypeFromFileName(filePath) ?? GENERIC_BINARY_MIME,
+      sizeBytes: fileBytes.byteLength,
+      dataBase64: fileBytes.toString("base64"),
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 function parseStructuredResponseJson(
@@ -1047,6 +1610,69 @@ function parseStructuredResponseJson(
       return undefined;
     }
   }
+}
+
+function extractEmbeddedJsonPayload(text: string): string | undefined {
+  for (let startIndex = 0; startIndex < text.length; startIndex += 1) {
+    const character = text[startIndex];
+    if (character !== "{" && character !== "[") {
+      continue;
+    }
+    const candidate = sliceBalancedJsonPayload(text, startIndex);
+    if (!candidate) {
+      continue;
+    }
+    try {
+      JSON.parse(candidate);
+      return candidate;
+    } catch {
+      continue;
+    }
+  }
+  return undefined;
+}
+
+function sliceBalancedJsonPayload(text: string, startIndex: number): string | undefined {
+  const expectedClosers: string[] = [];
+  let inString = false;
+  let escaped = false;
+
+  for (let index = startIndex; index < text.length; index += 1) {
+    const character = text[index]!;
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (character === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (character === "\"") {
+      inString = !inString;
+      continue;
+    }
+    if (inString) {
+      continue;
+    }
+    if (character === "{") {
+      expectedClosers.push("}");
+      continue;
+    }
+    if (character === "[") {
+      expectedClosers.push("]");
+      continue;
+    }
+    if (character === "}" || character === "]") {
+      const expected = expectedClosers.pop();
+      if (expected !== character) {
+        return undefined;
+      }
+      if (expectedClosers.length === 0) {
+        return text.slice(startIndex, index + 1);
+      }
+    }
+  }
+  return undefined;
 }
 
 function stripJsonTrailingCommas(payload: string): string {
@@ -1130,8 +1756,11 @@ function extractBridgeResponseData(response: BridgeResponse): unknown {
   return typeof response === "string" ? undefined : response.data;
 }
 
-async function buildAttachmentFromMediaPath(mediaPath: string): Promise<PrivateClawAttachment> {
-  const filePath = normalizeMediaPath(mediaPath);
+async function buildAttachmentFromMediaPath(
+  mediaPath: string,
+  workspaceDir: string = DEFAULT_WORKSPACE_DIR,
+): Promise<PrivateClawAttachment> {
+  const filePath = normalizeMediaPath(mediaPath, workspaceDir);
   const fileBytes = await fs.readFile(filePath);
   const fileName = path.basename(filePath) || `media-${randomUUID()}`;
   return {
@@ -1143,12 +1772,17 @@ async function buildAttachmentFromMediaPath(mediaPath: string): Promise<PrivateC
   };
 }
 
-function normalizeMediaPath(mediaPath: string): string {
+function normalizeMediaPath(mediaPath: string, workspaceDir: string = DEFAULT_WORKSPACE_DIR): string {
   const trimmed = mediaPath.trim();
   if (trimmed.startsWith("file://")) {
-    return fileURLToPath(trimmed);
+    return path.resolve(fileURLToPath(trimmed));
   }
-  return path.isAbsolute(trimmed) ? trimmed : path.resolve(trimmed);
+  return path.isAbsolute(trimmed) ? path.resolve(trimmed) : path.resolve(workspaceDir, trimmed);
+}
+
+function isPathInsideDirectory(directory: string, targetPath: string): boolean {
+  const relative = path.relative(path.resolve(directory), path.resolve(targetPath));
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
 function buildVoiceTranscriptionSessionId(sessionId: string, requestId: string): string {

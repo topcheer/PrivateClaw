@@ -1,1 +1,1 @@
-New participant and assistant avatars, stronger STT/ASR fallback (whisper -> provider STT -> bridge), better session debugging, and more reliable screenshot-preview launches.
+Bổ sung hiển thị tiến trình suy nghĩ theo thời gian thực, cải thiện độ tin cậy của phản hồi ảnh/tệp và tối ưu trải nghiệm phiên riêng tư trên ứng dụng và web.

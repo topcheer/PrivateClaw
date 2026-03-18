@@ -161,6 +161,67 @@ void main() {
     expect(identical(firstProvider, secondProvider), isTrue);
   });
 
+  testWidgets('ChatMessageBubble renders a collapsible thinking trace', (
+    WidgetTester tester,
+  ) async {
+    final ChatMessage streamingMessage = ChatMessage(
+      id: 'thinking-1',
+      sender: ChatSender.assistant,
+      text: '',
+      sentAt: DateTime.utc(2026, 1, 1, 0, 0, 2),
+      replyTo: 'user-1',
+      thinkingStatus: ChatThinkingStatus.streaming,
+      thinkingSummary: 'read: Opened README excerpt',
+      thinkingEntries: <ChatThinkingEntry>[
+        ChatThinkingEntry(
+          id: 'trace-entry-1',
+          kind: ChatThinkingEntryKind.thought,
+          title: 'Thinking',
+          text: 'Plan the answer structure',
+          sentAt: DateTime.utc(2026, 1, 1, 0, 0),
+        ),
+        ChatThinkingEntry(
+          id: 'trace-entry-2',
+          kind: ChatThinkingEntryKind.action,
+          title: 'Tool • read',
+          text: 'Opened README excerpt',
+          sentAt: DateTime.utc(2026, 1, 1, 0, 0, 1),
+          toolName: 'read',
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: ChatMessageBubble(message: streamingMessage)),
+      ),
+    );
+
+    expect(find.text('Tool • read'), findsOneWidget);
+    expect(find.text('read: Opened README excerpt'), findsOneWidget);
+    expect(find.text('Plan the answer structure'), findsNothing);
+
+    await tester.tap(find.text('Tool • read'));
+    await tester.pump();
+
+    expect(find.text('Plan the answer structure'), findsOneWidget);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ChatMessageBubble(
+            message: streamingMessage.copyWith(
+              thinkingStatus: ChatThinkingStatus.completed,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Plan the answer structure'), findsNothing);
+  });
+
   testWidgets('ChatMessageBubble shows participant labels for group messages', (
     WidgetTester tester,
   ) async {

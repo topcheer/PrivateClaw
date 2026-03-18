@@ -9,6 +9,8 @@ import {
   type PrivateClawInvite,
   type PrivateClawParticipant,
   type PrivateClawSlashCommand,
+  type PrivateClawThinkingEntry,
+  type PrivateClawThinkingStatus,
   type UserMessagePayload,
 } from "@privateclaw/protocol";
 import QRCode from "qrcode";
@@ -109,6 +111,18 @@ function buildPendingAssistantMessageId(replyTo: string): string {
   return `pending-${replyTo}`;
 }
 
+function buildThinkingMessageId(replyTo: string): string {
+  return `thinking-${replyTo}`;
+}
+
+function cloneThinkingEntry(
+  entry: PrivateClawThinkingEntry,
+): PrivateClawThinkingEntry {
+  return {
+    ...entry,
+  };
+}
+
 function sanitizeParticipantLabel(raw: string | undefined): string | undefined {
   if (!raw) {
     return undefined;
@@ -196,6 +210,11 @@ function cloneConversationTurn(
           attachments: turn.attachments.map((attachment) => ({
             ...attachment,
           })),
+        }
+      : {}),
+    ...(turn.thinkingEntries
+      ? {
+          thinkingEntries: turn.thinkingEntries.map(cloneThinkingEntry),
         }
       : {}),
   };
@@ -345,6 +364,17 @@ function formatBridgeHistoryTurn(
     ...turn,
     text: `${turn.participantLabel}: ${turn.text}`,
   };
+}
+
+function normalizeBridgeSlashCommandText(text: string): string | undefined {
+  const trimmed = text.trim();
+  return trimmed.startsWith("/") ? trimmed : undefined;
+}
+
+function cloneThinkingEntries(
+  entries: ReadonlyArray<PrivateClawThinkingEntry>,
+): PrivateClawThinkingEntry[] {
+  return entries.map(cloneThinkingEntry);
 }
 
 function isAudioAttachment(attachment: PrivateClawAttachment): boolean {
@@ -794,7 +824,9 @@ export class PrivateClawProvider {
   private buildBridgeHistory(
     session: ProviderSessionState,
   ): PrivateClawConversationTurn[] {
-    return session.history.map(formatBridgeHistoryTurn);
+    return session.history
+      .filter((turn) => turn.role !== "thinking")
+      .map(formatBridgeHistoryTurn);
   }
 
   private async prepareUserMessage(
@@ -803,6 +835,7 @@ export class PrivateClawProvider {
     participant: ProviderParticipantState | undefined,
   ): Promise<PreparedUserMessage> {
     const allAttachments = payload.attachments ?? [];
+    const directBridgeSlashCommand = normalizeBridgeSlashCommandText(payload.text);
     const audioAttachments = allAttachments.filter(isAudioAttachment);
     const providerAudioTranscriber = this.options.audioTranscriber;
     const bridgeAudioTranscriber = this.options.bridge.transcribeAudioAttachments
@@ -829,6 +862,12 @@ export class PrivateClawProvider {
       );
       return {
         text: payload.text,
+        ...(directBridgeSlashCommand
+          ? {
+              bridgeText: directBridgeSlashCommand,
+              historyBridgeText: directBridgeSlashCommand,
+            }
+          : {}),
         ...(allAttachments.length > 0 ? { attachments: allAttachments } : {}),
         ...(allAttachments.length > 0 ? { bridgeAttachments: allAttachments } : {}),
       };
@@ -966,6 +1005,7 @@ export class PrivateClawProvider {
       appId?: string;
       deviceLabel?: string;
       displayName?: string;
+      supportsThinkingTrace?: boolean;
       sentAt: string;
     },
   ): Promise<{ participant: ProviderParticipantState; isNew: boolean }> {
@@ -982,6 +1022,9 @@ export class PrivateClawProvider {
         ...existing,
         ...(params.deviceLabel ? { deviceLabel: params.deviceLabel } : {}),
         ...(requestedDisplayName ? { displayName: requestedDisplayName } : {}),
+        ...(typeof params.supportsThinkingTrace === "boolean"
+          ? { supportsThinkingTrace: params.supportsThinkingTrace }
+          : {}),
         lastSeenAt: params.sentAt,
       };
       session.participants.set(normalizedAppId, participant);
@@ -1001,6 +1044,9 @@ export class PrivateClawProvider {
           usedLabels,
         ),
       ...(params.deviceLabel ? { deviceLabel: params.deviceLabel } : {}),
+      ...(typeof params.supportsThinkingTrace === "boolean"
+        ? { supportsThinkingTrace: params.supportsThinkingTrace }
+        : {}),
       joinedAt: params.sentAt,
       lastSeenAt: params.sentAt,
     };
@@ -1080,6 +1126,57 @@ export class PrivateClawProvider {
       ...(params.pending ? { pending: true } : {}),
       ...(params.attachments ? { attachments: params.attachments } : {}),
     }, params.targetAppId);
+  }
+
+  async sendThinkingMessage(
+    sessionId: string,
+    params: {
+      messageId: string;
+      status: PrivateClawThinkingStatus;
+      summary: string;
+      entries: ReadonlyArray<PrivateClawThinkingEntry>;
+      replyTo?: string;
+      sentAt?: string;
+      targetAppId?: string;
+      storeHistory?: boolean;
+    },
+  ): Promise<void> {
+    const sentAt = params.sentAt ?? nowIso();
+    const session = this.requireSession(sessionId);
+    if (params.storeHistory !== false) {
+      this.upsertThinkingHistoryTurn(session, {
+        messageId: params.messageId,
+        sentAt,
+        status: params.status,
+        summary: params.summary,
+        entries: params.entries,
+        ...(params.replyTo ? { replyTo: params.replyTo } : {}),
+      });
+    }
+    const targetAppIds = params.targetAppId
+      ? (session.participants.get(params.targetAppId)?.supportsThinkingTrace === true
+          ? [params.targetAppId]
+          : [])
+      : [...session.participants.values()]
+          .filter((participant) => participant.supportsThinkingTrace === true)
+          .map((participant) => participant.appId);
+    if (targetAppIds.length === 0) {
+      return;
+    }
+    const payload = {
+      kind: "thinking_message",
+      messageId: params.messageId,
+      status: params.status,
+      summary: params.summary,
+      entries: cloneThinkingEntries(params.entries),
+      sentAt,
+      ...(params.replyTo ? { replyTo: params.replyTo } : {}),
+    } as const;
+    await Promise.all(
+      targetAppIds.map((targetAppId) =>
+        this.sendPayload(sessionId, payload, targetAppId),
+      ),
+    );
   }
 
   private async sendPendingAssistantStatus(
@@ -1299,6 +1396,37 @@ export class PrivateClawProvider {
     });
   }
 
+  private upsertThinkingHistoryTurn(
+    session: ProviderSessionState,
+    params: {
+      messageId: string;
+      replyTo?: string;
+      sentAt: string;
+      status: PrivateClawThinkingStatus;
+      summary: string;
+      entries: ReadonlyArray<PrivateClawThinkingEntry>;
+    },
+  ): void {
+    const turn: PrivateClawConversationTurn = {
+      messageId: params.messageId,
+      role: "thinking",
+      text: params.summary,
+      sentAt: params.sentAt,
+      thinkingStatus: params.status,
+      thinkingSummary: params.summary,
+      thinkingEntries: cloneThinkingEntries(params.entries),
+      ...(params.replyTo ? { replyTo: params.replyTo } : {}),
+    };
+    const existingIndex = session.history.findIndex(
+      (item) => item.messageId === params.messageId,
+    );
+    if (existingIndex >= 0) {
+      session.history[existingIndex] = turn;
+      return;
+    }
+    session.history.push(turn);
+  }
+
   private updateStoredUserBridgeText(
     session: ProviderSessionState,
     messageId: string,
@@ -1432,6 +1560,18 @@ export class PrivateClawProvider {
             },
           );
           break;
+        case "thinking":
+          await this.sendThinkingMessage(sessionId, {
+            messageId: turn.messageId,
+            status: turn.thinkingStatus ?? "completed",
+            summary: turn.thinkingSummary ?? turn.text,
+            entries: turn.thinkingEntries ?? [],
+            sentAt: turn.sentAt,
+            targetAppId,
+            storeHistory: false,
+            ...(turn.replyTo ? { replyTo: turn.replyTo } : {}),
+          });
+          break;
         case "user":
           if (!session.groupMode || !turn.appId || !turn.participantLabel) {
             break;
@@ -1525,6 +1665,7 @@ export class PrivateClawProvider {
         }
         const participantState = await this.upsertParticipant(sessionId, {
           sentAt: payload.sentAt,
+          supportsThinkingTrace: payload.supportsThinkingTrace === true,
           ...(payload.appId ? { appId: normalizedAppId } : {}),
           ...(payload.deviceLabel
             ? { deviceLabel: payload.deviceLabel }
@@ -1618,6 +1759,7 @@ export class PrivateClawProvider {
             : undefined);
 
         const normalizedCommand = payload.text.trim().toLowerCase();
+        const directBridgeSlashCommand = normalizeBridgeSlashCommandText(payload.text);
         const isRenewCommand =
           normalizedCommand === "/renew-session" ||
           normalizedCommand === "/session_renew";
@@ -1870,7 +2012,7 @@ export class PrivateClawProvider {
           }
         }
 
-        if (session.groupMode && session.botMuted) {
+        if (session.groupMode && session.botMuted && !directBridgeSlashCommand) {
           if (!shouldHandleVoiceAsynchronously) {
             await this.sendParticipantMessage(sessionId, {
               text: payload.text,
@@ -1955,12 +2097,28 @@ export class PrivateClawProvider {
           });
         }
 
+        const bridgeMessage =
+          preparedMessage.bridgeText ??
+          (session.groupMode && participant
+            ? `${participant.displayName}: ${preparedMessage.text}`
+            : preparedMessage.text);
+        const supportsThinkingTrace =
+          this.options.bridge.supportsThinkingTrace === true;
+        const thinkingMessageId = buildThinkingMessageId(payload.clientMessageId);
+        let latestThinkingSummary = "";
+        let latestThinkingEntries: PrivateClawThinkingEntry[] = [];
         try {
-          const bridgeMessage =
-            preparedMessage.bridgeText ??
-            (session.groupMode && participant
-              ? `${participant.displayName}: ${preparedMessage.text}`
-              : preparedMessage.text);
+          if (supportsThinkingTrace) {
+            await this.sendThinkingMessage(sessionId, {
+              messageId: thinkingMessageId,
+              status: "started",
+              summary: "",
+              entries: [],
+              replyTo: payload.clientMessageId,
+              sentAt: payload.sentAt,
+              storeHistory: false,
+            });
+          }
           const bridgeResponse = await this.options.bridge.handleUserMessage({
             sessionId,
             invite: session.invite,
@@ -1969,9 +2127,36 @@ export class PrivateClawProvider {
               ? { attachments: preparedMessage.bridgeAttachments }
               : preparedMessage.attachments
                 ? { attachments: preparedMessage.attachments }
-              : {}),
+               : {}),
             history: this.buildBridgeHistory(session),
+            ...(supportsThinkingTrace
+              ? {
+                  onThinkingTrace: async (snapshot) => {
+                    latestThinkingSummary = snapshot.summary;
+                    latestThinkingEntries = cloneThinkingEntries(snapshot.entries);
+                    await this.sendThinkingMessage(sessionId, {
+                      messageId: thinkingMessageId,
+                      status: "streaming",
+                      summary: snapshot.summary,
+                      entries: snapshot.entries,
+                      replyTo: payload.clientMessageId,
+                      sentAt: snapshot.sentAt,
+                      storeHistory: snapshot.entries.length > 0,
+                    });
+                  },
+                }
+              : {}),
           });
+          if (supportsThinkingTrace) {
+            await this.sendThinkingMessage(sessionId, {
+              messageId: thinkingMessageId,
+              status: "completed",
+              summary: latestThinkingSummary,
+              entries: latestThinkingEntries,
+              replyTo: payload.clientMessageId,
+              storeHistory: latestThinkingEntries.length > 0,
+            });
+          }
 
           for (const message of normalizeBridgeMessages(bridgeResponse)) {
             this.options.onLog?.(
@@ -1989,6 +2174,16 @@ export class PrivateClawProvider {
             });
           }
         } catch (error) {
+          if (supportsThinkingTrace) {
+            await this.sendThinkingMessage(sessionId, {
+              messageId: thinkingMessageId,
+              status: "failed",
+              summary: latestThinkingSummary,
+              entries: latestThinkingEntries,
+              replyTo: payload.clientMessageId,
+              storeHistory: latestThinkingEntries.length > 0,
+            });
+          }
           await this.sendSystemMessage(
             sessionId,
             buildBridgeErrorMessage(

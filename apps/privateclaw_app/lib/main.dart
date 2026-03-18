@@ -827,6 +827,12 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       (ChatMessage item) => item.id == message.id,
     );
     if (existingMessageIndex >= 0) {
+      if (message.isThinkingTrace &&
+          !message.isThinkingActive &&
+          !message.hasThinkingEntries) {
+        _messages.removeAt(existingMessageIndex);
+        return;
+      }
       final ChatMessage existing = _messages[existingMessageIndex];
       _messages[existingMessageIndex] = message.copyWith(
         isPending:
@@ -839,12 +845,18 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       return;
     }
 
+    if (message.isThinkingTrace &&
+        !message.isThinkingActive &&
+        !message.hasThinkingEntries) {
+      return;
+    }
+
     if (message.isPending) {
       _messages.add(message);
       return;
     }
 
-    if (message.replyTo != null) {
+    if (message.replyTo != null && !message.isThinkingTrace) {
       final int repliedMessageIndex = _messages.indexWhere(
         (ChatMessage item) =>
             item.id == message.replyTo && item.sender == ChatSender.user,

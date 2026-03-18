@@ -240,6 +240,7 @@ class PrivateClawSessionClient {
           'appVersion': 'privateclaw_flutter/0.1.0',
           'appId': _identity.appId,
           'deviceLabel': 'PrivateClaw',
+          'supportsThinkingTrace': true,
           if (_identity.displayName != null)
             'displayName': _identity.displayName,
           'sentAt': DateTime.now().toUtc().toIso8601String(),
@@ -314,6 +315,22 @@ class PrivateClawSessionClient {
               replyTo: payload['replyTo'] as String?,
               isPending: payload['pending'] as bool? ?? false,
               attachments: _parseAttachments(payload['attachments']),
+            ),
+          ),
+        );
+        return;
+      case 'thinking_message':
+        _emitEvent(
+          PrivateClawSessionEvent(
+            message: ChatMessage(
+              id: payload['messageId'] as String? ?? _nextLocalMessageId(),
+              sender: ChatSender.assistant,
+              text: '',
+              sentAt: _parseTimestamp(payload['sentAt'] as String?),
+              replyTo: payload['replyTo'] as String?,
+              thinkingStatus: _parseThinkingStatus(payload['status']),
+              thinkingSummary: payload['summary'] as String? ?? '',
+              thinkingEntries: _parseThinkingEntries(payload['entries']),
             ),
           ),
         );
@@ -412,6 +429,7 @@ class PrivateClawSessionClient {
           'appVersion': 'privateclaw_flutter/0.1.0',
           'appId': _identity.appId,
           'deviceLabel': 'PrivateClaw',
+          'supportsThinkingTrace': true,
           if (_identity.displayName != null)
             'displayName': _identity.displayName,
           'sentAt': DateTime.now().toUtc().toIso8601String(),
@@ -450,6 +468,13 @@ class PrivateClawSessionClient {
           '[privateclaw-app] received system_message '
           'messageId=${payload['messageId'] ?? 'unknown-message'} '
           'severity=${payload['severity'] ?? 'unknown'}',
+        );
+        return;
+      case 'thinking_message':
+        debugPrint(
+          '[privateclaw-app] received thinking_message '
+          'messageId=${payload['messageId'] ?? 'unknown-message'} '
+          'status=${payload['status'] ?? 'unknown'}',
         );
         return;
       case 'provider_capabilities':
@@ -647,6 +672,63 @@ class PrivateClawSessionClient {
       }
     }
     return attachments;
+  }
+
+  List<ChatThinkingEntry> _parseThinkingEntries(Object? value) {
+    if (value is! List<Object?>) {
+      return const <ChatThinkingEntry>[];
+    }
+
+    final List<ChatThinkingEntry> entries = <ChatThinkingEntry>[];
+    for (final Object? item in value) {
+      if (item is! Map<String, dynamic>) {
+        continue;
+      }
+      final ChatThinkingEntryKind? kind = _parseThinkingEntryKind(item['kind']);
+      if (kind == null) {
+        continue;
+      }
+      entries.add(
+        ChatThinkingEntry(
+          id: item['id'] as String? ?? _nextLocalMessageId(),
+          kind: kind,
+          title: item['title'] as String? ?? '',
+          text: item['text'] as String? ?? '',
+          sentAt: _parseTimestamp(item['sentAt'] as String?),
+          toolName: item['toolName'] as String?,
+        ),
+      );
+    }
+    return entries;
+  }
+
+  ChatThinkingStatus _parseThinkingStatus(Object? value) {
+    switch (value) {
+      case 'started':
+        return ChatThinkingStatus.started;
+      case 'streaming':
+        return ChatThinkingStatus.streaming;
+      case 'failed':
+        return ChatThinkingStatus.failed;
+      case 'completed':
+      default:
+        return ChatThinkingStatus.completed;
+    }
+  }
+
+  ChatThinkingEntryKind? _parseThinkingEntryKind(Object? value) {
+    switch (value) {
+      case 'thought':
+        return ChatThinkingEntryKind.thought;
+      case 'action':
+        return ChatThinkingEntryKind.action;
+      case 'result':
+        return ChatThinkingEntryKind.result;
+      case 'error':
+        return ChatThinkingEntryKind.error;
+      default:
+        return null;
+    }
   }
 
   List<PrivateClawSlashCommand> _parseCommands(Object? value) {

@@ -1,1 +1,1 @@
-New participant and assistant avatars, stronger STT/ASR fallback (whisper -> provider STT -> bridge), better session debugging, and more reliable screenshot-preview launches.
+실시간 사고 과정 표시를 추가하고, 이미지/파일 응답 전달 안정성을 높였으며, 앱과 웹의 비공개 세션 경험을 개선했습니다.

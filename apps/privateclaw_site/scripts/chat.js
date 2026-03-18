@@ -1,4 +1,4 @@
-import { applyTranslations, bindLocaleSelect, onLocaleChange, t } from "./i18n.js?v=20260316-3";
+import { applyTranslations, bindLocaleSelect, onLocaleChange, t } from "./i18n.js?v=20260318-1";
 import {
   createIdentity,
   decodeBase64,
@@ -7,7 +7,7 @@ import {
   inviteUsesNonDefaultRelay,
   readFileAsAttachment,
 } from "./protocol-web.js?v=20260316-1";
-import { PrivateClawWebSessionClient } from "./session-client.js?v=20260316-1";
+import { PrivateClawWebSessionClient } from "./session-client.js?v=20260318-1";
 
 const MAX_INLINE_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 const QR_SCAN_MAX_DIMENSION = 1440;
@@ -60,6 +60,7 @@ const state = {
   client: null,
   invite: null,
   messages: [],
+  expandedThinkingTraceIds: new Set(),
   commands: [],
   participants: [],
   selectedAttachments: [],
@@ -582,6 +583,7 @@ function clearObjectUrls() {
 function resetConversationState() {
   clearObjectUrls();
   state.messages = [];
+  state.expandedThinkingTraceIds.clear();
   state.commands = [];
   state.participants = [];
   state.selectedAttachments = [];
@@ -749,6 +751,145 @@ function renderAttachments(attachments) {
   return container;
 }
 
+function isThinkingTraceMessage(message) {
+  return typeof message?.thinkingStatus === "string";
+}
+
+function isThinkingTraceActive(message) {
+  return message?.thinkingStatus === "started" || message?.thinkingStatus === "streaming";
+}
+
+function createThinkingTraceBadge({ label, tone = "neutral" }) {
+  const badge = document.createElement("span");
+  badge.className = `thinking-trace-badge ${tone}`;
+  badge.textContent = label;
+  return badge;
+}
+
+function getThinkingTraceIcon(kind, { active = false, failed = false } = {}) {
+  if (failed || kind === "error") {
+    return "!";
+  }
+  if (active || kind === "thought") {
+    return "◎";
+  }
+  if (kind === "result") {
+    return "✓";
+  }
+  return "⚙";
+}
+
+function renderThinkingTraceEntry(entry) {
+  const card = document.createElement("div");
+  card.className = `thinking-trace-entry ${entry.kind || "thought"}`;
+
+  const header = document.createElement("div");
+  header.className = "thinking-trace-entry-header";
+
+  const icon = document.createElement("span");
+  icon.className = `thinking-trace-icon ${entry.kind || "thought"}`;
+  icon.textContent = getThinkingTraceIcon(entry.kind);
+
+  const title = document.createElement("strong");
+  title.textContent = entry.title || t("chat.thinkingTraceFallbackTitle");
+
+  header.append(icon, title);
+  if (entry.toolName) {
+    header.append(createThinkingTraceBadge({ label: entry.toolName, tone: "tool" }));
+  }
+
+  card.append(header);
+  if (typeof entry.text === "string" && entry.text.trim() !== "") {
+    const body = document.createElement("div");
+    body.className = "thinking-trace-entry-body";
+    body.append(renderRichText(entry.text));
+    card.append(body);
+  }
+  return card;
+}
+
+function renderThinkingTrace(message) {
+  const entries = Array.isArray(message.thinkingEntries) ? message.thinkingEntries : [];
+  const latestEntry = entries[entries.length - 1] || null;
+  const active = isThinkingTraceActive(message);
+  const failed = message.thinkingStatus === "failed";
+  const title = latestEntry?.title || t("chat.thinkingTraceFallbackTitle");
+  const previewSource =
+    (typeof message.thinkingSummary === "string" && message.thinkingSummary.trim()) ||
+    (typeof latestEntry?.text === "string" && latestEntry.text.trim()) ||
+    t("chat.pendingLabel");
+
+  const card = document.createElement(entries.length > 0 ? "details" : "div");
+  card.className = `thinking-trace-card${active ? " active" : ""}${failed ? " failed" : ""}`;
+  if (card instanceof HTMLDetailsElement) {
+    card.open = active && state.expandedThinkingTraceIds.has(message.id);
+    card.addEventListener("toggle", () => {
+      if (card.open && active) {
+        state.expandedThinkingTraceIds.add(message.id);
+      } else {
+        state.expandedThinkingTraceIds.delete(message.id);
+      }
+    });
+  }
+
+  const summary = document.createElement(entries.length > 0 ? "summary" : "div");
+  summary.className = "thinking-trace-summary";
+
+  const header = document.createElement("div");
+  header.className = "thinking-trace-header";
+
+  const headerMain = document.createElement("div");
+  headerMain.className = "thinking-trace-header-main";
+
+  const icon = document.createElement("span");
+  icon.className = `thinking-trace-icon ${failed ? "error" : latestEntry?.kind || "thought"}${active ? " active" : ""}`;
+  icon.textContent = getThinkingTraceIcon(latestEntry?.kind, { active, failed });
+
+  const heading = document.createElement("strong");
+  heading.textContent = title;
+
+  headerMain.append(icon, heading);
+  header.append(headerMain);
+
+  const badges = document.createElement("div");
+  badges.className = "thinking-trace-badges";
+  badges.append(
+    createThinkingTraceBadge({
+      label: active
+        ? t("chat.thinkingTraceLive")
+        : failed
+          ? t("chat.thinkingTraceFailed")
+          : t("chat.thinkingTraceDone"),
+      tone: failed ? "error" : active ? "live" : "done",
+    }),
+  );
+  if (latestEntry?.toolName) {
+    badges.append(createThinkingTraceBadge({ label: latestEntry.toolName, tone: "tool" }));
+  }
+  badges.append(createThinkingTraceBadge({
+    label: t("chat.thinkingTraceSteps", { count: String(entries.length) }),
+  }));
+  header.append(badges);
+
+  const preview = document.createElement("p");
+  preview.className = "thinking-trace-preview";
+  preview.textContent = previewSource;
+
+  summary.append(header, preview);
+  card.append(summary);
+
+  if (entries.length > 0) {
+    const history = document.createElement("div");
+    history.className = "thinking-trace-history";
+    for (const entry of entries) {
+      history.append(renderThinkingTraceEntry(entry));
+    }
+    card.append(history);
+  }
+
+  return card;
+}
+
 function upsertMessage(message) {
   if (message.isPending && message.replyTo) {
     const repliedIndex = state.messages.findIndex(
@@ -768,6 +909,14 @@ function upsertMessage(message) {
 
   const existingIndex = state.messages.findIndex((item) => item.id === message.id);
   if (existingIndex >= 0) {
+    if (isThinkingTraceMessage(message) && !isThinkingTraceActive(message) && !(message.thinkingEntries?.length > 0)) {
+      state.messages.splice(existingIndex, 1);
+      state.expandedThinkingTraceIds.delete(message.id);
+      return;
+    }
+    if (isThinkingTraceMessage(message) && !isThinkingTraceActive(message)) {
+      state.expandedThinkingTraceIds.delete(message.id);
+    }
     const existingMessage = state.messages[existingIndex];
     state.messages[existingIndex] = {
       ...message,
@@ -781,12 +930,17 @@ function upsertMessage(message) {
     return;
   }
 
+  if (isThinkingTraceMessage(message) && !isThinkingTraceActive(message) && !(message.thinkingEntries?.length > 0)) {
+    state.expandedThinkingTraceIds.delete(message.id);
+    return;
+  }
+
   if (message.isPending) {
     state.messages.push(message);
     return;
   }
 
-  if (message.replyTo) {
+  if (message.replyTo && !isThinkingTraceMessage(message)) {
     const repliedIndex = state.messages.findIndex(
       (item) => item.id === message.replyTo && item.sender === "user",
     );
@@ -799,6 +953,9 @@ function upsertMessage(message) {
     state.messages = state.messages.filter(
       (item) => !(item.sender === "assistant" && item.isPending && item.replyTo === message.replyTo),
     );
+  }
+  if (isThinkingTraceMessage(message) && !isThinkingTraceActive(message)) {
+    state.expandedThinkingTraceIds.delete(message.id);
   }
   state.messages.push(message);
 }
@@ -822,6 +979,9 @@ function renderMessages() {
 
     const bubble = document.createElement("div");
     bubble.className = "message-bubble";
+    if (isThinkingTraceMessage(message)) {
+      bubble.classList.add("thinking-bubble");
+    }
 
     const label = document.createElement("span");
     label.className = "message-label";
@@ -838,7 +998,9 @@ function renderMessages() {
 
     const body = document.createElement("div");
     body.className = "message-text";
-    if (message.isPending && message.sender !== "user") {
+    if (isThinkingTraceMessage(message)) {
+      body.append(renderThinkingTrace(message));
+    } else if (message.isPending && message.sender !== "user") {
       const pendingLabel = document.createElement("p");
       pendingLabel.textContent = t("chat.pendingLabel");
       body.append(pendingLabel, createPendingIndicator());

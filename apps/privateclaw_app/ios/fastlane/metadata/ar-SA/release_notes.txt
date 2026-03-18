@@ -1,1 +1,1 @@
-New participant and assistant avatars, stronger STT/ASR fallback (whisper -> provider STT -> bridge), better session debugging, and more reliable screenshot-preview launches.
+إضافة عرض حي لمسار التفكير، وتحسين موثوقية ردود الصور/الملفات، وتحسين تجربة الجلسات الخاصة في التطبيق والويب.

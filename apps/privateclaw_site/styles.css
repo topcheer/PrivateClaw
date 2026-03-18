@@ -984,6 +984,11 @@ a:focus {
   border-color: rgba(255, 127, 159, 0.28);
 }
 
+.message-bubble.thinking-bubble {
+  background: linear-gradient(180deg, rgba(143, 125, 255, 0.22), rgba(62, 217, 255, 0.08));
+  border-color: rgba(143, 125, 255, 0.24);
+}
+
 .message-text {
   color: var(--text);
   line-height: 1.6;
@@ -1018,6 +1023,181 @@ a:focus {
 .message-text a {
   color: var(--accent-2);
   text-decoration: underline;
+}
+
+.thinking-trace-card {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
+  background: rgba(7, 12, 26, 0.28);
+  padding: 12px;
+}
+
+details.thinking-trace-card > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+details.thinking-trace-card > summary::-webkit-details-marker {
+  display: none;
+}
+
+.thinking-trace-card.active {
+  border-color: rgba(143, 125, 255, 0.3);
+}
+
+.thinking-trace-card.failed {
+  border-color: rgba(255, 127, 159, 0.38);
+  background: rgba(62, 10, 24, 0.26);
+}
+
+.thinking-trace-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.thinking-trace-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.thinking-trace-header-main {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.thinking-trace-header-main strong {
+  font-size: 0.98rem;
+}
+
+.thinking-trace-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 0.92rem;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
+.thinking-trace-icon.thought,
+.thinking-trace-icon.active {
+  background: rgba(143, 125, 255, 0.2);
+  color: rgba(230, 224, 255, 0.96);
+}
+
+.thinking-trace-icon.active {
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.thinking-trace-icon.action {
+  background: rgba(62, 217, 255, 0.18);
+  color: rgba(204, 247, 255, 0.96);
+}
+
+.thinking-trace-icon.result {
+  background: rgba(92, 255, 196, 0.18);
+  color: rgba(218, 255, 241, 0.98);
+}
+
+.thinking-trace-icon.error {
+  background: rgba(255, 127, 159, 0.22);
+  color: rgba(255, 230, 237, 0.98);
+}
+
+.thinking-trace-preview {
+  margin: 0;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+}
+
+.thinking-trace-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.thinking-trace-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.thinking-trace-badge.live {
+  background: rgba(143, 125, 255, 0.16);
+  color: rgba(233, 228, 255, 0.96);
+}
+
+.thinking-trace-badge.done {
+  background: rgba(92, 255, 196, 0.14);
+  color: rgba(220, 255, 243, 0.98);
+}
+
+.thinking-trace-badge.error {
+  background: rgba(255, 127, 159, 0.18);
+  color: rgba(255, 233, 239, 0.98);
+}
+
+.thinking-trace-badge.tool {
+  background: rgba(62, 217, 255, 0.16);
+  color: rgba(208, 247, 255, 0.98);
+}
+
+.thinking-trace-history {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.thinking-trace-entry {
+  border-radius: 16px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.thinking-trace-entry.thought {
+  border-color: rgba(143, 125, 255, 0.2);
+}
+
+.thinking-trace-entry.action {
+  border-color: rgba(62, 217, 255, 0.2);
+}
+
+.thinking-trace-entry.result {
+  border-color: rgba(92, 255, 196, 0.2);
+}
+
+.thinking-trace-entry.error {
+  border-color: rgba(255, 127, 159, 0.24);
+}
+
+.thinking-trace-entry-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.thinking-trace-entry-body {
+  margin-top: 8px;
 }
 
 .mermaid-card {

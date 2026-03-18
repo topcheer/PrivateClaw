@@ -64,6 +64,22 @@ test("parseOpenClawAgentOutput accepts top-level payload arrays from alternate O
   assert.equal(result, "pong-from-top-level");
 });
 
+test("parseOpenClawAgentOutput tolerates noisy stdout before the JSON payload", () => {
+  const result = parseOpenClawAgentOutput(
+    [
+      "WARNING: provider fallback emitted a banner before --json output",
+      JSON.stringify({
+        status: "ok",
+        result: {
+          payloads: [{ text: "pong-after-noise" }],
+        },
+      }),
+    ].join("\n"),
+  );
+
+  assert.equal(result, "pong-after-noise");
+});
+
 test("parseOpenClawAgentOutput prefers tagged structured PrivateClaw responses", () => {
   const result = parseOpenClawAgentOutput(
     JSON.stringify({
@@ -112,6 +128,225 @@ test("parseOpenClawAgentOutput tolerates trailing commas inside structured respo
   );
 
   assert.equal(result, "voice-reply");
+});
+
+test("parseOpenClawAgentOutput preserves trimmed inline attachment sizes", () => {
+  const base64Data = Buffer.from("hello").toString("base64");
+  const result = parseOpenClawAgentOutput(
+    JSON.stringify({
+      status: "ok",
+      result: {
+        payloads: [
+          {
+            text: [
+              "<privateclaw-response>",
+              JSON.stringify({
+                version: 1,
+                messages: [
+                  {
+                    text: "",
+                    attachments: [
+                      {
+                        name: "hello.txt",
+                        mimeType: "text/plain",
+                        dataBase64: `  ${base64Data}  `,
+                      },
+                    ],
+                  },
+                ],
+              }),
+              "</privateclaw-response>",
+            ].join("\n"),
+          },
+        ],
+      },
+    }),
+  );
+
+  if (typeof result === "string") {
+    assert.fail("Expected an attachment-bearing bridge response.");
+  }
+  const [message] = result.messages;
+  assert(message && typeof message !== "string");
+  const [attachment] = message.attachments ?? [];
+  assert(attachment);
+  assert.equal(attachment.sizeBytes, 5);
+  assert.equal(attachment.dataBase64, base64Data);
+});
+
+test("parseOpenClawAgentOutput resolves structured filePath attachments from the workspace", async (t) => {
+  const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "privateclaw-structured-workspace-"));
+  t.after(async () => {
+    await fs.rm(workspaceDir, { recursive: true, force: true });
+  });
+
+  const attachmentPath = path.join(workspaceDir, "artifact.txt");
+  await fs.writeFile(attachmentPath, "hello from filePath", "utf8");
+
+  const result = parseOpenClawAgentOutput(
+    JSON.stringify({
+      status: "ok",
+      result: {
+        payloads: [
+          {
+            text: [
+              "<privateclaw-response>",
+              JSON.stringify({
+                version: 1,
+                messages: [
+                  {
+                    text: "",
+                    attachments: [
+                      {
+                        name: "artifact.txt",
+                        mimeType: "text/plain",
+                        filePath: attachmentPath,
+                      },
+                    ],
+                  },
+                ],
+              }),
+              "</privateclaw-response>",
+            ].join("\n"),
+          },
+        ],
+      },
+    }),
+    { workspaceDir },
+  );
+
+  if (typeof result === "string") {
+    assert.fail("Expected an attachment-bearing bridge response.");
+  }
+  const [message] = result.messages;
+  assert(message && typeof message !== "string");
+  const [attachment] = message.attachments ?? [];
+  assert(attachment);
+  assert.equal(attachment.name, "artifact.txt");
+  assert.equal(attachment.mimeType, "text/plain");
+  assert.equal(attachment.sizeBytes, Buffer.byteLength("hello from filePath"));
+  assert.equal(attachment.dataBase64, Buffer.from("hello from filePath").toString("base64"));
+});
+
+test("parseOpenClawAgentOutput accepts structured absolute filePath attachments outside the workspace", async (t) => {
+  const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "privateclaw-structured-workspace-"));
+  const outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), "privateclaw-structured-outside-"));
+  t.after(async () => {
+    await Promise.all([
+      fs.rm(workspaceDir, { recursive: true, force: true }),
+      fs.rm(outsideDir, { recursive: true, force: true }),
+    ]);
+  });
+
+  const outsidePath = path.join(outsideDir, "outside.txt");
+  await fs.writeFile(outsidePath, "should stay outside", "utf8");
+
+  const result = parseOpenClawAgentOutput(
+    JSON.stringify({
+      status: "ok",
+      result: {
+        payloads: [
+          {
+            text: [
+              "<privateclaw-response>",
+              JSON.stringify({
+                version: 1,
+                messages: [
+                  {
+                    text: "workspace-only",
+                    attachments: [
+                      {
+                        name: "outside.txt",
+                        mimeType: "text/plain",
+                        filePath: outsidePath,
+                      },
+                    ],
+                  },
+                ],
+              }),
+              "</privateclaw-response>",
+            ].join("\n"),
+          },
+        ],
+      },
+    }),
+    { workspaceDir },
+  );
+
+  if (typeof result === "string") {
+    assert.fail("Expected an attachment-bearing bridge response.");
+  }
+  const [message] = result.messages;
+  assert(message && typeof message !== "string");
+  assert.equal(message.text, "workspace-only");
+  const [attachment] = message.attachments ?? [];
+  assert(attachment);
+  assert.equal(attachment.name, "outside.txt");
+  assert.equal(attachment.mimeType, "text/plain");
+  assert.equal(attachment.sizeBytes, Buffer.byteLength("should stay outside"));
+  assert.equal(attachment.dataBase64, Buffer.from("should stay outside").toString("base64"));
+});
+
+test("parseOpenClawAgentOutput tolerates malformed closing tags and qqimg markup inside structured text", async (t) => {
+  const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "privateclaw-structured-workspace-"));
+  const mediaDir = await fs.mkdtemp(path.join(os.tmpdir(), "privateclaw-structured-media-"));
+  const imagePath = path.join(mediaDir, "video-frames-001.jpg");
+  const imageBytes = Buffer.from("fake-jpg-binary");
+  await fs.writeFile(imagePath, imageBytes);
+  t.after(async () => {
+    await Promise.all([
+      fs.rm(workspaceDir, { recursive: true, force: true }),
+      fs.rm(mediaDir, { recursive: true, force: true }),
+    ]);
+  });
+
+  const result = parseOpenClawAgentOutput(
+    JSON.stringify({
+      status: "ok",
+      result: {
+        payloads: [
+          {
+            text: [
+              "好的，这是工作区里的一张图片（视频帧提取）：",
+              "",
+              "<privateclaw-response>",
+              JSON.stringify({
+                version: 1,
+                messages: [
+                  {
+                    text: [
+                      "好的，这是工作区里的一张图片（视频帧提取）：",
+                      "",
+                      `<qqimg>${imagePath}</qqimg>`,
+                      "",
+                      "你那边收到图片了吗？🦊",
+                    ].join("\n"),
+                  },
+                ],
+                data: {},
+              }),
+              "<privateclaw-response>",
+            ].join("\n"),
+          },
+        ],
+      },
+    }),
+    { workspaceDir },
+  );
+
+  if (typeof result === "string") {
+    assert.fail("Expected an attachment-bearing bridge response.");
+  }
+  const [message] = result.messages;
+  assert(message && typeof message !== "string");
+  assert.equal(message.text, "好的，这是工作区里的一张图片（视频帧提取）：\n\n你那边收到图片了吗？🦊");
+  const [attachment] = message.attachments ?? [];
+  assert(attachment);
+  assert.match(attachment.id, /^structured-attachment-/u);
+  assert.equal(attachment.name, "video-frames-001.jpg");
+  assert.equal(attachment.mimeType, "image/jpeg");
+  assert.equal(attachment.sizeBytes, imageBytes.byteLength);
+  assert.equal(attachment.dataBase64, imageBytes.toString("base64"));
 });
 
 test("OpenClawAgentBridge invokes openclaw agent with session-aware arguments", async () => {
@@ -164,6 +399,7 @@ test("OpenClawAgentBridge invokes openclaw agent with session-aware arguments", 
   assert.match(prompt, /^hello\b/u);
   assert.match(prompt, /PrivateClaw response contract:/u);
   assert.match(prompt, /<privateclaw-response>/u);
+  assert.match(prompt, /Never put channel-specific markup such as <qqimg>/u);
   assert.deepEqual(invokedArgs.slice(5), [
     "--json",
     "--agent",
@@ -363,6 +599,123 @@ test("OpenClawAgentBridge recovers assistant text from the session log when agen
   assert.equal(result, "pixel.png");
 });
 
+test("OpenClawAgentBridge streams thinking traces from the session log while the agent is running", async (t) => {
+  const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "privateclaw-openclaw-state-"));
+  const workspaceDir = path.join(stateDir, "workspace");
+  const sessionLogPath = path.join(
+    stateDir,
+    "agents",
+    "main",
+    "sessions",
+    "privateclaw-trace-session.jsonl",
+  );
+  await fs.mkdir(workspaceDir, { recursive: true });
+  t.after(async () => {
+    await fs.rm(stateDir, { recursive: true, force: true });
+  });
+
+  const bridge = new OpenClawAgentBridge({
+    stateDir,
+    workspaceDir,
+    execFileImpl: (_file, _args, _options, callback) => {
+      void (async () => {
+        await fs.mkdir(path.dirname(sessionLogPath), { recursive: true });
+        await fs.writeFile(sessionLogPath, "", "utf8");
+        await fs.appendFile(
+          sessionLogPath,
+          JSON.stringify({
+            type: "message",
+            id: "trace-assistant-1",
+            timestamp: "2026-01-01T00:00:00.000Z",
+            message: {
+              role: "assistant",
+              content: [{ type: "text", text: "Planning the reply" }],
+              isError: false,
+            },
+          }),
+          "utf8",
+        );
+        await new Promise((resolve) => setTimeout(resolve, 220));
+        await fs.appendFile(sessionLogPath, "\n", "utf8");
+        await new Promise((resolve) => setTimeout(resolve, 220));
+        await fs.appendFile(
+          sessionLogPath,
+          `${JSON.stringify({
+            type: "message",
+            id: "trace-tool-1",
+            timestamp: "2026-01-01T00:00:01.000Z",
+            message: {
+              role: "toolResult",
+              toolName: "read",
+              content: [{ type: "text", text: "Opened README excerpt" }],
+              isError: false,
+            },
+          })}\n`,
+          "utf8",
+        );
+        await new Promise((resolve) => setTimeout(resolve, 220));
+        callback(
+          null,
+          JSON.stringify({
+            status: "ok",
+            result: {
+              payloads: [
+                {
+                  text: [
+                    "<privateclaw-response>",
+                    JSON.stringify({
+                      version: 1,
+                      messages: [{ text: "Bridge final answer" }],
+                    }),
+                    "</privateclaw-response>",
+                  ].join("\n"),
+                },
+              ],
+            },
+          }),
+          "",
+        );
+      })().catch((error) => {
+        callback(error instanceof Error ? error : new Error(String(error)), "", "");
+      });
+    },
+  });
+
+  const snapshots: Array<{
+    summary: string;
+    entryCount: number;
+    latestKind?: string;
+  }> = [];
+  const result = await bridge.handleUserMessage({
+    sessionId: "privateclaw-trace-session",
+    message: "Reply after reading the README.",
+    onThinkingTrace: (snapshot) => {
+      snapshots.push({
+        summary: snapshot.summary,
+        entryCount: snapshot.entries.length,
+        latestKind:
+          snapshot.entries[
+            Math.max(0, snapshot.entries.length - 1)
+          ]?.kind,
+      });
+    },
+  });
+
+  assert.equal(result, "Bridge final answer");
+  assert.deepEqual(snapshots, [
+    {
+      summary: "Planning the reply",
+      entryCount: 1,
+      latestKind: "thought",
+    },
+    {
+      summary: "read: Opened README excerpt",
+      entryCount: 2,
+      latestKind: "action",
+    },
+  ]);
+});
+
 test("OpenClawAgentBridge recovers structured assistant text from the session log", async (t) => {
   const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "privateclaw-openclaw-state-"));
   const workspaceDir = path.join(stateDir, "workspace");
@@ -430,6 +783,225 @@ test("OpenClawAgentBridge recovers structured assistant text from the session lo
     messages: [{ text: "pixel.png" }],
     data: { filename: "pixel.png" },
   });
+});
+
+test("OpenClawAgentBridge recovers structured assistant attachments from absolute media paths in the session log", async (t) => {
+  const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "privateclaw-openclaw-state-"));
+  const workspaceDir = path.join(stateDir, "workspace");
+  const mediaDir = await fs.mkdtemp(path.join(os.tmpdir(), "privateclaw-browser-media-"));
+  const imagePath = path.join(mediaDir, "slide-01-cover.png");
+  const imageBytes = Buffer.from("fake-png-binary");
+  const sessionLogPath = path.join(
+    stateDir,
+    "agents",
+    "main",
+    "sessions",
+    "privateclaw-session.jsonl",
+  );
+  await fs.mkdir(workspaceDir, { recursive: true });
+  await fs.writeFile(imagePath, imageBytes);
+  t.after(async () => {
+    await Promise.all([
+      fs.rm(stateDir, { recursive: true, force: true }),
+      fs.rm(mediaDir, { recursive: true, force: true }),
+    ]);
+  });
+
+  const bridge = new OpenClawAgentBridge({
+    stateDir,
+    workspaceDir,
+    execFileImpl: (_file, _args, _options, callback) => {
+      void (async () => {
+        await fs.mkdir(path.dirname(sessionLogPath), { recursive: true });
+        await fs.writeFile(
+          sessionLogPath,
+          `${JSON.stringify({
+            type: "message",
+            id: "assistant-message-1",
+            timestamp: "2026-03-18T03:16:12.179Z",
+            message: {
+              role: "assistant",
+              content: [
+                {
+                  type: "text",
+                  text: [
+                    "好了，截图完成！",
+                    "",
+                    "<privateclaw-response>",
+                    JSON.stringify({
+                      version: 1,
+                      messages: [
+                        {
+                          text: "做了一个演示稿，给你看封面。",
+                          attachments: [
+                            {
+                              name: "slide-01-cover.png",
+                              mimeType: "image/png",
+                              filePath: imagePath,
+                            },
+                          ],
+                        },
+                      ],
+                    }),
+                    "</privateclaw-response>",
+                  ].join("\n"),
+                },
+              ],
+              isError: false,
+            },
+          })}\n`,
+          "utf8",
+        );
+        callback(
+          null,
+          JSON.stringify({
+            result: {
+              payloads: [],
+            },
+          }),
+          "",
+        );
+      })().catch((error) => {
+        callback(error instanceof Error ? error : new Error(String(error)), "", "");
+      });
+    },
+  });
+
+  const result = await bridge.handleUserMessage({
+    sessionId: "privateclaw-session",
+    message: "Show me the generated slide preview.",
+  });
+
+  if (typeof result === "string") {
+    assert.fail("Expected an attachment-bearing bridge response.");
+  }
+  const [message] = result.messages;
+  assert(message && typeof message !== "string");
+  assert.equal(message.text, "做了一个演示稿，给你看封面。");
+  const [attachment] = message.attachments ?? [];
+  assert(attachment);
+  assert.match(attachment.id, /^structured-attachment-/u);
+  assert.equal(attachment.name, "slide-01-cover.png");
+  assert.equal(attachment.mimeType, "image/png");
+  assert.equal(attachment.sizeBytes, imageBytes.byteLength);
+  assert.equal(attachment.dataBase64, imageBytes.toString("base64"));
+});
+
+test("OpenClawAgentBridge prefers structured session-log replies over earlier stdout text and dedupes recovered artifacts", async (t) => {
+  const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "privateclaw-openclaw-state-"));
+  const workspaceDir = path.join(stateDir, "workspace");
+  const mediaDir = await fs.mkdtemp(path.join(os.tmpdir(), "privateclaw-browser-media-"));
+  const imagePath = path.join(mediaDir, "google-screenshot.png");
+  const imageBytes = Buffer.from("fake-google-screenshot");
+  const sessionLogPath = path.join(
+    stateDir,
+    "agents",
+    "main",
+    "sessions",
+    "privateclaw-session.jsonl",
+  );
+  await fs.mkdir(workspaceDir, { recursive: true });
+  await fs.writeFile(imagePath, imageBytes);
+  t.after(async () => {
+    await Promise.all([
+      fs.rm(stateDir, { recursive: true, force: true }),
+      fs.rm(mediaDir, { recursive: true, force: true }),
+    ]);
+  });
+
+  const bridge = new OpenClawAgentBridge({
+    stateDir,
+    workspaceDir,
+    execFileImpl: (_file, _args, _options, callback) => {
+      void (async () => {
+        await fs.mkdir(path.dirname(sessionLogPath), { recursive: true });
+        await fs.writeFile(
+          sessionLogPath,
+          [
+            JSON.stringify({
+              type: "message",
+              id: "tool-result-1",
+              timestamp: "2026-03-18T08:25:18.564Z",
+              message: {
+                role: "toolResult",
+                toolName: "browser_navigate",
+                content: [{ type: "text", text: `MEDIA:${imagePath}` }],
+                isError: false,
+              },
+            }),
+            JSON.stringify({
+              type: "message",
+              id: "assistant-message-1",
+              timestamp: "2026-03-18T08:25:29.290Z",
+              message: {
+                role: "assistant",
+                content: [
+                  {
+                    type: "text",
+                    text: [
+                      "<privateclaw-response>",
+                      JSON.stringify({
+                        version: 1,
+                        messages: [
+                          {
+                            text: "已为你打开谷歌并截图",
+                            attachments: [
+                              {
+                                name: "google-screenshot.png",
+                                mimeType: "image/png",
+                                filePath: imagePath,
+                              },
+                            ],
+                          },
+                        ],
+                        data: {},
+                      }),
+                      "</privateclaw-response>",
+                    ].join("\n"),
+                  },
+                ],
+                isError: false,
+              },
+            }),
+            "",
+          ].join("\n"),
+          "utf8",
+        );
+        callback(
+          null,
+          JSON.stringify({
+            status: "ok",
+            result: {
+              payloads: [{ text: "我来帮你打开谷歌并截图。" }],
+            },
+          }),
+          "",
+        );
+      })().catch((error) => {
+        callback(error instanceof Error ? error : new Error(String(error)), "", "");
+      });
+    },
+  });
+
+  const result = await bridge.handleUserMessage({
+    sessionId: "privateclaw-session",
+    message: "打开谷歌截个图给我",
+  });
+
+  if (typeof result === "string") {
+    assert.fail("Expected an attachment-bearing bridge response.");
+  }
+  assert.equal(result.messages.length, 1);
+  const [message] = result.messages;
+  assert(message && typeof message !== "string");
+  assert.equal(message.text, "已为你打开谷歌并截图");
+  assert.equal(message.attachments?.length, 1);
+  const [attachment] = message.attachments ?? [];
+  assert(attachment);
+  assert.equal(attachment.name, "google-screenshot.png");
+  assert.equal(attachment.mimeType, "image/png");
+  assert.equal(attachment.sizeBytes, imageBytes.byteLength);
+  assert.equal(attachment.dataBase64, imageBytes.toString("base64"));
 });
 
 test("OpenClawAgentBridge bridges TTS audio artifacts from the session log", async (t) => {

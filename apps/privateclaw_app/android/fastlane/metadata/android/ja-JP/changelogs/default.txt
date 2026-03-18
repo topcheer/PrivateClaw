@@ -1,1 +1,1 @@
-New participant and assistant avatars, stronger STT/ASR fallback (whisper -> provider STT -> bridge), better session debugging, and more reliable screenshot-preview launches.
+ライブ思考トレースを追加し、画像/ファイル返信の信頼性を高め、アプリとWebのプライベートセッション体験を改善しました。

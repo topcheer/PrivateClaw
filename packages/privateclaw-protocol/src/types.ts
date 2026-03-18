@@ -39,6 +39,7 @@ export interface ClientHelloPayload {
   appId?: string;
   deviceLabel?: string;
   displayName?: string;
+  supportsThinkingTrace?: boolean;
   sentAt: string;
 }
 
@@ -95,6 +96,37 @@ export interface AssistantMessagePayload {
   attachments?: PrivateClawAttachment[];
 }
 
+export type PrivateClawThinkingEntryKind =
+  | "thought"
+  | "action"
+  | "result"
+  | "error";
+
+export interface PrivateClawThinkingEntry {
+  id: string;
+  kind: PrivateClawThinkingEntryKind;
+  title: string;
+  text: string;
+  sentAt: string;
+  toolName?: string;
+}
+
+export type PrivateClawThinkingStatus =
+  | "started"
+  | "streaming"
+  | "completed"
+  | "failed";
+
+export interface ThinkingMessagePayload {
+  kind: "thinking_message";
+  messageId: string;
+  status: PrivateClawThinkingStatus;
+  sentAt: string;
+  summary: string;
+  entries: PrivateClawThinkingEntry[];
+  replyTo?: string;
+}
+
 export interface SystemMessagePayload {
   kind: "system_message";
   messageId?: string;
@@ -139,6 +171,7 @@ export type PrivateClawPayload =
   | UserMessagePayload
   | ParticipantMessagePayload
   | AssistantMessagePayload
+  | ThinkingMessagePayload
   | SystemMessagePayload
   | ProviderCapabilitiesPayload
   | SessionRenewedPayload

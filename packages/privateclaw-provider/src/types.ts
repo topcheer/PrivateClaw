@@ -3,11 +3,13 @@ import type {
   PrivateClawInvite,
   PrivateClawParticipant,
   PrivateClawSlashCommand,
+  PrivateClawThinkingEntry,
+  PrivateClawThinkingStatus,
 } from "@privateclaw/protocol";
 
 export interface PrivateClawConversationTurn {
   messageId: string;
-  role: "user" | "assistant" | "system";
+  role: "user" | "assistant" | "system" | "thinking";
   text: string;
   sentAt: string;
   bridgeText?: string;
@@ -16,6 +18,9 @@ export interface PrivateClawConversationTurn {
   replyTo?: string;
   severity?: "info" | "error";
   attachments?: PrivateClawAttachment[];
+  thinkingStatus?: PrivateClawThinkingStatus;
+  thinkingSummary?: string;
+  thinkingEntries?: PrivateClawThinkingEntry[];
 }
 
 export type BridgeMessage =
@@ -48,13 +53,23 @@ export interface PrivateClawVerboseController {
   enabled: boolean;
 }
 
+export interface PrivateClawThinkingTraceSnapshot {
+  entries: ReadonlyArray<PrivateClawThinkingEntry>;
+  sentAt: string;
+  summary: string;
+}
+
 export interface PrivateClawAgentBridge {
+  supportsThinkingTrace?: boolean;
   handleUserMessage(params: {
     sessionId: string;
     invite: PrivateClawInvite;
     message: string;
     attachments?: ReadonlyArray<PrivateClawAttachment>;
     history: ReadonlyArray<PrivateClawConversationTurn>;
+    onThinkingTrace?: (
+      snapshot: PrivateClawThinkingTraceSnapshot,
+    ) => void | Promise<void>;
   }): Promise<BridgeResponse>;
   transcribeAudioAttachments?(
     params: PrivateClawAudioTranscriptionRequest,
@@ -77,6 +92,7 @@ export interface PrivateClawProviderOptions {
 
 export interface ProviderParticipantState extends PrivateClawParticipant {
   lastSeenAt: string;
+  supportsThinkingTrace?: boolean;
 }
 
 export interface PrivateClawManagedSession {

@@ -1173,6 +1173,15 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       _isLoadingRecentPhotos = true;
     });
     try {
+      if (Platform.isAndroid) {
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _recentPhotoAssets.clear();
+        });
+        return;
+      }
       final PermissionState permission =
           await PhotoManager.requestPermissionExtend(
             requestOption: const PermissionRequestOption(

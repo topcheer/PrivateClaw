@@ -1,1 +1,1 @@
-Nuevo seguimiento del razonamiento en vivo, respuestas con imágenes/archivos más fiables y una experiencia de sesión privada más fluida en la app y la web.
+Rediseñamos el cuadro de chat con edición a pantalla completa, más herramientas de emoji/foto/voz, escritura en pantalla completa alineada arriba y un envío de archivos más fluido.

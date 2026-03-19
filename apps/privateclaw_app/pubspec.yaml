@@ -1,7 +1,7 @@
 name: privateclaw_app
 description: "PrivateClaw ephemeral encrypted chat client"
 publish_to: 'none'
-version: 0.1.5+6
+version: 0.1.6+7
 
 environment:
   sdk: ^3.10.7
@@ -17,11 +17,13 @@ dependencies:
   firebase_messaging: 16.1.0
   file_picker: ^8.1.7
   flutter_markdown: ^0.7.7+1
+  image_picker: ^1.1.2
   intl: ^0.20.2
   just_audio: ^0.10.5
   mobile_scanner:
     path: plugins/mobile_scanner
   path_provider: ^2.1.5
+  photo_manager: ^3.7.1
   privateclaw_local_notifications:
     path: plugins/privateclaw_local_notifications
   video_player: ^2.10.0

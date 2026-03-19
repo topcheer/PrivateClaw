@@ -249,6 +249,42 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get emojiPickerTitle => '常用表情';
+
+  @override
+  String get composerExpandTooltip => '展开编辑';
+
+  @override
+  String get composerFullscreenTitle => '全屏编辑';
+
+  @override
+  String get emojiPickerFrequentTab => '常用';
+
+  @override
+  String get emojiPickerDefaultTab => '默认';
+
+  @override
+  String get photoTrayTooltip => '照片';
+
+  @override
+  String get photoTrayCameraButton => '拍照';
+
+  @override
+  String get photoTrayGalleryButton => '图库';
+
+  @override
+  String get photoTrayNoImages => '暂无照片';
+
+  @override
+  String get photoLibraryPermissionDenied => '需要允许访问照片，才能浏览最近图片。';
+
+  @override
+  String get filePickerTooltip => '文件';
+
+  @override
+  String get voiceRecordingSlideUpToCancel => '松开发送，上滑取消';
+
+  @override
+  String get voiceRecordingReleaseToCancel => '松开取消发送';
 }
 
 /// The translations for Chinese, using the Han script (`zh_Hant`).
@@ -482,4 +518,40 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get emojiPickerTitle => '常用表情';
+
+  @override
+  String get composerExpandTooltip => '展開編輯';
+
+  @override
+  String get composerFullscreenTitle => '全螢幕編輯';
+
+  @override
+  String get emojiPickerFrequentTab => '常用';
+
+  @override
+  String get emojiPickerDefaultTab => '預設';
+
+  @override
+  String get photoTrayTooltip => '照片';
+
+  @override
+  String get photoTrayCameraButton => '拍照';
+
+  @override
+  String get photoTrayGalleryButton => '圖庫';
+
+  @override
+  String get photoTrayNoImages => '暫無照片';
+
+  @override
+  String get photoLibraryPermissionDenied => '需要允許存取照片，才能瀏覽最近圖片。';
+
+  @override
+  String get filePickerTooltip => '檔案';
+
+  @override
+  String get voiceRecordingSlideUpToCancel => '鬆開傳送，上滑取消';
+
+  @override
+  String get voiceRecordingReleaseToCancel => '鬆開取消傳送';
 }

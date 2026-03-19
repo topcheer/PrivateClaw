@@ -1,1 +1,1 @@
-Novo bloco de raciocínio ao vivo, respostas com imagem/arquivo mais confiáveis e uma experiência de sessão privada mais fluida no app e na web.
+Redesenhamos o composer de chat com edição em tela cheia, mais ferramentas de emoji/foto/voz, escrita em tela cheia alinhada ao topo e compartilhamento de anexos mais fluido.

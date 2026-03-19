@@ -179,5 +179,53 @@
         "example": "SolarFox"
       }
     }
+  },
+  "composerExpandTooltip": "Expand editor",
+  "composerFullscreenTitle": "Expanded composer",
+  "emojiPickerFrequentTab": "Frequent",
+  "emojiPickerDefaultTab": "Default",
+  "photoTrayTooltip": "Photos",
+  "photoTrayCameraButton": "Camera",
+  "photoTrayGalleryButton": "Gallery",
+  "photoTrayNoImages": "No photos available.",
+  "photoLibraryPermissionDenied": "Photo access is required to browse recent images.",
+  "filePickerTooltip": "Files",
+  "voiceRecordingSlideUpToCancel": "Release to send · slide up to cancel",
+  "voiceRecordingReleaseToCancel": "Release to cancel",
+  "@composerExpandTooltip": {
+    "description": "Tooltip for opening the fullscreen composer editor."
+  },
+  "@composerFullscreenTitle": {
+    "description": "Title shown on the fullscreen composer editor page."
+  },
+  "@emojiPickerFrequentTab": {
+    "description": "Label for the frequently used emoji group."
+  },
+  "@emojiPickerDefaultTab": {
+    "description": "Label for the default emoji group."
+  },
+  "@photoTrayTooltip": {
+    "description": "Tooltip and header label for the recent photo tray."
+  },
+  "@photoTrayCameraButton": {
+    "description": "Label for opening the camera from the photo tray."
+  },
+  "@photoTrayGalleryButton": {
+    "description": "Label for opening the system gallery picker from the photo tray."
+  },
+  "@photoTrayNoImages": {
+    "description": "Message shown when the recent photo tray has no visible photos."
+  },
+  "@photoLibraryPermissionDenied": {
+    "description": "Status text shown when recent photo access was denied."
+  },
+  "@filePickerTooltip": {
+    "description": "Tooltip for opening the file picker."
+  },
+  "@voiceRecordingSlideUpToCancel": {
+    "description": "Hint shown while voice recording is active and can still be cancelled by sliding up."
+  },
+  "@voiceRecordingReleaseToCancel": {
+    "description": "Hint shown while voice recording is cancel-armed."
   }
 }

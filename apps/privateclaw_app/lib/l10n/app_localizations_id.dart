@@ -266,4 +266,42 @@ class AppLocalizationsId extends AppLocalizations {
 
   @override
   String get emojiPickerTitle => 'Common emoji';
+
+  @override
+  String get composerExpandTooltip => 'Expand editor';
+
+  @override
+  String get composerFullscreenTitle => 'Expanded composer';
+
+  @override
+  String get emojiPickerFrequentTab => 'Frequent';
+
+  @override
+  String get emojiPickerDefaultTab => 'Default';
+
+  @override
+  String get photoTrayTooltip => 'Photos';
+
+  @override
+  String get photoTrayCameraButton => 'Camera';
+
+  @override
+  String get photoTrayGalleryButton => 'Gallery';
+
+  @override
+  String get photoTrayNoImages => 'No photos available.';
+
+  @override
+  String get photoLibraryPermissionDenied =>
+      'Photo access is required to browse recent images.';
+
+  @override
+  String get filePickerTooltip => 'Files';
+
+  @override
+  String get voiceRecordingSlideUpToCancel =>
+      'Release to send · slide up to cancel';
+
+  @override
+  String get voiceRecordingReleaseToCancel => 'Release to cancel';
 }

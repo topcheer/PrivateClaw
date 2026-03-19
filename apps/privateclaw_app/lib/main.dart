@@ -1,13 +1,16 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+import 'package:photo_manager/photo_manager.dart';
 
 import 'l10n/app_localizations.dart';
 import 'models/chat_attachment.dart';
@@ -19,6 +22,7 @@ import 'models/privateclaw_slash_command.dart';
 import 'services/privateclaw_active_session_store.dart';
 import 'services/privateclaw_audio_recorder.dart';
 import 'services/privateclaw_debug_bootstrap.dart';
+import 'services/privateclaw_emoji_store.dart';
 import 'services/privateclaw_identity_store.dart';
 import 'services/privateclaw_firebase_options.dart';
 import 'services/privateclaw_notification_service.dart';
@@ -33,34 +37,64 @@ const int _maxInlineAttachmentBytes = 5 * 1024 * 1024;
 const Duration _sessionRenewWarningThreshold = Duration(minutes: 30);
 const String _sessionRenewCommandSlash = '/renew-session';
 const double _voiceCancelActivationDistance = 120;
-const List<String> _commonEmoji = <String>[
+const int _maxFrequentEmoji = 18;
+const int _recentPhotoPageSize = 48;
+const double _photoTrayHeight = 188;
+const double _recordingPanelHeight = 280;
+const List<String> _defaultEmoji = <String>[
   '😀',
+  '😁',
   '😂',
+  '🤣',
   '🥹',
+  '😊',
   '😍',
+  '😘',
+  '😎',
   '🤔',
+  '🤨',
   '😴',
   '😭',
   '😡',
+  '😮',
+  '🥳',
+  '🤗',
+  '🤝',
   '👍',
   '👎',
   '🙏',
   '👏',
   '💪',
+  '🙌',
+  '👀',
   '🎉',
   '🔥',
   '❤️',
+  '💙',
+  '💚',
+  '🫶',
   '💯',
   '✨',
   '🤖',
   '🦀',
   '🐾',
+  '🐶',
+  '🐱',
+  '🦊',
+  '🐼',
+  '🐳',
   '🌙',
   '☀️',
+  '⭐',
   '🍀',
+  '🌈',
+  '☕',
+  '🎵',
+  '📸',
+  '💡',
 ];
 
-enum _ComposerInputMode { text, voice }
+enum _EmojiPickerTab { frequent, defaults }
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -157,8 +191,10 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       const PrivateClawActiveSessionStore();
   final PrivateClawIdentityStore _identityStore =
       const PrivateClawIdentityStore();
+  final PrivateClawEmojiStore _emojiStore = const PrivateClawEmojiStore();
   final PrivateClawNotificationService _notificationService =
       PrivateClawNotificationService.instance;
+  final ImagePicker _imagePicker = ImagePicker();
   final TextEditingController _inviteController = TextEditingController();
   final TextEditingController _messageController = TextEditingController();
   final FocusNode _composerFocusNode = FocusNode();
@@ -168,6 +204,11 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
   final List<PrivateClawSlashCommand> _availableCommands =
       <PrivateClawSlashCommand>[];
   final List<PrivateClawParticipant> _participants = <PrivateClawParticipant>[];
+  final List<AssetEntity> _recentPhotoAssets = <AssetEntity>[];
+  final Map<String, Future<Uint8List?>> _photoThumbnailFutures =
+      <String, Future<Uint8List?>>{};
+  final Map<String, String> _photoAttachmentIdsByAssetId = <String, String>{};
+  final Set<String> _loadingPhotoAssetIds = <String>{};
 
   PrivateClawInvite? _invite;
   PrivateClawSessionClient? _client;
@@ -180,11 +221,17 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
   PrivateClawIdentity? _identity;
   Timer? _sessionExpiryRefreshTimer;
   bool _isRenewingSession = false;
-  _ComposerInputMode _composerInputMode = _ComposerInputMode.text;
   bool _isRecordingVoice = false;
   bool _isStoppingVoiceRecording = false;
   Future<void>? _voiceRecordingStartFuture;
   bool _isEmojiPickerVisible = false;
+  _EmojiPickerTab _emojiPickerTab = _EmojiPickerTab.frequent;
+  bool _isPhotoTrayVisible = false;
+  bool _isLoadingRecentPhotos = false;
+  Timer? _voiceRecordingTicker;
+  Duration _voiceRecordingElapsed = Duration.zero;
+  int _voiceRecordingTick = 0;
+  Map<String, int> _emojiUsage = <String, int>{};
   double _lastKeyboardInsetHeight = 320;
   Offset? _voiceHoldStartGlobalPosition;
   bool _isVoiceCancelArmed = false;
@@ -199,7 +246,6 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
   bool get _hasDraftContent =>
       _messageController.text.trim().isNotEmpty ||
       _selectedAttachments.isNotEmpty;
-  bool get _isVoiceInputMode => _composerInputMode == _ComposerInputMode.voice;
   bool get _hasSessionSetup => _invite != null;
   bool get _hasManagedSessionContext =>
       _invite != null &&
@@ -216,6 +262,28 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
           _sessionStatus == PrivateClawSessionStatus.active ||
           _sessionStatus == PrivateClawSessionStatus.reconnecting ||
           _sessionStatus == PrivateClawSessionStatus.relayAttached);
+  List<String> get _frequentEmoji {
+    final List<String> seeded = _defaultEmoji.take(_maxFrequentEmoji).toList();
+    final List<MapEntry<String, int>> ranked = _emojiUsage.entries.toList()
+      ..sort((MapEntry<String, int> left, MapEntry<String, int> right) {
+        final int usageOrder = right.value.compareTo(left.value);
+        if (usageOrder != 0) {
+          return usageOrder;
+        }
+        final int leftIndex = _defaultEmoji.indexOf(left.key);
+        final int rightIndex = _defaultEmoji.indexOf(right.key);
+        return leftIndex.compareTo(rightIndex);
+      });
+    for (final MapEntry<String, int> entry in ranked) {
+      if (entry.value <= 0 || !_defaultEmoji.contains(entry.key)) {
+        continue;
+      }
+      seeded.remove(entry.key);
+      seeded.insert(0, entry.key);
+    }
+    return seeded.take(_maxFrequentEmoji).toList(growable: false);
+  }
+
   PrivateClawSlashCommand? get _sessionRenewCommand {
     for (final PrivateClawSlashCommand command in _availableCommands) {
       if (command.slash == _sessionRenewCommandSlash) {
@@ -286,6 +354,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    unawaited(_loadEmojiUsage());
     final PrivateClawPreviewData? previewData = widget.previewData;
     if (previewData != null) {
       _applyPreview(previewData);
@@ -342,6 +411,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     unawaited(_cancelVoiceRecording(updateStatus: false, setUiState: false));
     unawaited(_disposeClient(reason: 'widget_disposed', notifyRemote: false));
     _sessionExpiryRefreshTimer?.cancel();
+    _voiceRecordingTicker?.cancel();
     _inviteController.dispose();
     _composerFocusNode.dispose();
     _messageController
@@ -438,7 +508,6 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
 
     final bool shouldAutoOpenSlashCommands =
         _canSend &&
-        !_isVoiceInputMode &&
         !_isSlashCommandsSheetOpen &&
         _availableCommands.isNotEmpty &&
         previousText.isEmpty &&
@@ -1015,8 +1084,24 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     }
   }
 
+  Future<void> _loadEmojiUsage() async {
+    try {
+      final Map<String, int> usage = await _emojiStore.load();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _emojiUsage = usage;
+      });
+    } catch (error, stackTrace) {
+      debugPrint('[privateclaw-app] failed to load emoji usage: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
   Future<void> _pickAttachments() async {
     final AppLocalizations l10n = AppLocalizations.of(context)!;
+    _closeComposerPanels(clearFocus: true);
     try {
       final FilePickerResult? result = await FilePicker.platform.pickFiles(
         allowMultiple: true,
@@ -1033,22 +1118,15 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
         if (bytes == null || bytes.isEmpty) {
           continue;
         }
-        if (bytes.length > _maxInlineAttachmentBytes) {
-          setState(() {
-            _statusText = l10n.sendFailed('attachment_too_large:${file.name}');
-          });
-          continue;
-        }
-
-        nextAttachments.add(
-          ChatAttachment(
-            id: _nextAttachmentId(),
-            name: file.name,
-            mimeType: _inferMimeType(file.name),
-            sizeBytes: bytes.length,
-            dataBase64: base64Encode(bytes),
-          ),
+        final ChatAttachment? attachment = _buildInlineAttachment(
+          l10n,
+          bytes: bytes,
+          name: file.name,
+          mimeType: _inferMimeType(file.name),
         );
+        if (attachment != null) {
+          nextAttachments.add(attachment);
+        }
       }
 
       if (nextAttachments.isEmpty || !mounted) {
@@ -1068,6 +1146,291 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     }
   }
 
+  Future<void> _togglePhotoTray() async {
+    if (!_canSend) {
+      return;
+    }
+
+    final bool shouldShow = !_isPhotoTrayVisible;
+    setState(() {
+      _isEmojiPickerVisible = false;
+      _isPhotoTrayVisible = shouldShow;
+    });
+    if (!shouldShow) {
+      return;
+    }
+    _composerFocusNode.unfocus();
+    await _loadRecentPhotos();
+  }
+
+  Future<void> _loadRecentPhotos({bool force = false}) async {
+    final AppLocalizations l10n = AppLocalizations.of(context)!;
+    if (_isLoadingRecentPhotos || (!force && _recentPhotoAssets.isNotEmpty)) {
+      return;
+    }
+
+    setState(() {
+      _isLoadingRecentPhotos = true;
+    });
+    try {
+      final PermissionState permission =
+          await PhotoManager.requestPermissionExtend(
+            requestOption: const PermissionRequestOption(
+              iosAccessLevel: IosAccessLevel.readWrite,
+            ),
+          );
+      final bool hasPermission =
+          permission == PermissionState.authorized ||
+          permission == PermissionState.limited;
+      if (!hasPermission) {
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _recentPhotoAssets.clear();
+          _statusText = l10n.photoLibraryPermissionDenied;
+        });
+        return;
+      }
+
+      final List<AssetPathEntity> paths = await PhotoManager.getAssetPathList(
+        onlyAll: true,
+        type: RequestType.image,
+        filterOption: FilterOptionGroup(
+          imageOption: const FilterOption(needTitle: true),
+        ),
+      );
+      final List<AssetEntity> assets = paths.isEmpty
+          ? const <AssetEntity>[]
+          : await paths.first.getAssetListPaged(
+              page: 0,
+              size: _recentPhotoPageSize,
+            );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _recentPhotoAssets
+          ..clear()
+          ..addAll(assets);
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _statusText = l10n.sendFailed(error.toString());
+      });
+    } finally {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isLoadingRecentPhotos = false;
+      });
+    }
+  }
+
+  Future<void> _pickFromCamera() async {
+    final AppLocalizations l10n = AppLocalizations.of(context)!;
+    _closeComposerPanels(clearFocus: true);
+    try {
+      final XFile? photo = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        maxWidth: 1920,
+        maxHeight: 1920,
+        imageQuality: 88,
+      );
+      if (photo == null) {
+        return;
+      }
+      final Uint8List bytes = await photo.readAsBytes();
+      if (!mounted) {
+        return;
+      }
+      final ChatAttachment? attachment = _buildInlineAttachment(
+        l10n,
+        bytes: bytes,
+        name: photo.name.isEmpty
+            ? 'camera-${DateTime.now().millisecondsSinceEpoch}.jpg'
+            : photo.name,
+        mimeType: _inferMimeType(
+          photo.name.isEmpty ? 'camera.jpg' : photo.name,
+        ),
+      );
+      if (attachment == null) {
+        return;
+      }
+      setState(() {
+        _selectedAttachments.add(attachment);
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _statusText = l10n.sendFailed(error.toString());
+      });
+    }
+  }
+
+  Future<void> _pickFromGallery() async {
+    final AppLocalizations l10n = AppLocalizations.of(context)!;
+    _closeComposerPanels(clearFocus: true);
+    try {
+      final List<XFile> photos = await _imagePicker.pickMultiImage(
+        maxWidth: 1920,
+        maxHeight: 1920,
+        imageQuality: 88,
+        limit: 20,
+      );
+      if (photos.isEmpty || !mounted) {
+        return;
+      }
+
+      final List<ChatAttachment> nextAttachments = <ChatAttachment>[];
+      for (final XFile photo in photos) {
+        final Uint8List bytes = await photo.readAsBytes();
+        final ChatAttachment? attachment = _buildInlineAttachment(
+          l10n,
+          bytes: bytes,
+          name: photo.name.isEmpty
+              ? 'photo-${DateTime.now().millisecondsSinceEpoch}.jpg'
+              : photo.name,
+          mimeType: _inferMimeType(
+            photo.name.isEmpty ? 'photo.jpg' : photo.name,
+          ),
+        );
+        if (attachment != null) {
+          nextAttachments.add(attachment);
+        }
+      }
+
+      if (nextAttachments.isEmpty || !mounted) {
+        return;
+      }
+      setState(() {
+        _selectedAttachments.addAll(nextAttachments);
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _statusText = l10n.sendFailed(error.toString());
+      });
+    }
+  }
+
+  Future<void> _toggleRecentPhotoAttachment(AssetEntity asset) async {
+    final AppLocalizations l10n = AppLocalizations.of(context)!;
+    final String? existingAttachmentId = _photoAttachmentIdsByAssetId[asset.id];
+    if (existingAttachmentId != null) {
+      _removeAttachment(existingAttachmentId);
+      return;
+    }
+    if (_loadingPhotoAssetIds.contains(asset.id)) {
+      return;
+    }
+
+    setState(() {
+      _loadingPhotoAssetIds.add(asset.id);
+    });
+    try {
+      final Uint8List? bytes = await asset.thumbnailDataWithSize(
+        const ThumbnailSize(1920, 1920),
+        quality: 90,
+      );
+      if (!mounted) {
+        return;
+      }
+      if (bytes == null || bytes.isEmpty) {
+        setState(() {
+          _statusText = l10n.photoTrayNoImages;
+        });
+        return;
+      }
+      final ChatAttachment? attachment = _buildInlineAttachment(
+        l10n,
+        bytes: bytes,
+        name: _photoAttachmentName(asset),
+        mimeType: 'image/jpeg',
+      );
+      if (attachment == null) {
+        return;
+      }
+      setState(() {
+        _selectedAttachments.add(attachment);
+        _photoAttachmentIdsByAssetId[asset.id] = attachment.id;
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _statusText = l10n.sendFailed(error.toString());
+      });
+    } finally {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _loadingPhotoAssetIds.remove(asset.id);
+      });
+    }
+  }
+
+  ChatAttachment? _buildInlineAttachment(
+    AppLocalizations l10n, {
+    required Uint8List bytes,
+    required String name,
+    required String mimeType,
+  }) {
+    if (bytes.isEmpty) {
+      return null;
+    }
+    if (bytes.length > _maxInlineAttachmentBytes) {
+      if (mounted) {
+        setState(() {
+          _statusText = l10n.sendFailed('attachment_too_large:$name');
+        });
+      } else {
+        _statusText = l10n.sendFailed('attachment_too_large:$name');
+      }
+      return null;
+    }
+    return ChatAttachment(
+      id: _nextAttachmentId(),
+      name: name,
+      mimeType: mimeType,
+      sizeBytes: bytes.length,
+      dataBase64: base64Encode(bytes),
+    );
+  }
+
+  String _photoAttachmentName(AssetEntity asset) {
+    final String rawTitle = asset.title?.trim() ?? '';
+    if (rawTitle.isEmpty) {
+      return 'photo-${DateTime.now().millisecondsSinceEpoch}.jpg';
+    }
+    if (rawTitle.contains('.')) {
+      return rawTitle;
+    }
+    return '$rawTitle.jpg';
+  }
+
+  Future<Uint8List?> _thumbnailFutureForAsset(
+    AssetEntity asset, {
+    int size = 220,
+  }) {
+    return _photoThumbnailFutures.putIfAbsent(asset.id, () {
+      return asset.thumbnailDataWithSize(
+        ThumbnailSize.square(size),
+        quality: 88,
+      );
+    });
+  }
+
   Future<void> _sendMessage() async {
     final AppLocalizations l10n = AppLocalizations.of(context)!;
     final PrivateClawSessionClient? client = _client;
@@ -1075,13 +1438,18 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     final List<ChatAttachment> attachments = List<ChatAttachment>.from(
       _selectedAttachments,
     );
+    final Map<String, String> photoAssetMapping = Map<String, String>.from(
+      _photoAttachmentIdsByAssetId,
+    );
     if (client == null || (text.isEmpty && attachments.isEmpty)) {
       return;
     }
 
+    _closeComposerPanels(clearFocus: false);
     _messageController.clear();
     setState(() {
       _selectedAttachments.clear();
+      _photoAttachmentIdsByAssetId.clear();
     });
 
     try {
@@ -1099,6 +1467,9 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
         _selectedAttachments
           ..clear()
           ..addAll(attachments);
+        _photoAttachmentIdsByAssetId
+          ..clear()
+          ..addAll(photoAssetMapping);
         _sessionStatus = PrivateClawSessionStatus.error;
         _statusText = l10n.sendFailed(error.toString());
       });
@@ -1125,6 +1496,9 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       _messages.clear();
       _availableCommands.clear();
       _selectedAttachments.clear();
+      _photoAttachmentIdsByAssetId.clear();
+      _isEmojiPickerVisible = false;
+      _isPhotoTrayVisible = false;
       _sessionStatus = PrivateClawSessionStatus.idle;
       _statusText = l10n.sessionDisconnected;
       _isPairingPanelCollapsed = false;
@@ -1134,10 +1508,6 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
   }
 
   Future<void> _openEmojiPicker() async {
-    if (_isVoiceInputMode) {
-      return;
-    }
-
     final double keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
     if (_isEmojiPickerVisible) {
       setState(() {
@@ -1151,13 +1521,14 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       if (keyboardInset > 0) {
         _lastKeyboardInsetHeight = keyboardInset;
       }
+      _isPhotoTrayVisible = false;
       _isEmojiPickerVisible = true;
     });
     _composerFocusNode.unfocus();
   }
 
   Future<void> _openSlashCommands() async {
-    if (!_canSend || _availableCommands.isEmpty || _isVoiceInputMode) {
+    if (!_canSend || _availableCommands.isEmpty) {
       return;
     }
 
@@ -1196,25 +1567,10 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       _selectedAttachments.removeWhere(
         (ChatAttachment attachment) => attachment.id == attachmentId,
       );
+      _photoAttachmentIdsByAssetId.removeWhere(
+        (String _, String value) => value == attachmentId,
+      );
     });
-  }
-
-  void _toggleComposerInputMode() {
-    if (!_canSend) {
-      return;
-    }
-
-    setState(() {
-      _isEmojiPickerVisible = false;
-      _composerInputMode = _isVoiceInputMode
-          ? _ComposerInputMode.text
-          : _ComposerInputMode.voice;
-    });
-    if (_isVoiceInputMode) {
-      _composerFocusNode.unfocus();
-      return;
-    }
-    _composerFocusNode.requestFocus();
   }
 
   void _resetVoiceHoldOverlayState() {
@@ -1229,6 +1585,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
 
     setState(() {
       _isEmojiPickerVisible = false;
+      _isPhotoTrayVisible = false;
       _voiceHoldStartGlobalPosition = globalPosition;
       _isVoiceCancelArmed = false;
     });
@@ -1290,6 +1647,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       text: nextText,
       selection: TextSelection.collapsed(offset: nextOffset),
     );
+    unawaited(_recordEmojiSelection(emoji));
   }
 
   void _hideEmojiPicker() {
@@ -1299,6 +1657,42 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     setState(() {
       _isEmojiPickerVisible = false;
     });
+  }
+
+  void _hidePhotoTray() {
+    if (!_isPhotoTrayVisible) {
+      return;
+    }
+    setState(() {
+      _isPhotoTrayVisible = false;
+    });
+  }
+
+  void _closeComposerPanels({required bool clearFocus}) {
+    if (_isEmojiPickerVisible || _isPhotoTrayVisible) {
+      setState(() {
+        _isEmojiPickerVisible = false;
+        _isPhotoTrayVisible = false;
+      });
+    }
+    if (clearFocus) {
+      _composerFocusNode.unfocus();
+    }
+  }
+
+  Future<void> _recordEmojiSelection(String emoji) async {
+    try {
+      final Map<String, int> usage = await _emojiStore.increment(emoji);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _emojiUsage = usage;
+      });
+    } catch (error, stackTrace) {
+      debugPrint('[privateclaw-app] failed to persist emoji usage: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
   }
 
   Future<void> _startVoiceRecording() async {
@@ -1315,7 +1709,10 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     _voiceRecordingStartFuture = startFuture;
     setState(() {
       _isRecordingVoice = true;
+      _voiceRecordingElapsed = Duration.zero;
+      _voiceRecordingTick = 0;
     });
+    _startVoiceRecordingTicker();
 
     try {
       await startFuture;
@@ -1328,6 +1725,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
         _resetVoiceHoldOverlayState();
         _statusText = l10n.voiceRecordingPermissionDenied;
       });
+      _stopVoiceRecordingTicker(reset: true);
     } on UnsupportedError {
       if (!mounted) {
         return;
@@ -1337,6 +1735,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
         _resetVoiceHoldOverlayState();
         _statusText = l10n.voiceRecordingUnsupported;
       });
+      _stopVoiceRecordingTicker(reset: true);
     } catch (error) {
       if (!mounted) {
         return;
@@ -1346,6 +1745,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
         _resetVoiceHoldOverlayState();
         _statusText = l10n.voiceRecordingFailed(error.toString());
       });
+      _stopVoiceRecordingTicker(reset: true);
     } finally {
       if (identical(_voiceRecordingStartFuture, startFuture)) {
         _voiceRecordingStartFuture = null;
@@ -1363,6 +1763,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       _isRecordingVoice = false;
       _isStoppingVoiceRecording = true;
     });
+    _stopVoiceRecordingTicker(reset: false);
 
     try {
       final Future<void>? startFuture = _voiceRecordingStartFuture;
@@ -1441,6 +1842,8 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       }
       setState(() {
         _isStoppingVoiceRecording = false;
+        _voiceRecordingElapsed = Duration.zero;
+        _voiceRecordingTick = 0;
       });
     }
   }
@@ -1460,6 +1863,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       _isRecordingVoice = false;
       _isStoppingVoiceRecording = false;
       _resetVoiceHoldOverlayState();
+      _stopVoiceRecordingTicker(reset: true);
       if (updateStatus && l10n != null) {
         _statusText = l10n.voiceRecordingCancelled;
       }
@@ -1482,6 +1886,32 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       }
     }
     await PrivateClawAudioRecorder.stopRecording(discard: true);
+  }
+
+  void _startVoiceRecordingTicker() {
+    _voiceRecordingTicker?.cancel();
+    _voiceRecordingTicker = Timer.periodic(const Duration(milliseconds: 180), (
+      Timer timer,
+    ) {
+      if (!mounted || !_isRecordingVoice) {
+        timer.cancel();
+        return;
+      }
+      setState(() {
+        _voiceRecordingTick += 1;
+        _voiceRecordingElapsed += const Duration(milliseconds: 180);
+      });
+    });
+  }
+
+  void _stopVoiceRecordingTicker({required bool reset}) {
+    _voiceRecordingTicker?.cancel();
+    _voiceRecordingTicker = null;
+    if (!reset) {
+      return;
+    }
+    _voiceRecordingElapsed = Duration.zero;
+    _voiceRecordingTick = 0;
   }
 
   Future<void> _deleteVoiceRecordingFile(File file) async {
@@ -1675,8 +2105,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       ),
       body: GestureDetector(
         onTap: () {
-          FocusScope.of(context).unfocus();
-          _hideEmojiPicker();
+          _closeComposerPanels(clearFocus: true);
         },
         child: SafeArea(
           bottom: false,
@@ -1694,6 +2123,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
                     _buildComposer(l10n),
                     if (_isEmojiPickerVisible)
                       _buildEmojiPickerPanel(l10n, height: emojiPanelHeight),
+                    if (_isPhotoTrayVisible) _buildPhotoTrayPanel(l10n),
                   ],
                 ),
               ),
@@ -1712,48 +2142,117 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     AppLocalizations l10n,
   ) {
     final ThemeData theme = Theme.of(context);
+    final ColorScheme colorScheme = theme.colorScheme;
     return Positioned.fill(
       child: IgnorePointer(
-        child: ColoredBox(
-          color: Colors.black.withValues(alpha: 0.18),
-          child: SafeArea(
-            bottom: false,
-            child: Align(
-              alignment: Alignment.bottomCenter,
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 120),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    _VoiceRecordingOverlayChip(
-                      key: const ValueKey<String>('voice-record-cancel-chip'),
-                      label: l10n.relayWarningCancelButton,
-                      icon: Icons.close,
-                      highlighted: _isVoiceCancelArmed,
-                      backgroundColor: _isVoiceCancelArmed
-                          ? theme.colorScheme.errorContainer
-                          : theme.colorScheme.surfaceContainerHigh,
-                      foregroundColor: _isVoiceCancelArmed
-                          ? theme.colorScheme.onErrorContainer
-                          : theme.colorScheme.onSurface,
+        child: SafeArea(
+          bottom: false,
+          child: Column(
+            children: <Widget>[
+              const Spacer(),
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOut,
+                height: _recordingPanelHeight,
+                padding: const EdgeInsets.fromLTRB(24, 14, 24, 32),
+                decoration: BoxDecoration(
+                  color: theme.scaffoldBackgroundColor,
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(32),
+                  ),
+                  boxShadow: <BoxShadow>[
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.12),
+                      blurRadius: 24,
+                      offset: const Offset(0, -10),
                     ),
-                    const SizedBox(height: 12),
-                    _VoiceRecordingOverlayChip(
-                      key: const ValueKey<String>('voice-record-release-chip'),
-                      label: l10n.voiceRecordReleaseToSend,
-                      icon: Icons.north,
-                      highlighted: !_isVoiceCancelArmed,
+                  ],
+                ),
+                child: Column(
+                  children: <Widget>[
+                    Container(
+                      width: 42,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: colorScheme.outlineVariant,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                    const SizedBox(height: 22),
+                    Text(
+                      _formatVoiceRecordingElapsed(),
+                      key: const ValueKey<String>('voice-record-duration'),
+                      style: theme.textTheme.headlineMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    _VoiceWaveformBars(
+                      samples: _buildVoiceWaveformSamples(),
+                      activeColor: _isVoiceCancelArmed
+                          ? colorScheme.error
+                          : colorScheme.primary,
+                      inactiveColor: colorScheme.surfaceContainerHighest,
+                    ),
+                    const Spacer(),
+                    _VoiceRecordingActionBadge(
+                      key: const ValueKey<String>('voice-record-hint'),
+                      icon: _isVoiceCancelArmed
+                          ? Icons.delete_outline
+                          : Icons.north_rounded,
+                      label: _isVoiceCancelArmed
+                          ? l10n.voiceRecordingReleaseToCancel
+                          : l10n.voiceRecordingSlideUpToCancel,
                       backgroundColor: _isVoiceCancelArmed
-                          ? theme.colorScheme.surfaceContainerHigh
-                          : theme.colorScheme.primaryContainer,
+                          ? colorScheme.errorContainer
+                          : colorScheme.primaryContainer,
                       foregroundColor: _isVoiceCancelArmed
-                          ? theme.colorScheme.onSurfaceVariant
-                          : theme.colorScheme.onPrimaryContainer,
+                          ? colorScheme.onErrorContainer
+                          : colorScheme.onPrimaryContainer,
+                    ),
+                    const SizedBox(height: 16),
+                    DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: _isVoiceCancelArmed
+                            ? colorScheme.error
+                            : colorScheme.primary,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 18,
+                          vertical: 12,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            Icon(
+                              _isVoiceCancelArmed
+                                  ? Icons.delete_outline
+                                  : Icons.mic,
+                              color: Colors.white,
+                            ),
+                            const SizedBox(width: 10),
+                            Text(
+                              _isVoiceCancelArmed
+                                  ? l10n.voiceRecordingReleaseToCancel
+                                  : l10n.voiceRecordReleaseToSend,
+                              key: const ValueKey<String>(
+                                'voice-record-release-chip',
+                              ),
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ],
                 ),
               ),
-            ),
+            ],
           ),
         ),
       ),
@@ -2144,8 +2643,8 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
 
   Widget _buildComposer(AppLocalizations l10n) {
     final ThemeData theme = Theme.of(context);
-    final Color composerControlColor =
-        theme.colorScheme.surfaceContainerHighest;
+    final ColorScheme colorScheme = theme.colorScheme;
+    final Color composerControlColor = colorScheme.surfaceContainerHighest;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       child: Column(
@@ -2154,134 +2653,113 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
           if (_selectedAttachments.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(bottom: 12),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: _selectedAttachments
-                      .map(
-                        (ChatAttachment attachment) => InputChip(
-                          avatar: Icon(_attachmentIcon(attachment)),
-                          label: SizedBox(
-                            width: 160,
-                            child: Text(
-                              attachment.name,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          onDeleted: () => _removeAttachment(attachment.id),
-                        ),
-                      )
-                      .toList(growable: false),
+              child: SizedBox(
+                height: 72,
+                child: ListView.separated(
+                  key: const ValueKey<String>('composer-attachment-strip'),
+                  scrollDirection: Axis.horizontal,
+                  itemCount: _selectedAttachments.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 10),
+                  itemBuilder: (BuildContext context, int index) {
+                    final ChatAttachment attachment =
+                        _selectedAttachments[index];
+                    return _ComposerAttachmentPreview(
+                      attachment: attachment,
+                      onDeleted: () => _removeAttachment(attachment.id),
+                    );
+                  },
                 ),
               ),
             ),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: <Widget>[
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-                onPressed: _canSend ? _pickAttachments : null,
-                icon: const Icon(Icons.attach_file),
-              ),
-              IconButton(
-                key: const ValueKey<String>('composer-input-mode-toggle'),
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-                onPressed: _canSend ? _toggleComposerInputMode : null,
-                icon: Icon(
-                  _isVoiceInputMode ? Icons.keyboard_outlined : Icons.mic_none,
-                ),
-                tooltip: _isVoiceInputMode
-                    ? l10n.switchToTextInputTooltip
-                    : l10n.switchToVoiceInputTooltip,
-              ),
-              Expanded(
-                child: _isVoiceInputMode
-                    ? _buildVoiceComposerButton(
-                        l10n,
-                        backgroundColor: composerControlColor,
-                      )
-                    : DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: composerControlColor,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: <Widget>[
-                            Expanded(
-                              child: TextField(
-                                key: const ValueKey<String>(
-                                  'composer-input-field',
-                                ),
-                                controller: _messageController,
-                                focusNode: _composerFocusNode,
-                                enabled: _canSend,
-                                onTap: _hideEmojiPicker,
-                                keyboardType: TextInputType.multiline,
-                                minLines: 1,
-                                maxLines: 5,
-                                textInputAction: TextInputAction.newline,
-                                decoration: InputDecoration(
-                                  hintText: _canSend
-                                      ? l10n.sendHintActive
-                                      : l10n.sendHintInactive,
-                                  border: InputBorder.none,
-                                  enabledBorder: InputBorder.none,
-                                  focusedBorder: InputBorder.none,
-                                  disabledBorder: InputBorder.none,
-                                  contentPadding: const EdgeInsets.fromLTRB(
-                                    16,
-                                    12,
-                                    4,
-                                    12,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            IconButton(
-                              key: const ValueKey<String>(
-                                'emoji-picker-button',
-                              ),
-                              visualDensity: VisualDensity.compact,
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(
-                                minWidth: 40,
-                                minHeight: 40,
-                              ),
-                              onPressed: _canSend ? _openEmojiPicker : null,
-                              icon: const Icon(Icons.emoji_emotions_outlined),
-                              tooltip: l10n.emojiPickerTooltip,
-                            ),
-                          ],
-                        ),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: composerControlColor,
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: colorScheme.outlineVariant),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 10, 12),
+              child: Row(
+                children: <Widget>[
+                  Expanded(
+                    child: TextField(
+                      key: const ValueKey<String>('composer-input-field'),
+                      controller: _messageController,
+                      focusNode: _composerFocusNode,
+                      enabled: _canSend,
+                      onTap: () {
+                        _hideEmojiPicker();
+                        _hidePhotoTray();
+                      },
+                      keyboardType: TextInputType.multiline,
+                      minLines: 1,
+                      maxLines: 4,
+                      textInputAction: TextInputAction.newline,
+                      decoration: InputDecoration(
+                        hintText: _canSend
+                            ? l10n.sendHintActive
+                            : l10n.sendHintInactive,
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        disabledBorder: InputBorder.none,
+                        contentPadding: EdgeInsets.zero,
+                        isCollapsed: true,
                       ),
-              ),
-              if (!_isVoiceInputMode && _hasDraftContent) ...<Widget>[
-                const SizedBox(width: 4),
-                IconButton.filled(
-                  visualDensity: VisualDensity.compact,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(
-                    minWidth: 40,
-                    minHeight: 40,
+                    ),
                   ),
-                  onPressed: _canSend ? _sendMessage : null,
-                  icon: _hasPendingReply
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.send),
-                  tooltip: l10n.sendTooltip,
-                ),
-              ],
+                  const SizedBox(width: 8),
+                  IconButton(
+                    key: const ValueKey<String>('composer-expand-button'),
+                    visualDensity: VisualDensity.compact,
+                    onPressed: _canSend ? _openFullscreenComposer : null,
+                    icon: const Icon(Icons.open_in_full),
+                    tooltip: l10n.composerExpandTooltip,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: <Widget>[
+              _buildComposerActionButton(
+                key: const ValueKey<String>('emoji-picker-button'),
+                icon: Icons.emoji_emotions_outlined,
+                tooltip: l10n.emojiPickerTooltip,
+                isActive: _isEmojiPickerVisible,
+                onPressed: _canSend ? _openEmojiPicker : null,
+              ),
+              const SizedBox(width: 8),
+              _buildVoiceComposerButton(l10n),
+              const SizedBox(width: 8),
+              _buildComposerActionButton(
+                key: const ValueKey<String>('composer-photo-button'),
+                icon: Icons.photo_library_outlined,
+                tooltip: l10n.photoTrayTooltip,
+                isActive: _isPhotoTrayVisible,
+                onPressed: _canSend ? _togglePhotoTray : null,
+              ),
+              const SizedBox(width: 8),
+              _buildComposerActionButton(
+                key: const ValueKey<String>('composer-file-button'),
+                icon: Icons.attach_file,
+                tooltip: l10n.filePickerTooltip,
+                onPressed: _canSend ? _pickAttachments : null,
+              ),
+              const Spacer(),
+              IconButton.filled(
+                key: const ValueKey<String>('composer-send-button'),
+                onPressed: _canSend && _hasDraftContent ? _sendMessage : null,
+                icon: _hasPendingReply
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.arrow_upward_rounded),
+                tooltip: l10n.sendTooltip,
+              ),
             ],
           ),
         ],
@@ -2305,7 +2783,14 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
           ),
         ),
         child: _CommonEmojiSheet(
-          emojis: _commonEmoji,
+          frequentEmojis: _frequentEmoji,
+          defaultEmojis: _defaultEmoji,
+          selectedTab: _emojiPickerTab,
+          onTabChanged: (_EmojiPickerTab tab) {
+            setState(() {
+              _emojiPickerTab = tab;
+            });
+          },
           onSelected: (String emoji) {
             _insertEmoji(emoji);
           },
@@ -2314,13 +2799,89 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     );
   }
 
-  Widget _buildVoiceComposerButton(
-    AppLocalizations l10n, {
-    required Color backgroundColor,
-  }) {
+  Widget _buildPhotoTrayPanel(AppLocalizations l10n) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme colorScheme = theme.colorScheme;
+    return SizedBox(
+      key: const ValueKey<String>('photo-tray-panel'),
+      height: _photoTrayHeight,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface,
+          border: Border(top: BorderSide(color: colorScheme.outlineVariant)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  Text(
+                    l10n.photoTrayTooltip,
+                    style: theme.textTheme.titleMedium,
+                  ),
+                  const Spacer(),
+                  TextButton.icon(
+                    key: const ValueKey<String>('photo-tray-camera-button'),
+                    onPressed: _canSend ? _pickFromCamera : null,
+                    icon: const Icon(Icons.photo_camera_outlined),
+                    label: Text(l10n.photoTrayCameraButton),
+                  ),
+                  const SizedBox(width: 8),
+                  TextButton.icon(
+                    key: const ValueKey<String>('photo-tray-gallery-button'),
+                    onPressed: _canSend ? _pickFromGallery : null,
+                    icon: const Icon(Icons.collections_outlined),
+                    label: Text(l10n.photoTrayGalleryButton),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Expanded(
+                child: _isLoadingRecentPhotos
+                    ? const Center(child: CircularProgressIndicator())
+                    : _recentPhotoAssets.isEmpty
+                    ? Center(
+                        child: Text(
+                          l10n.photoTrayNoImages,
+                          style: theme.textTheme.bodyMedium,
+                        ),
+                      )
+                    : ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _recentPhotoAssets.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 12),
+                        itemBuilder: (BuildContext context, int index) {
+                          final AssetEntity asset = _recentPhotoAssets[index];
+                          return _ComposerPhotoTile(
+                            assetId: asset.id,
+                            thumbnailFuture: _thumbnailFutureForAsset(asset),
+                            isSelected: _photoAttachmentIdsByAssetId
+                                .containsKey(asset.id),
+                            isLoading: _loadingPhotoAssetIds.contains(asset.id),
+                            onTap: _canSend
+                                ? () {
+                                    unawaited(
+                                      _toggleRecentPhotoAttachment(asset),
+                                    );
+                                  }
+                                : null,
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVoiceComposerButton(AppLocalizations l10n) {
     final ThemeData theme = Theme.of(context);
     final bool enabled = _canSend && !_isStoppingVoiceRecording;
-    final Color foregroundColor = theme.colorScheme.onSurface;
+    final ColorScheme colorScheme = theme.colorScheme;
 
     return Listener(
       key: const ValueKey<String>('voice-record-button'),
@@ -2345,73 +2906,101 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
               unawaited(_handleVoiceHoldCancel());
             }
           : null,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-        constraints: const BoxConstraints(minHeight: 56),
+      child: _buildComposerActionButton(
+        icon: _isStoppingVoiceRecording ? Icons.hourglass_top : Icons.mic_none,
+        tooltip: l10n.voiceRecordHoldToSend,
+        isActive: _isRecordingVoice,
+        onPressed: enabled ? () {} : null,
+        foregroundColor: _isRecordingVoice
+            ? colorScheme.onPrimaryContainer
+            : null,
+        backgroundColor: _isRecordingVoice
+            ? colorScheme.primaryContainer
+            : null,
+      ),
+    );
+  }
+
+  Widget _buildComposerActionButton({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback? onPressed,
+    Key? key,
+    bool isActive = false,
+    Color? backgroundColor,
+    Color? foregroundColor,
+  }) {
+    final ColorScheme colorScheme = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: tooltip,
+      child: DecoratedBox(
         decoration: BoxDecoration(
-          color: backgroundColor,
-          borderRadius: BorderRadius.circular(16),
+          color:
+              backgroundColor ??
+              (isActive
+                  ? colorScheme.primaryContainer
+                  : colorScheme.surfaceContainerHighest),
+          borderRadius: BorderRadius.circular(18),
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            if (_isStoppingVoiceRecording)
-              SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: foregroundColor,
-                ),
-              )
-            else
-              Icon(
-                _isRecordingVoice ? Icons.mic : Icons.mic_none,
-                color: foregroundColor,
-              ),
-            const SizedBox(width: 12),
-            Flexible(
-              child: Text(
-                _voiceComposerLabel(l10n),
-                key: const ValueKey<String>('voice-record-label'),
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: foregroundColor,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
+        child: IconButton(
+          key: key,
+          onPressed: onPressed,
+          icon: Icon(icon),
+          color:
+              foregroundColor ??
+              (isActive
+                  ? colorScheme.onPrimaryContainer
+                  : colorScheme.onSurfaceVariant),
+          constraints: const BoxConstraints.tightFor(width: 52, height: 52),
+          padding: EdgeInsets.zero,
         ),
       ),
     );
   }
 
-  String _voiceComposerLabel(AppLocalizations l10n) {
-    if (_isStoppingVoiceRecording) {
-      return l10n.voiceRecordSending;
+  Future<void> _openFullscreenComposer() async {
+    final AppLocalizations l10n = AppLocalizations.of(context)!;
+    final String? nextText = await Navigator.of(context).push<String>(
+      MaterialPageRoute<String>(
+        fullscreenDialog: true,
+        builder: (BuildContext context) {
+          return _FullscreenComposerPage(
+            initialText: _messageController.text,
+            title: l10n.composerFullscreenTitle,
+            hintText: _canSend ? l10n.sendHintActive : l10n.sendHintInactive,
+          );
+        },
+      ),
+    );
+    if (!mounted || nextText == null) {
+      return;
     }
-    if (_isRecordingVoice) {
-      return l10n.voiceRecordReleaseToSend;
-    }
-    if (!_canSend) {
-      return l10n.voiceRecordUnavailable;
-    }
-    return l10n.voiceRecordHoldToSend;
+    _messageController.value = TextEditingValue(
+      text: nextText,
+      selection: TextSelection.collapsed(offset: nextText.length),
+    );
+    _composerFocusNode.requestFocus();
   }
 
-  IconData _attachmentIcon(ChatAttachment attachment) {
-    if (attachment.isImage) {
-      return Icons.image_outlined;
-    }
-    if (attachment.isAudio) {
-      return Icons.audiotrack;
-    }
-    if (attachment.isVideo) {
-      return Icons.videocam_outlined;
-    }
-    return Icons.attach_file;
+  String _formatVoiceRecordingElapsed() {
+    final Duration safeValue = _voiceRecordingElapsed.isNegative
+        ? Duration.zero
+        : _voiceRecordingElapsed;
+    final int minutes = safeValue.inMinutes;
+    final int seconds = safeValue.inSeconds % 60;
+    return '$minutes:${seconds.toString().padLeft(2, '0')}';
+  }
+
+  List<double> _buildVoiceWaveformSamples() {
+    return List<double>.generate(24, (int index) {
+      final double oscillation =
+          (math.sin((_voiceRecordingTick * 0.42) + index * 0.75) + 1) / 2;
+      final double modulation =
+          (math.cos((_voiceRecordingTick * 0.19) + index * 0.33) + 1) / 2;
+      final double emphasis = _isVoiceCancelArmed ? 0.78 : 1;
+      return (0.16 + ((oscillation * 0.54) + (modulation * 0.26)) * emphasis)
+          .clamp(0.14, 0.92);
+    });
   }
 
   String _formatDateTime(DateTime value) {
@@ -2457,10 +3046,22 @@ class _PrivateClawAppBarIcon extends StatelessWidget {
 }
 
 class _CommonEmojiSheet extends StatelessWidget {
-  const _CommonEmojiSheet({required this.emojis, required this.onSelected});
+  const _CommonEmojiSheet({
+    required this.frequentEmojis,
+    required this.defaultEmojis,
+    required this.selectedTab,
+    required this.onTabChanged,
+    required this.onSelected,
+  });
 
-  final List<String> emojis;
+  final List<String> frequentEmojis;
+  final List<String> defaultEmojis;
+  final _EmojiPickerTab selectedTab;
+  final ValueChanged<_EmojiPickerTab> onTabChanged;
   final ValueChanged<String> onSelected;
+
+  List<String> get _visibleEmojis =>
+      selectedTab == _EmojiPickerTab.frequent ? frequentEmojis : defaultEmojis;
 
   @override
   Widget build(BuildContext context) {
@@ -2473,13 +3074,33 @@ class _CommonEmojiSheet extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Text(l10n.emojiPickerTitle, style: theme.textTheme.titleMedium),
+            Row(
+              children: <Widget>[
+                Text(l10n.emojiPickerTitle, style: theme.textTheme.titleMedium),
+                const SizedBox(width: 12),
+                ChoiceChip(
+                  label: Text(l10n.emojiPickerFrequentTab),
+                  selected: selectedTab == _EmojiPickerTab.frequent,
+                  onSelected: (_) {
+                    onTabChanged(_EmojiPickerTab.frequent);
+                  },
+                ),
+                const SizedBox(width: 8),
+                ChoiceChip(
+                  label: Text(l10n.emojiPickerDefaultTab),
+                  selected: selectedTab == _EmojiPickerTab.defaults,
+                  onSelected: (_) {
+                    onTabChanged(_EmojiPickerTab.defaults);
+                  },
+                ),
+              ],
+            ),
             const SizedBox(height: 12),
             SingleChildScrollView(
               child: Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children: emojis
+                children: _visibleEmojis
                     .map(
                       (String emoji) => TextButton(
                         onPressed: () => onSelected(emoji),
@@ -2506,57 +3127,364 @@ class _CommonEmojiSheet extends StatelessWidget {
   }
 }
 
-class _VoiceRecordingOverlayChip extends StatelessWidget {
-  const _VoiceRecordingOverlayChip({
-    required this.label,
-    required this.icon,
-    required this.highlighted,
-    required this.backgroundColor,
-    required this.foregroundColor,
-    super.key,
+class _ComposerAttachmentPreview extends StatelessWidget {
+  const _ComposerAttachmentPreview({
+    required this.attachment,
+    required this.onDeleted,
   });
 
-  final String label;
-  final IconData icon;
-  final bool highlighted;
-  final Color backgroundColor;
-  final Color foregroundColor;
+  final ChatAttachment attachment;
+  final VoidCallback onDeleted;
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 120),
-      width: 220,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: backgroundColor,
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: highlighted
-            ? <BoxShadow>[
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.18),
-                  blurRadius: 16,
-                  offset: const Offset(0, 8),
-                ),
-              ]
-            : const <BoxShadow>[],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
+    final ThemeData theme = Theme.of(context);
+    final Uint8List? imageBytes = attachment.isImage
+        ? attachment.decodeBytes()
+        : null;
+    final bool showsImage = imageBytes != null && imageBytes.isNotEmpty;
+    final double width = showsImage ? 72 : 188;
+    return SizedBox(
+      width: width,
+      child: Stack(
+        clipBehavior: Clip.none,
         children: <Widget>[
-          Icon(icon, color: foregroundColor),
-          const SizedBox(width: 8),
-          Text(
-            label,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              color: foregroundColor,
-              fontWeight: FontWeight.w700,
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: theme.colorScheme.outlineVariant),
+              ),
+              child: showsImage
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(17),
+                      child: Image.memory(imageBytes, fit: BoxFit.cover),
+                    )
+                  : Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Row(
+                        children: <Widget>[
+                          Icon(_attachmentIconForPreview(attachment)),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              attachment.name,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+            ),
+          ),
+          Positioned(
+            top: -6,
+            right: -6,
+            child: Material(
+              color: theme.colorScheme.surface,
+              shape: const CircleBorder(),
+              elevation: 2,
+              child: InkWell(
+                onTap: onDeleted,
+                customBorder: const CircleBorder(),
+                child: const Padding(
+                  padding: EdgeInsets.all(4),
+                  child: Icon(Icons.close, size: 16),
+                ),
+              ),
             ),
           ),
         ],
       ),
     );
   }
+}
+
+class _ComposerPhotoTile extends StatelessWidget {
+  const _ComposerPhotoTile({
+    required this.assetId,
+    required this.thumbnailFuture,
+    required this.isSelected,
+    required this.isLoading,
+    required this.onTap,
+  });
+
+  final String assetId;
+  final Future<Uint8List?> thumbnailFuture;
+  final bool isSelected;
+  final bool isLoading;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        key: ValueKey<String>('photo-tray-tile-$assetId'),
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Ink(
+          width: 120,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: isSelected
+                  ? theme.colorScheme.primary
+                  : theme.colorScheme.outlineVariant,
+              width: isSelected ? 2 : 1,
+            ),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(19),
+            child: Stack(
+              fit: StackFit.expand,
+              children: <Widget>[
+                FutureBuilder<Uint8List?>(
+                  future: thumbnailFuture,
+                  builder:
+                      (
+                        BuildContext context,
+                        AsyncSnapshot<Uint8List?> snapshot,
+                      ) {
+                        final Uint8List? bytes = snapshot.data;
+                        if (bytes == null || bytes.isEmpty) {
+                          return DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.surfaceContainerHighest,
+                            ),
+                            child: const Center(
+                              child: Icon(Icons.photo_outlined),
+                            ),
+                          );
+                        }
+                        return Image.memory(bytes, fit: BoxFit.cover);
+                      },
+                ),
+                if (isSelected)
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primary.withValues(alpha: 0.2),
+                    ),
+                  ),
+                if (isLoading) const Center(child: CircularProgressIndicator()),
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: AnimatedOpacity(
+                    duration: const Duration(milliseconds: 120),
+                    opacity: isSelected ? 1 : 0,
+                    child: Container(
+                      width: 24,
+                      height: 24,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.check,
+                        size: 16,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _VoiceWaveformBars extends StatelessWidget {
+  const _VoiceWaveformBars({
+    required this.samples,
+    required this.activeColor,
+    required this.inactiveColor,
+  });
+
+  final List<double> samples;
+  final Color activeColor;
+  final Color inactiveColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 64,
+      child: Row(
+        children: samples
+            .map(
+              (double sample) => Expanded(
+                child: Align(
+                  alignment: Alignment.center,
+                  child: Container(
+                    width: 4,
+                    height: 16 + (sample * 40),
+                    decoration: BoxDecoration(
+                      color: Color.lerp(inactiveColor, activeColor, sample),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                ),
+              ),
+            )
+            .toList(growable: false),
+      ),
+    );
+  }
+}
+
+class _VoiceRecordingActionBadge extends StatelessWidget {
+  const _VoiceRecordingActionBadge({
+    required this.icon,
+    required this.label,
+    required this.backgroundColor,
+    required this.foregroundColor,
+    super.key,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color backgroundColor;
+  final Color foregroundColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(icon, color: foregroundColor),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                color: foregroundColor,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FullscreenComposerPage extends StatefulWidget {
+  const _FullscreenComposerPage({
+    required this.initialText,
+    required this.title,
+    required this.hintText,
+  });
+
+  final String initialText;
+  final String title;
+  final String hintText;
+
+  @override
+  State<_FullscreenComposerPage> createState() =>
+      _FullscreenComposerPageState();
+}
+
+class _FullscreenComposerPageState extends State<_FullscreenComposerPage> {
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.initialText,
+  );
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<bool> _handleWillPop() async {
+    Navigator.of(context).pop(_controller.text);
+    return false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final Color composerControlColor = Theme.of(
+      context,
+    ).colorScheme.surfaceContainerHighest;
+    return WillPopScope(
+      onWillPop: _handleWillPop,
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(widget.title),
+          actions: <Widget>[
+            IconButton(
+              onPressed: () {
+                Navigator.of(context).pop(_controller.text);
+              },
+              icon: const Icon(Icons.check),
+            ),
+          ],
+        ),
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: DecoratedBox(
+              key: const ValueKey<String>('fullscreen-composer-shell'),
+              decoration: BoxDecoration(
+                color: composerControlColor,
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+                child: TextField(
+                  key: const ValueKey<String>(
+                    'fullscreen-composer-input-field',
+                  ),
+                  controller: _controller,
+                  autofocus: true,
+                  keyboardType: TextInputType.multiline,
+                  textInputAction: TextInputAction.newline,
+                  textAlignVertical: TextAlignVertical.top,
+                  expands: true,
+                  minLines: null,
+                  maxLines: null,
+                  decoration: InputDecoration(
+                    hintText: widget.hintText,
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    disabledBorder: InputBorder.none,
+                    contentPadding: EdgeInsets.zero,
+                    isCollapsed: true,
+                    alignLabelWithHint: true,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+IconData _attachmentIconForPreview(ChatAttachment attachment) {
+  if (attachment.isImage) {
+    return Icons.image_outlined;
+  }
+  if (attachment.isAudio) {
+    return Icons.mic_none;
+  }
+  if (attachment.isVideo) {
+    return Icons.videocam_outlined;
+  }
+  return Icons.attach_file;
 }
 
 class _SlashCommandsSheet extends StatefulWidget {

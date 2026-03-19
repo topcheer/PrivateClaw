@@ -42,11 +42,19 @@ void main() {
 
     expect(find.byIcon(Icons.link_off), findsOneWidget);
     expect(
-      find.byKey(const ValueKey<String>('composer-input-mode-toggle')),
+      find.byKey(const ValueKey<String>('voice-record-button')),
       findsOneWidget,
     );
     expect(
       find.byKey(const ValueKey<String>('emoji-picker-button')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('composer-photo-button')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('composer-expand-button')),
       findsOneWidget,
     );
     expect(find.text('Aria'), findsWidgets);

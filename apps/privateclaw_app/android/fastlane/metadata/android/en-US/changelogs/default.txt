@@ -1,1 +1,1 @@
-Live thinking traces, more reliable image/file replies, and smoother private session handling across the app and web.
+Redesigned the chat composer with fullscreen editing, richer emoji/photo/voice tools, top-aligned fullscreen writing, and smoother attachment sharing.

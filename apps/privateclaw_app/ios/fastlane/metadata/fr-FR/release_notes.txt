@@ -1,1 +1,1 @@
-Nouveau suivi de réflexion en direct, réponses image/fichier plus fiables et expérience de session privée améliorée sur l’app et le web.
+Le champ de saisie a été repensé avec l’édition plein écran, des outils emoji/photo/vocal plus riches, une saisie plein écran alignée en haut et un partage de pièces jointes plus fluide.

@@ -549,6 +549,78 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Common emoji'**
   String get emojiPickerTitle;
+
+  /// Tooltip for opening the fullscreen composer editor.
+  ///
+  /// In en, this message translates to:
+  /// **'Expand editor'**
+  String get composerExpandTooltip;
+
+  /// Title shown on the fullscreen composer editor page.
+  ///
+  /// In en, this message translates to:
+  /// **'Expanded composer'**
+  String get composerFullscreenTitle;
+
+  /// Label for the frequently used emoji group.
+  ///
+  /// In en, this message translates to:
+  /// **'Frequent'**
+  String get emojiPickerFrequentTab;
+
+  /// Label for the default emoji group.
+  ///
+  /// In en, this message translates to:
+  /// **'Default'**
+  String get emojiPickerDefaultTab;
+
+  /// Tooltip and header label for the recent photo tray.
+  ///
+  /// In en, this message translates to:
+  /// **'Photos'**
+  String get photoTrayTooltip;
+
+  /// Label for opening the camera from the photo tray.
+  ///
+  /// In en, this message translates to:
+  /// **'Camera'**
+  String get photoTrayCameraButton;
+
+  /// Label for opening the system gallery picker from the photo tray.
+  ///
+  /// In en, this message translates to:
+  /// **'Gallery'**
+  String get photoTrayGalleryButton;
+
+  /// Message shown when the recent photo tray has no visible photos.
+  ///
+  /// In en, this message translates to:
+  /// **'No photos available.'**
+  String get photoTrayNoImages;
+
+  /// Status text shown when recent photo access was denied.
+  ///
+  /// In en, this message translates to:
+  /// **'Photo access is required to browse recent images.'**
+  String get photoLibraryPermissionDenied;
+
+  /// Tooltip for opening the file picker.
+  ///
+  /// In en, this message translates to:
+  /// **'Files'**
+  String get filePickerTooltip;
+
+  /// Hint shown while voice recording is active and can still be cancelled by sliding up.
+  ///
+  /// In en, this message translates to:
+  /// **'Release to send · slide up to cancel'**
+  String get voiceRecordingSlideUpToCancel;
+
+  /// Hint shown while voice recording is cancel-armed.
+  ///
+  /// In en, this message translates to:
+  /// **'Release to cancel'**
+  String get voiceRecordingReleaseToCancel;
 }
 
 class _AppLocalizationsDelegate

@@ -128,5 +128,17 @@
         "example": "SolarFox"
       }
     }
-  }
+  },
+  "composerExpandTooltip": "Expand editor",
+  "composerFullscreenTitle": "Expanded composer",
+  "emojiPickerFrequentTab": "Frequent",
+  "emojiPickerDefaultTab": "Default",
+  "photoTrayTooltip": "Photos",
+  "photoTrayCameraButton": "Camera",
+  "photoTrayGalleryButton": "Gallery",
+  "photoTrayNoImages": "No photos available.",
+  "photoLibraryPermissionDenied": "Photo access is required to browse recent images.",
+  "filePickerTooltip": "Files",
+  "voiceRecordingSlideUpToCancel": "Release to send · slide up to cancel",
+  "voiceRecordingReleaseToCancel": "Release to cancel"
 }

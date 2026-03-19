@@ -179,5 +179,17 @@
         "example": "SolarFox"
       }
     }
-  }
+  },
+  "composerExpandTooltip": "展开编辑",
+  "composerFullscreenTitle": "全屏编辑",
+  "emojiPickerFrequentTab": "常用",
+  "emojiPickerDefaultTab": "默认",
+  "photoTrayTooltip": "照片",
+  "photoTrayCameraButton": "拍照",
+  "photoTrayGalleryButton": "图库",
+  "photoTrayNoImages": "暂无照片",
+  "photoLibraryPermissionDenied": "需要允许访问照片，才能浏览最近图片。",
+  "filePickerTooltip": "文件",
+  "voiceRecordingSlideUpToCancel": "松开发送，上滑取消",
+  "voiceRecordingReleaseToCancel": "松开取消发送"
 }

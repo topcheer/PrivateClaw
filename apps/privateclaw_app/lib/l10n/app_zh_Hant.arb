@@ -167,5 +167,17 @@
         "example": "SolarFox"
       }
     }
-  }
+  },
+  "composerExpandTooltip": "展開編輯",
+  "composerFullscreenTitle": "全螢幕編輯",
+  "emojiPickerFrequentTab": "常用",
+  "emojiPickerDefaultTab": "預設",
+  "photoTrayTooltip": "照片",
+  "photoTrayCameraButton": "拍照",
+  "photoTrayGalleryButton": "圖庫",
+  "photoTrayNoImages": "暫無照片",
+  "photoLibraryPermissionDenied": "需要允許存取照片，才能瀏覽最近圖片。",
+  "filePickerTooltip": "檔案",
+  "voiceRecordingSlideUpToCancel": "鬆開傳送，上滑取消",
+  "voiceRecordingReleaseToCancel": "鬆開取消傳送"
 }

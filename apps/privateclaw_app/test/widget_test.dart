@@ -48,24 +48,101 @@ void main() {
       );
       expect(find.text('Scan QR code'), findsOneWidget);
       expect(find.text('Join session'), findsOneWidget);
-      expect(find.byIcon(Icons.attach_file), findsOneWidget);
       expect(
-        find.byKey(const ValueKey<String>('composer-input-mode-toggle')),
+        find.byKey(const ValueKey<String>('composer-file-button')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('voice-record-button')),
         findsOneWidget,
       );
       expect(
         find.byKey(const ValueKey<String>('emoji-picker-button')),
         findsOneWidget,
       );
-      expect(find.byIcon(Icons.send), findsNothing);
+      expect(
+        find.byKey(const ValueKey<String>('composer-photo-button')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('composer-expand-button')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('composer-send-button')),
+        findsOneWidget,
+      );
 
       final TextField composerField = tester.widget<TextField>(
         find.byKey(const ValueKey<String>('composer-input-field')),
       );
       expect(composerField.minLines, 1);
-      expect(composerField.maxLines, 5);
+      expect(composerField.maxLines, 4);
     },
   );
+
+  testWidgets('fullscreen composer matches inline styling and top alignment', (
+    WidgetTester tester,
+  ) async {
+    final DateTime now = DateTime.now().toUtc();
+    final PrivateClawInvite invite = PrivateClawInvite(
+      version: 1,
+      sessionId: 'session-fullscreen',
+      sessionKey: 'test-session-key',
+      appWsUrl:
+          'wss://relay.privateclaw.us/ws/app?sessionId=session-fullscreen',
+      expiresAt: now.add(const Duration(hours: 1)),
+    );
+
+    await tester.pumpWidget(
+      PrivateClawApp(
+        screenshotConfig: StoreScreenshotConfig(
+          previewData: PrivateClawPreviewData(
+            invite: invite,
+            identity: PrivateClawIdentity(
+              appId: 'app-fullscreen',
+              createdAt: now.subtract(const Duration(days: 1)),
+              displayName: 'Preview',
+            ),
+            status: PrivateClawSessionStatus.active,
+            statusText: 'Connected.',
+            isPairingPanelCollapsed: true,
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('composer-expand-button')),
+    );
+    await tester.pumpAndSettle();
+
+    final TextField fullscreenComposerField = tester.widget<TextField>(
+      find.byKey(const ValueKey<String>('fullscreen-composer-input-field')),
+    );
+    expect(
+      fullscreenComposerField.textAlignVertical,
+      equals(TextAlignVertical.top),
+    );
+    expect(fullscreenComposerField.decoration?.border, InputBorder.none);
+    expect(fullscreenComposerField.decoration?.focusedBorder, InputBorder.none);
+
+    final DecoratedBox fullscreenComposerShell = tester.widget<DecoratedBox>(
+      find.byKey(const ValueKey<String>('fullscreen-composer-shell')),
+    );
+    final BoxDecoration shellDecoration =
+        fullscreenComposerShell.decoration as BoxDecoration;
+    expect(
+      shellDecoration.color,
+      equals(
+        Theme.of(
+          tester.element(find.byType(TextField).first),
+        ).colorScheme.surfaceContainerHighest,
+      ),
+    );
+    expect(shellDecoration.borderRadius, BorderRadius.circular(24));
+    expect(shellDecoration.border, isNull);
+  });
 
   testWidgets(
     'active session preview keeps chat full screen until the session panel is expanded',
@@ -302,7 +379,7 @@ void main() {
     expect(find.text('/mute-bot'), findsNothing);
   });
 
-  testWidgets('composer can switch to voice mode and show hold-to-record UI', (
+  testWidgets('composer keeps hold-to-record and inline actions visible', (
     WidgetTester tester,
   ) async {
     final DateTime now = DateTime.now().toUtc();
@@ -334,19 +411,18 @@ void main() {
     );
 
     await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(const ValueKey<String>('composer-input-mode-toggle')),
-    );
-    await tester.pumpAndSettle();
 
     expect(
       find.byKey(const ValueKey<String>('voice-record-button')),
       findsOneWidget,
     );
-    expect(find.text('Hold to Talk'), findsOneWidget);
     expect(
       find.byKey(const ValueKey<String>('emoji-picker-button')),
-      findsNothing,
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('composer-photo-button')),
+      findsOneWidget,
     );
   });
 
@@ -390,6 +466,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Common emoji'), findsOneWidget);
+    expect(find.text('Frequent'), findsOneWidget);
   });
 
   testWidgets('non-default relay invites require confirmation before joining', (

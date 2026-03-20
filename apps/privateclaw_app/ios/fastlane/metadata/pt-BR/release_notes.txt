@@ -1,1 +1,1 @@
-Redesenhamos o composer de chat com edição em tela cheia, mais ferramentas de emoji/foto/voz, escrita em tela cheia alinhada ao topo e compartilhamento de anexos mais fluido.
+Added a home-screen Scan QR shortcut for faster pairing, and clarified that push notifications work out of the box on the official relay while custom relays need their own Firebase setup.

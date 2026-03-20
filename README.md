@@ -253,6 +253,8 @@ The mobile app's native Firebase files are intentionally local-only:
 
 If those files are present on your machine, the app can exercise the full Firebase push/background-wake flow. If they are absent, the app still builds and runs, but push stays disabled until you add your own Firebase project configuration.
 
+Officially distributed PrivateClaw app builds only get managed push out of the box when they stay on the default public relay `https://relay.privateclaw.us`. If you switch the app to a custom relay, push also needs that relay plus the app build to be wired to your own Firebase/FCM project and credentials.
+
 Then either scan the QR code returned by `/privateclaw` from your existing channel, or scan the QR code rendered by `openclaw privateclaw pair`.
 After the session attaches, the app session panel also shows the current relay server so users can confirm which relay endpoint they are connected to.
 If the scanned or pasted invite targets a non-default relay, the app now shows a confirmation warning before it connects.

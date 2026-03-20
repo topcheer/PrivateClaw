@@ -17,6 +17,8 @@ The relay reads FCM credentials from environment variables, and the mobile app e
 
 If you clone this repository for your own deployment, add your own project-specific versions of those files locally and keep them out of Git together with any service-account credentials.
 
+The official PrivateClaw app distribution only has managed push ready out of the box when it talks to the default public relay `https://relay.privateclaw.us`. If you point the app at a custom relay, that relay and the app build must both be wired to your own Firebase / FCM setup before background wake notifications will work.
+
 The current mobile identifiers in this repo are:
 
 - Android package: `gg.ai.privateclaw`

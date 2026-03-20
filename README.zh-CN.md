@@ -145,6 +145,8 @@ openclaw channels add --channel telegram --token <token>
 
 现在移动 App 和网页聊天客户端在遇到“非默认 relay”的二维码或邀请时，都会先弹出确认警告再继续连接。
 
+如果你使用官方默认 relay `https://relay.privateclaw.us`，官方分发的 App 才会直接具备现成的消息推送能力。若改用自定义 relay，则需要你把 relay 侧和 App 构建一起接入你自己的 Firebase / FCM 账号与凭据。
+
 #### 方式 B：直接用 OpenClaw CLI 本地起配对会话
 
 如果你不想借助另一个聊天工具，可以直接使用插件提供给 OpenClaw 的 provider CLI。相同的公开子命令也可以通过独立 npm 二进制 `privateclaw-provider <subcommand>` 使用；下面先用 OpenClaw 里的别名来举例：

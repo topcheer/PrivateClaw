@@ -1,1 +1,1 @@
-채팅 입력창을 새롭게 다듬어 전체 화면 편집, 더 풍부한 이모지/사진/음성 도구, 상단 정렬 전체 화면 입력, 더 매끄러운 첨부 공유를 제공합니다.
+Added a home-screen Scan QR shortcut for faster pairing, and clarified that push notifications work out of the box on the official relay while custom relays need their own Firebase setup.

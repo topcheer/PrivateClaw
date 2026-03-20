@@ -8,3 +8,5 @@
 - يعمل مع وسطاء مخصصين في المنزل أو السحابة
 - مصمم لمحادثات OpenClaw الخاصة
 - تدفق جلسة خفيف وآمن
+
+Push notifications are only available out of the box on the official relay `relay.privateclaw.us`. If you switch to a custom relay, wire the relay and app build to your own Firebase / FCM project.

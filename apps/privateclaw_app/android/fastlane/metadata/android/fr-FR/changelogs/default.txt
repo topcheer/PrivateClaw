@@ -1,1 +1,1 @@
-Le champ de saisie a été repensé avec l’édition plein écran, des outils emoji/photo/vocal plus riches, une saisie plein écran alignée en haut et un partage de pièces jointes plus fluide.
+Added a home-screen Scan QR shortcut for faster pairing, and clarified that push notifications work out of the box on the official relay while custom relays need their own Firebase setup.

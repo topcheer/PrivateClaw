@@ -1,1 +1,1 @@
-チャット入力欄を刷新し、全画面編集、より豊かな絵文字・写真・音声ツール、上寄せの全画面入力、添付共有の改善を追加しました。
+Added a home-screen Scan QR shortcut for faster pairing, and clarified that push notifications work out of the box on the official relay while custom relays need their own Firebase setup.

@@ -1,1 +1,1 @@
-Redesigned the chat composer with fullscreen editing, richer emoji/photo/voice tools, top-aligned fullscreen writing, and smoother attachment sharing.
+Added a home-screen Scan QR shortcut for faster pairing, and clarified that push notifications work out of the box on the official relay while custom relays need their own Firebase setup.

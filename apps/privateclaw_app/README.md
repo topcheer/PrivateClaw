@@ -33,6 +33,8 @@ The app's Firebase push setup is intentionally local-only by default. Keep your 
 
 When those files are present, device builds can exercise full push/background wake flows. Without them, the app still builds and runs, but Firebase push stays disabled until you add your own configuration.
 
+Official app builds only receive managed push out of the box when they keep using the default PrivateClaw relay `https://relay.privateclaw.us`. If you connect the app to a custom relay, push requires that relay and app build to use your own Firebase / FCM project.
+
 For screenshot / store-preview launches, the app can also load `PRIVATECLAW_SCREENSHOT_SCENARIO` and `PRIVATECLAW_SCREENSHOT_LOCALE` from the runtime environment. Those preview launches automatically skip Firebase notification bootstrap so simulator screenshot runs do not depend on push setup.
 
 To join a normal private session, scan a QR code created by `/privateclaw` or `openclaw privateclaw pair`.

@@ -8,3 +8,5 @@ Fonctionnalités
 - Compatible avec des relais personnalisés à la maison ou dans le cloud
 - Conçu pour des conversations OpenClaw privées
 - Flux de session léger et sécurisé
+
+Push notifications are only available out of the box on the official relay `relay.privateclaw.us`. If you switch to a custom relay, wire the relay and app build to your own Firebase / FCM project.

@@ -1,1 +1,1 @@
-Der Chat-Composer wurde neu gestaltet – mit Vollbildbearbeitung, mehr Emoji-/Foto-/Sprachwerkzeugen, oben ausgerichteter Vollbildeingabe und flüssigerem Teilen von Anhängen.
+Added a home-screen Scan QR shortcut for faster pairing, and clarified that push notifications work out of the box on the official relay while custom relays need their own Firebase setup.

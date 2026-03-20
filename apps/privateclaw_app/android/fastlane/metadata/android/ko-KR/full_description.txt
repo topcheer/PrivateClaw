@@ -8,3 +8,5 @@ PrivateClaw는 사용자와 자체 호스팅 또는 클라우드 OpenClaw 배포
 - 집이나 클라우드의 사용자 지정 릴레이 지원
 - 비공개 OpenClaw 대화에 최적화
 - 가볍고 안전한 세션 연결 흐름
+
+Push notifications are only available out of the box on the official relay `relay.privateclaw.us`. If you switch to a custom relay, wire the relay and app build to your own Firebase / FCM project.

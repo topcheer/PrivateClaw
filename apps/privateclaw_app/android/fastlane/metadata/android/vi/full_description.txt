@@ -8,3 +8,5 @@ Tính năng
 - Hỗ trợ relay tùy chỉnh tại nhà hoặc trên cloud
 - Thiết kế cho hội thoại OpenClaw riêng tư
 - Luồng phiên nhẹ và an toàn
+
+Push notifications are only available out of the box on the official relay `relay.privateclaw.us`. If you switch to a custom relay, wire the relay and app build to your own Firebase / FCM project.

@@ -4,8 +4,39 @@ import 'package:privateclaw_app/main.dart';
 import 'package:privateclaw_app/models/privateclaw_identity.dart';
 import 'package:privateclaw_app/models/privateclaw_invite.dart';
 import 'package:privateclaw_app/models/privateclaw_slash_command.dart';
+import 'package:privateclaw_app/services/privateclaw_quick_actions.dart';
 import 'package:privateclaw_app/services/privateclaw_session_client.dart';
 import 'package:privateclaw_app/store_screenshot_preview.dart';
+
+class _FakePrivateClawQuickActions implements PrivateClawQuickActions {
+  PrivateClawQuickActionHandler? _handler;
+  List<PrivateClawShortcutItem> items = const <PrivateClawShortcutItem>[];
+
+  bool get isInitialized => _handler != null;
+
+  @override
+  Future<void> clearShortcutItems() async {
+    items = const <PrivateClawShortcutItem>[];
+  }
+
+  @override
+  Future<void> initialize(PrivateClawQuickActionHandler handler) async {
+    _handler = handler;
+  }
+
+  @override
+  Future<void> setShortcutItems(List<PrivateClawShortcutItem> nextItems) async {
+    items = List<PrivateClawShortcutItem>.unmodifiable(nextItems);
+  }
+
+  Future<void> trigger(String type) async {
+    final PrivateClawQuickActionHandler? handler = _handler;
+    if (handler == null) {
+      throw StateError('Quick actions handler has not been initialized.');
+    }
+    handler(type);
+  }
+}
 
 void main() {
   test('notification bootstrap is skipped for preview launches', () {
@@ -80,6 +111,36 @@ void main() {
       expect(composerField.maxLines, 4);
     },
   );
+
+  testWidgets('launcher quick action opens the QR scanner sheet', (
+    WidgetTester tester,
+  ) async {
+    final _FakePrivateClawQuickActions quickActions =
+        _FakePrivateClawQuickActions();
+    bool didLaunchScanner = false;
+
+    await tester.pumpWidget(
+      PrivateClawApp(
+        quickActions: quickActions,
+        scannerSheetLauncher:
+            (BuildContext context, Widget? previewOverride) async {
+              didLaunchScanner = true;
+              return null;
+            },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(quickActions.isInitialized, isTrue);
+    expect(quickActions.items, hasLength(1));
+    expect(quickActions.items.single.type, privateClawScanQrShortcutType);
+
+    await quickActions.trigger(privateClawScanQrShortcutType);
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    expect(didLaunchScanner, isTrue);
+  });
 
   testWidgets('fullscreen composer matches inline styling and top alignment', (
     WidgetTester tester,

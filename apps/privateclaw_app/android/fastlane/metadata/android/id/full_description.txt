@@ -8,3 +8,5 @@ Fitur
 - Mendukung relay kustom di rumah atau cloud
 - Dirancang untuk percakapan OpenClaw yang privat
 - Alur sesi yang ringan dan aman
+
+Push notifications are only available out of the box on the official relay `relay.privateclaw.us`. If you switch to a custom relay, wire the relay and app build to your own Firebase / FCM project.

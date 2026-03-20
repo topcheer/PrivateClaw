@@ -1,1 +1,1 @@
-أعدنا تصميم محرر الدردشة مع تحرير بملء الشاشة، وأدوات أكثر للرموز التعبيرية والصور والصوت، وكتابة بملء الشاشة بمحاذاة علوية، ومشاركة مرفقات أكثر سلاسة.
+Added a home-screen Scan QR shortcut for faster pairing, and clarified that push notifications work out of the box on the official relay while custom relays need their own Firebase setup.

@@ -26,6 +26,7 @@ import 'services/privateclaw_emoji_store.dart';
 import 'services/privateclaw_identity_store.dart';
 import 'services/privateclaw_firebase_options.dart';
 import 'services/privateclaw_notification_service.dart';
+import 'services/privateclaw_quick_actions.dart';
 import 'services/privateclaw_session_client.dart';
 import 'store_screenshot_preview.dart';
 import 'widgets/chat_message_bubble.dart';
@@ -135,15 +136,24 @@ bool privateClawShouldSuspendLiveSession(AppLifecycleState state) {
       state == AppLifecycleState.detached;
 }
 
+typedef PrivateClawScannerSheetLauncher =
+    Future<String?> Function(BuildContext context, Widget? previewOverride);
+
 class PrivateClawApp extends StatelessWidget {
   const PrivateClawApp({
     super.key,
     this.screenshotConfig = const StoreScreenshotConfig(),
     this.skipNotificationsInDebug = false,
+    this.quickActions = const SystemPrivateClawQuickActions(),
+    this.inviteScannerPreviewOverride,
+    this.scannerSheetLauncher,
   });
 
   final StoreScreenshotConfig screenshotConfig;
   final bool skipNotificationsInDebug;
+  final PrivateClawQuickActions quickActions;
+  final Widget? inviteScannerPreviewOverride;
+  final PrivateClawScannerSheetLauncher? scannerSheetLauncher;
 
   @override
   Widget build(BuildContext context) {
@@ -166,6 +176,9 @@ class PrivateClawApp extends StatelessWidget {
       home: PrivateClawHomePage(
         previewData: screenshotConfig.previewData,
         skipNotificationsInDebug: skipNotificationsInDebug,
+        quickActions: quickActions,
+        inviteScannerPreviewOverride: inviteScannerPreviewOverride,
+        scannerSheetLauncher: scannerSheetLauncher,
       ),
     );
   }
@@ -176,10 +189,16 @@ class PrivateClawHomePage extends StatefulWidget {
     super.key,
     this.previewData,
     this.skipNotificationsInDebug = false,
+    this.quickActions = const SystemPrivateClawQuickActions(),
+    this.inviteScannerPreviewOverride,
+    this.scannerSheetLauncher,
   });
 
   final PrivateClawPreviewData? previewData;
   final bool skipNotificationsInDebug;
+  final PrivateClawQuickActions quickActions;
+  final Widget? inviteScannerPreviewOverride;
+  final PrivateClawScannerSheetLauncher? scannerSheetLauncher;
 
   @override
   State<PrivateClawHomePage> createState() => _PrivateClawHomePageState();
@@ -228,6 +247,9 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
   _EmojiPickerTab _emojiPickerTab = _EmojiPickerTab.frequent;
   bool _isPhotoTrayVisible = false;
   bool _isLoadingRecentPhotos = false;
+  bool _isScannerSheetOpen = false;
+  bool _hasCompletedFirstFrame = false;
+  bool _hasPendingQuickActionScan = false;
   Timer? _voiceRecordingTicker;
   Duration _voiceRecordingElapsed = Duration.zero;
   int _voiceRecordingTick = 0;
@@ -236,6 +258,8 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
   Offset? _voiceHoldStartGlobalPosition;
   bool _isVoiceCancelArmed = false;
   bool _isSlashCommandsSheetOpen = false;
+  bool _hasInitializedQuickActions = false;
+  Locale? _configuredQuickActionsLocale;
   String _previousComposerText = '';
   final PrivateClawDebugPendingInviteData? _debugPendingInvite =
       loadPrivateClawDebugPendingInviteFromEnvironment();
@@ -354,6 +378,17 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _hasCompletedFirstFrame = true;
+      if (!mounted || !_hasPendingQuickActionScan) {
+        return;
+      }
+      _hasPendingQuickActionScan = false;
+      unawaited(_openScanner());
+    });
+    if (!_isPreviewMode) {
+      unawaited(_initializeQuickActions());
+    }
     unawaited(_loadEmojiUsage());
     final PrivateClawPreviewData? previewData = widget.previewData;
     if (previewData != null) {
@@ -390,6 +425,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     if (_statusText.isEmpty) {
       _statusText = AppLocalizations.of(context)!.initialStatus;
     }
+    _configureQuickActionsForLocale();
   }
 
   @override
@@ -1020,7 +1056,34 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
   }
 
   Future<void> _openScanner() async {
-    final String? scannedInvite = await showModalBottomSheet<String>(
+    if (_isScannerSheetOpen) {
+      return;
+    }
+    _isScannerSheetOpen = true;
+    try {
+      final PrivateClawScannerSheetLauncher launcher =
+          widget.scannerSheetLauncher ?? _defaultScannerSheetLauncher;
+      final String? scannedInvite = await launcher(
+        context,
+        widget.inviteScannerPreviewOverride,
+      );
+
+      if (!mounted || scannedInvite == null) {
+        return;
+      }
+
+      _inviteController.text = scannedInvite;
+      await _connectFromInput(scannedInvite);
+    } finally {
+      _isScannerSheetOpen = false;
+    }
+  }
+
+  Future<String?> _defaultScannerSheetLauncher(
+    BuildContext context,
+    Widget? previewOverride,
+  ) {
+    return showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
@@ -1029,16 +1092,52 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
           onDetected: (String value) {
             Navigator.of(context).pop(value);
           },
+          previewOverride: previewOverride,
         );
       },
     );
+  }
 
-    if (!mounted || scannedInvite == null) {
+  Future<void> _initializeQuickActions() async {
+    if (_hasInitializedQuickActions) {
       return;
     }
+    _hasInitializedQuickActions = true;
+    await widget.quickActions.initialize(_handleQuickActionSelection);
+  }
 
-    _inviteController.text = scannedInvite;
-    await _connectFromInput(scannedInvite);
+  void _configureQuickActionsForLocale() {
+    if (_isPreviewMode || !mounted) {
+      return;
+    }
+    final Locale locale = Localizations.localeOf(context);
+    if (_configuredQuickActionsLocale == locale) {
+      return;
+    }
+    _configuredQuickActionsLocale = locale;
+    final AppLocalizations l10n = AppLocalizations.of(context)!;
+    unawaited(
+      widget.quickActions.setShortcutItems(<PrivateClawShortcutItem>[
+        PrivateClawShortcutItem(
+          type: privateClawScanQrShortcutType,
+          localizedTitle: l10n.scanQrButton,
+        ),
+      ]),
+    );
+  }
+
+  void _handleQuickActionSelection(String shortcutType) {
+    if (shortcutType != privateClawScanQrShortcutType) {
+      return;
+    }
+    if (!_hasCompletedFirstFrame) {
+      _hasPendingQuickActionScan = true;
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+    unawaited(_openScanner());
   }
 
   Future<void> _showSessionQrSheet() async {

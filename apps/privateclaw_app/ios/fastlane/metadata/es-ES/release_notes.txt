@@ -1,1 +1,1 @@
-Rediseñamos el cuadro de chat con edición a pantalla completa, más herramientas de emoji/foto/voz, escritura en pantalla completa alineada arriba y un envío de archivos más fluido.
+Added a home-screen Scan QR shortcut for faster pairing, and clarified that push notifications work out of the box on the official relay while custom relays need their own Firebase setup.

@@ -1,8 +1,7 @@
 name: privateclaw_app
 description: "PrivateClaw ephemeral encrypted chat client"
 publish_to: 'none'
-version: 0.1.6+7
-
+version: 0.1.7+8
 environment:
   sdk: ^3.10.7
 
@@ -29,6 +28,7 @@ dependencies:
   video_player: ^2.10.0
   web_socket_channel: ^3.0.3
   qr_flutter: ^4.1.0
+  quick_actions: ^1.1.0
 
 dev_dependencies:
   flutter_launcher_icons: ^0.14.4

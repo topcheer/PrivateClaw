@@ -252,6 +252,8 @@ openclaw config set plugins.entries.privateclaw.config.botMode true
 - 新加入的成员如果大约 10 分钟都没有发言，会收到一条主动问候
 - 群里如果大约 20 分钟都没有新的用户消息，会收到一条主动活跃气氛的消息
 
+群聊静默后的这条主动消息现在会从内置的 200 个脑洞话题里随机挑选一个切入点，并尽量避免同一个 session 连续两次抽到相同话题。
+
 这两种行为都走和普通 assistant 回复相同的 upstream bridge / OpenClaw agent 路径，`/mute-bot` 和 `/unmute-bot` 也会暂停或恢复这些主动消息。
 
 如果需要更细的调优，还可以使用：

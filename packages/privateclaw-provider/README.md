@@ -145,6 +145,8 @@ When `botMode` is enabled, group sessions do two extra things:
 - greet a newly joined participant if they stay silent for about 10 minutes
 - send a short proactive re-engagement message after about 20 minutes of group silence
 
+The idle re-engagement path now picks from a built-in bank of 200 whimsical topic prompts and avoids immediately repeating the previous topic for the same session.
+
 Both behaviors go through the same upstream bridge / OpenClaw agent path as normal assistant replies, and `/mute-bot` or `/unmute-bot` also pause or resume these proactive turns.
 
 For advanced tuning or tests, you can override the defaults in either of these ways:

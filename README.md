@@ -149,7 +149,11 @@ If you want group sessions to feel more like a live chat with a proactive bot pa
 openclaw config set plugins.entries.privateclaw.config.botMode true
 ```
 
-That makes the provider greet silent new joiners after about 10 minutes and send a short re-engagement message after about 20 minutes of group silence. `/mute-bot` and `/unmute-bot` also pause or resume these proactive messages.
+That makes the provider greet silent new joiners after about 10 minutes and send a short re-engagement message after about 20 minutes of group silence.
+
+The idle re-engagement path now draws from a built-in bank of 200 whimsical topic prompts and avoids immediately repeating the previous topic for the same session.
+
+`/mute-bot` and `/unmute-bot` also pause or resume these proactive messages.
 
 For advanced tuning, the provider also accepts:
 

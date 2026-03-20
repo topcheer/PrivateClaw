@@ -8,10 +8,34 @@ import {
 } from "@privateclaw/protocol";
 import WebSocket from "ws";
 import { createRelayServer } from "../../../services/relay-server/src/relay-server.js";
+import { BOT_MODE_IDLE_TOPICS } from "./bot-mode-topics.js";
 import { EchoBridge } from "./bridges/echo-bridge.js";
 import { DEFAULT_SESSION_TTL_MS, PrivateClawProvider } from "./provider.js";
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+async function waitForCondition(
+  predicate: () => boolean,
+  timeoutMs = 500,
+): Promise<void> {
+  const startedAt = Date.now();
+  while (!predicate()) {
+    if (Date.now() - startedAt > timeoutMs) {
+      throw new Error(`condition not met within ${timeoutMs}ms`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
 
 function waitForOpen(socket: WebSocket): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -256,6 +280,41 @@ class NoReplyThenJokeBridge {
   }): Promise<string> {
     this.prompts.push(params.message);
     return params.message.includes("\"NO_REPLY\"") ? "Fallback joke" : "NO_REPLY";
+  }
+}
+
+class ControlledQueueBridge {
+  readonly calls: Array<{
+    message: string;
+    deferred: ReturnType<typeof createDeferred<string>>;
+  }> = [];
+  maxConcurrentCalls = 0;
+  private activeCalls = 0;
+
+  async handleUserMessage(params: {
+    message: string;
+  }): Promise<string> {
+    const deferred = createDeferred<string>();
+    this.calls.push({
+      message: params.message,
+      deferred,
+    });
+    this.activeCalls += 1;
+    this.maxConcurrentCalls = Math.max(
+      this.maxConcurrentCalls,
+      this.activeCalls,
+    );
+    try {
+      return await deferred.promise;
+    } finally {
+      this.activeCalls -= 1;
+    }
+  }
+
+  resolveCall(index: number, response: string): void {
+    const call = this.calls[index];
+    assert.ok(call, `expected bridge call ${index}`);
+    call.deferred.resolve(response);
   }
 }
 
@@ -552,6 +611,114 @@ test("provider turns a NO_REPLY bridge response into a fallback joke", async (t)
     bridge.prompts[1] ?? "",
     /same language as the recent user\/assistant conversation already in this session/u,
   );
+
+  appSocket.terminate();
+});
+
+test("provider serializes bridge turns per session", async (t) => {
+  const relay = createRelayServer({
+    host: "127.0.0.1",
+    port: 0,
+    sessionTtlMs: 60_000,
+    frameCacheSize: 8,
+  });
+  const { port } = await relay.start();
+  t.after(async () => {
+    await relay.stop();
+  });
+
+  const bridge = new ControlledQueueBridge();
+  const provider = new PrivateClawProvider({
+    providerWsUrl: `ws://127.0.0.1:${port}/ws/provider`,
+    appWsUrl: `ws://127.0.0.1:${port}/ws/app`,
+    bridge,
+    defaultTtlMs: DEFAULT_SESSION_TTL_MS,
+    welcomeMessage: "欢迎来到 PrivateClaw",
+  });
+  await provider.connect();
+  t.after(async () => {
+    await provider.dispose();
+  });
+
+  const inviteBundle = await provider.createInviteBundle();
+  const invite = decodeInviteString(inviteBundle.inviteUri);
+
+  const appSocket = new WebSocket(invite.appWsUrl);
+  const attachedPromise = nextMessage(appSocket);
+  await waitForOpen(appSocket);
+  assert.equal((await attachedPromise).type, "relay:attached");
+
+  appSocket.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "client_hello",
+          appVersion: "flutter-test",
+          deviceLabel: "Simulator",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+  await nextMessages(appSocket, 2);
+
+  appSocket.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "user_message",
+          text: "first queued message",
+          clientMessageId: "queued-message-1",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+  await waitForCondition(() => bridge.calls.length === 1);
+
+  appSocket.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "user_message",
+          text: "second queued message",
+          clientMessageId: "queued-message-2",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  assert.equal(bridge.calls.length, 1);
+  assert.equal(bridge.maxConcurrentCalls, 1);
+  assert.equal(bridge.calls[0]?.message, "first queued message");
+
+  const firstAssistantPromise = nextRelayPayload(appSocket, invite);
+  bridge.resolveCall(0, "First queued reply");
+  const firstAssistant = await firstAssistantPromise;
+  assert.equal(firstAssistant.kind, "assistant_message");
+  assert.equal(firstAssistant.replyTo, "queued-message-1");
+  assert.equal(firstAssistant.text, "First queued reply");
+
+  await waitForCondition(() => bridge.calls.length === 2);
+  assert.equal(bridge.calls[1]?.message, "second queued message");
+  assert.equal(bridge.maxConcurrentCalls, 1);
+
+  const secondAssistantPromise = nextRelayPayload(appSocket, invite);
+  bridge.resolveCall(1, "Second queued reply");
+  const secondAssistant = await secondAssistantPromise;
+  assert.equal(secondAssistant.kind, "assistant_message");
+  assert.equal(secondAssistant.replyTo, "queued-message-2");
+  assert.equal(secondAssistant.text, "Second queued reply");
 
   appSocket.terminate();
 });
@@ -2466,7 +2633,7 @@ test("group bot mode cancels the silent-join greeting after the participant spea
 
 test("group bot mode sends an idle follow-up after the room stays quiet", async (t) => {
   const bridge = new BotModeBridge();
-  const { invite } = await createGroupBotModeHarness(t, bridge, {
+  const { invite, provider } = await createGroupBotModeHarness(t, bridge, {
     botMode: true,
     botModeSilentJoinDelayMs: 250,
     botModeIdleDelayMs: 60,
@@ -2507,10 +2674,87 @@ test("group bot mode sends an idle follow-up after the room stays quiet", async 
   assert.equal(idleFollowUp.text, "Bot mode joke");
   assert.deepEqual(bridge.promptKinds, ["user", "idle_group"]);
   assert.match(bridge.prompts[1]!, /has had no new message/u);
+  assert.match(bridge.prompts[1]!, /Idle topic:/u);
+  assert.match(bridge.prompts[1]!, /Topic prompt:/u);
   assert.match(
     bridge.prompts[1]!,
     /Write the proactive message in the same language as the recent user\/assistant conversation already in this session\./u,
   );
+  const sessionState = (provider as unknown as { sessions: Map<string, { botModeLastIdleTopicId?: string }> }).sessions.get(
+    invite.sessionId,
+  );
+  assert.ok(sessionState?.botModeLastIdleTopicId);
+  assert.ok(
+    BOT_MODE_IDLE_TOPICS.some(
+      (topic) => topic.id === sessionState.botModeLastIdleTopicId,
+    ),
+  );
+});
+
+test("group bot mode proactive turns wait for the session bridge queue", async (t) => {
+  const bridge = new ControlledQueueBridge();
+  const { invite } = await createGroupBotModeHarness(t, bridge, {
+    botMode: true,
+    botModeSilentJoinDelayMs: 250,
+    botModeIdleDelayMs: 60,
+  });
+  const app = await connectGroupApp({
+    invite,
+    appId: "app-one",
+    displayName: "SolarFox",
+  });
+  t.after(async () => {
+    app.close();
+    await waitForClose(app);
+  });
+
+  const participantEchoPromise = nextRelayPayload(app, invite);
+  app.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "user_message",
+          appId: "app-one",
+          text: "queue this turn first",
+          clientMessageId: "queued-bot-mode-user-1",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+
+  const participantEcho = await participantEchoPromise;
+  assert.equal(participantEcho.kind, "participant_message");
+  await waitForCondition(() => bridge.calls.length === 1);
+  assert.equal(bridge.calls[0]?.message, "SolarFox: queue this turn first");
+
+  await new Promise((resolve) => setTimeout(resolve, 90));
+  assert.equal(
+    bridge.calls.length,
+    1,
+    "idle bot-mode prompt should wait behind the queued user turn",
+  );
+  assert.equal(bridge.maxConcurrentCalls, 1);
+
+  const assistantReplyPromise = nextRelayPayload(app, invite);
+  bridge.resolveCall(0, "Queued user reply");
+  const assistantReply = await assistantReplyPromise;
+  assert.equal(assistantReply.kind, "assistant_message");
+  assert.equal(assistantReply.replyTo, "queued-bot-mode-user-1");
+  assert.equal(assistantReply.text, "Queued user reply");
+
+  await waitForCondition(() => bridge.calls.length === 2);
+  assert.match(bridge.calls[1]?.message ?? "", /has had no new message/u);
+  assert.equal(bridge.maxConcurrentCalls, 1);
+
+  const proactiveReplyPromise = nextRelayPayload(app, invite);
+  bridge.resolveCall(1, "Queued bot joke");
+  const proactiveReply = await proactiveReplyPromise;
+  assert.equal(proactiveReply.kind, "assistant_message");
+  assert.equal(proactiveReply.text, "Queued bot joke");
 });
 
 test("group bot mode idle timing ignores non-human assistant broadcasts", async (t) => {

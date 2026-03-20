@@ -132,6 +132,7 @@ export interface ProviderSessionState {
   lastGroupActivityAt?: string;
   botModeIdleAnchorAt?: string;
   botModeLastIdlePromptAt?: string;
+  botModeLastIdleTopicId?: string;
   pendingRenewal?: {
     expiresAt: string;
     sentAt: string;
@@ -159,6 +160,7 @@ export interface PrivateClawProviderSessionHandoff {
   lastGroupActivityAt?: string;
   botModeIdleAnchorAt?: string;
   botModeLastIdlePromptAt?: string;
+  botModeLastIdleTopicId?: string;
 }
 
 export interface PrivateClawProviderHandoffState {

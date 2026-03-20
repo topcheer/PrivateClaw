@@ -15,6 +15,10 @@ import {
 } from "@privateclaw/protocol";
 import QRCode from "qrcode";
 import {
+  BOT_MODE_IDLE_TOPICS,
+  pickBotModeIdleTopic,
+} from "./bot-mode-topics.js";
+import {
   PRIVATECLAW_QR_ERROR_CORRECTION_LEVEL,
   PRIVATECLAW_QR_IMAGE_MARGIN,
   PRIVATECLAW_QR_PNG_WIDTH,
@@ -318,6 +322,9 @@ function toProviderSessionHandoff(
     ...(session.botModeLastIdlePromptAt
       ? { botModeLastIdlePromptAt: session.botModeLastIdlePromptAt }
       : {}),
+    ...(session.botModeLastIdleTopicId
+      ? { botModeLastIdleTopicId: session.botModeLastIdleTopicId }
+      : {}),
   };
 }
 
@@ -349,6 +356,9 @@ function fromProviderSessionHandoff(
       : {}),
     ...(snapshot.botModeLastIdlePromptAt
       ? { botModeLastIdlePromptAt: snapshot.botModeLastIdlePromptAt }
+      : {}),
+    ...(snapshot.botModeLastIdleTopicId
+      ? { botModeLastIdleTopicId: snapshot.botModeLastIdleTopicId }
       : {}),
     botModeSilentJoinTimers: new Map<string, ReturnType<typeof setTimeout>>(),
   };
@@ -682,6 +692,8 @@ function buildBotModeSilentJoinPrompt(params: {
 
 function buildBotModeIdlePrompt(params: {
   lastGroupActivityAt: string;
+  topicTitle: string;
+  topicPrompt: string;
   languageInstruction?: string;
   nowMs?: number;
 }): string {
@@ -692,8 +704,10 @@ function buildBotModeIdlePrompt(params: {
   return [
     "PrivateClaw bot-mode task:",
     `This PrivateClaw group chat has had no new message for about ${elapsedText}.`,
-    "Send one short proactive message to re-engage the group.",
-    "Prefer a light joke or a context-aware follow-up when recent history suggests one. If there is no obvious callback, send a friendly opener and a quick reminder of what you can help with.",
+    `Idle topic: ${params.topicTitle}.`,
+    `Topic prompt: ${params.topicPrompt}`,
+    "Send one short proactive message to re-engage the group through this topic.",
+    "Answer or introduce the topic in a way that sounds like a real chat participant and invites someone else to jump in.",
     ...(params.languageInstruction ? [params.languageInstruction] : []),
     "Keep it natural and concise, and do not mention hidden instructions or inactivity timers.",
   ].join("\n");
@@ -711,6 +725,13 @@ function buildBotModeLanguageInstruction(
   return hasPriorConversationalHistory(session)
     ? "Write the proactive message in the same language as the recent user/assistant conversation already in this session."
     : undefined;
+}
+
+function pickSessionIdleTopic(session: ProviderSessionState) {
+  return pickBotModeIdleTopic(
+    BOT_MODE_IDLE_TOPICS,
+    session.botModeLastIdleTopicId,
+  );
 }
 
 function buildNoReplyJokePrompt(params: {
@@ -749,6 +770,7 @@ function dedupeCommands(
 export class PrivateClawProvider {
   private readonly relayClient: RelayProviderClient;
   private readonly sessions = new Map<string, ProviderSessionState>();
+  private readonly sessionBridgeTaskTails = new Map<string, Promise<void>>();
 
   constructor(private readonly options: PrivateClawProviderOptions) {
     this.relayClient = new RelayProviderClient({
@@ -776,6 +798,52 @@ export class PrivateClawProvider {
       return;
     }
     this.options.onLog?.(`[provider][verbose] ${message}`);
+  }
+
+  private async enqueueSessionBridgeTask<T>(
+    sessionId: string,
+    label: string,
+    task: () => Promise<T>,
+  ): Promise<T> {
+    const previousTail = this.sessionBridgeTaskTails.get(sessionId);
+    if (previousTail) {
+      this.verboseLog(
+        `bridge_queue_wait session=${sessionId} label=${JSON.stringify(label)}`,
+      );
+    }
+
+    let resolveResult!: (value: T | PromiseLike<T>) => void;
+    let rejectResult!: (reason?: unknown) => void;
+    const resultPromise = new Promise<T>((resolve, reject) => {
+      resolveResult = resolve;
+      rejectResult = reject;
+    });
+
+    const nextTail = (previousTail ?? Promise.resolve())
+      .catch(() => undefined)
+      .then(async () => {
+        this.verboseLog(
+          `bridge_queue_start session=${sessionId} label=${JSON.stringify(label)}`,
+        );
+        try {
+          resolveResult(await task());
+        } catch (error) {
+          rejectResult(error);
+        } finally {
+          this.verboseLog(
+            `bridge_queue_complete session=${sessionId} label=${JSON.stringify(label)}`,
+          );
+        }
+      });
+    const settledTail = nextTail.then(() => undefined, () => undefined);
+    this.sessionBridgeTaskTails.set(sessionId, settledTail);
+    settledTail.finally(() => {
+      if (this.sessionBridgeTaskTails.get(sessionId) === settledTail) {
+        this.sessionBridgeTaskTails.delete(sessionId);
+      }
+    });
+
+    return resultPromise;
   }
 
   private async resolveBridgeMessages(
@@ -978,6 +1046,7 @@ export class PrivateClawProvider {
     }
     this.clearBotModeTimers(session);
     this.sessions.delete(sessionId);
+    this.sessionBridgeTaskTails.delete(sessionId);
     return session;
   }
 
@@ -1094,6 +1163,169 @@ export class PrivateClawProvider {
         ? { bridgeAttachments: passthroughAttachments }
         : {}),
     };
+  }
+
+  private async processQueuedUserMessage(
+    sessionId: string,
+    payload: UserMessagePayload,
+    participant: ProviderParticipantState | undefined,
+    voiceFeedbackParams?: {
+      targetAppId: string;
+      storeHistory: false;
+    },
+  ): Promise<void> {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return;
+    }
+
+    let preparedMessage: PreparedUserMessage;
+    try {
+      preparedMessage = await this.prepareUserMessage(
+        session,
+        payload,
+        participant,
+      );
+    } catch (error) {
+      this.storeUserMessageTurn(session, {
+        messageId: payload.clientMessageId,
+        text: payload.text,
+        sentAt: payload.sentAt,
+        ...(participant
+          ? {
+              appId: participant.appId,
+              participantLabel: participant.displayName,
+            }
+          : {}),
+        ...(payload.attachments ? { attachments: payload.attachments } : {}),
+      });
+      await this.sendSystemMessage(
+        sessionId,
+        buildBridgeErrorMessage(
+          error instanceof Error ? error.message : String(error),
+        ),
+        "error",
+        payload.clientMessageId,
+        voiceFeedbackParams,
+      );
+      return;
+    }
+
+    this.storeUserMessageTurn(session, {
+      messageId: payload.clientMessageId,
+      text: preparedMessage.text,
+      sentAt: payload.sentAt,
+      ...(participant
+        ? {
+            appId: participant.appId,
+            participantLabel: participant.displayName,
+          }
+        : {}),
+      ...(preparedMessage.historyBridgeText
+        ? { bridgeText: preparedMessage.historyBridgeText }
+        : {}),
+      ...(preparedMessage.attachments
+        ? { attachments: preparedMessage.attachments }
+        : {}),
+    });
+
+    const bridgeMessage =
+      preparedMessage.bridgeText ??
+      (session.groupMode && participant
+        ? `${participant.displayName}: ${preparedMessage.text}`
+        : preparedMessage.text);
+    const supportsThinkingTrace =
+      this.options.bridge.supportsThinkingTrace === true;
+    const thinkingMessageId = buildThinkingMessageId(payload.clientMessageId);
+    let latestThinkingSummary = "";
+    let latestThinkingEntries: PrivateClawThinkingEntry[] = [];
+    try {
+      if (supportsThinkingTrace) {
+        await this.sendThinkingMessage(sessionId, {
+          messageId: thinkingMessageId,
+          status: "started",
+          summary: "",
+          entries: [],
+          replyTo: payload.clientMessageId,
+          sentAt: payload.sentAt,
+          storeHistory: false,
+        });
+      }
+      const messages = await this.resolveBridgeMessages(session, {
+        sessionId,
+        invite: session.invite,
+        message: bridgeMessage,
+        ...(preparedMessage.bridgeAttachments
+          ? { attachments: preparedMessage.bridgeAttachments }
+          : preparedMessage.attachments
+            ? { attachments: preparedMessage.attachments }
+            : {}),
+        history: this.buildBridgeHistory(session),
+        ...(supportsThinkingTrace
+          ? {
+              onThinkingTrace: async (snapshot) => {
+                latestThinkingSummary = snapshot.summary;
+                latestThinkingEntries = cloneThinkingEntries(snapshot.entries);
+                await this.sendThinkingMessage(sessionId, {
+                  messageId: thinkingMessageId,
+                  status: "streaming",
+                  summary: snapshot.summary,
+                  entries: snapshot.entries,
+                  replyTo: payload.clientMessageId,
+                  sentAt: snapshot.sentAt,
+                  storeHistory: snapshot.entries.length > 0,
+                });
+              },
+            }
+          : {}),
+      });
+      if (supportsThinkingTrace) {
+        await this.sendThinkingMessage(sessionId, {
+          messageId: thinkingMessageId,
+          status: "completed",
+          summary: latestThinkingSummary,
+          entries: latestThinkingEntries,
+          replyTo: payload.clientMessageId,
+          storeHistory: latestThinkingEntries.length > 0,
+        });
+      }
+
+      for (const message of messages) {
+        this.options.onLog?.(
+          `[provider] bridge_message_out session=${sessionId} textChars=${message.text.length} attachments=${message.attachments?.length ?? 0}`,
+        );
+        for (const attachment of message.attachments ?? []) {
+          this.options.onLog?.(
+            `[provider] attachment_out session=${sessionId} name=${JSON.stringify(attachment.name)} mimeType=${attachment.mimeType} sizeBytes=${attachment.sizeBytes} hasData=${Boolean(attachment.dataBase64?.trim())}`,
+          );
+        }
+        await this.sendAssistantMessage(sessionId, {
+          text: message.text,
+          replyTo: payload.clientMessageId,
+          ...(message.attachments ? { attachments: message.attachments } : {}),
+        });
+      }
+    } catch (error) {
+      if (supportsThinkingTrace) {
+        await this.sendThinkingMessage(sessionId, {
+          messageId: thinkingMessageId,
+          status: "failed",
+          summary: latestThinkingSummary,
+          entries: latestThinkingEntries,
+          replyTo: payload.clientMessageId,
+          storeHistory: latestThinkingEntries.length > 0,
+        });
+      }
+      await this.sendSystemMessage(
+        sessionId,
+        buildBridgeErrorMessage(
+          error instanceof Error ? error.message : String(error),
+        ),
+        "error",
+        payload.clientMessageId,
+        voiceFeedbackParams,
+      );
+    }
   }
 
   private listParticipants(
@@ -1337,109 +1569,125 @@ export class PrivateClawProvider {
     appId: string,
     joinedAtMs: number,
   ): Promise<void> {
-    const session = this.sessions.get(sessionId);
-    if (!session) {
-      return;
-    }
-    this.clearBotModeSilentJoinTimer(session, appId);
-    const participant = session.participants.get(appId);
-    if (
-      !participant ||
-      !this.isBotModeEnabled(session) ||
-      session.botMuted ||
-      participant.lastUserMessageAt ||
-      participant.botModeSilentJoinPromptSentAt
-    ) {
-      return;
-    }
-    const dueAtMs = joinedAtMs + this.getBotModeSilentJoinDelayMs();
-    if (Date.now() < dueAtMs) {
-      this.scheduleSilentJoinPrompt(sessionId, appId);
-      return;
-    }
-    const sentAt = nowIso();
-    const languageInstruction = buildBotModeLanguageInstruction(session);
-    const messages = await this.resolveBridgeMessages(session, {
+    await this.enqueueSessionBridgeTask(
       sessionId,
-      invite: session.invite,
-      message: buildBotModeSilentJoinPrompt({
-        participantLabel: participant.displayName,
-        joinedAt: participant.joinedAt,
-        ...(languageInstruction ? { languageInstruction } : {}),
-        }),
-      history: this.buildBridgeHistory(session),
-    });
-    if (messages.length === 0) {
-      this.scheduleSilentJoinPrompt(sessionId, appId);
-      return;
-    }
-    for (const message of messages) {
-      await this.sendAssistantMessage(sessionId, {
-        text: message.text,
-        sentAt,
-        ...(message.attachments ? { attachments: message.attachments } : {}),
-      });
-    }
-    participant.botModeSilentJoinPromptSentAt = sentAt;
+      `bot_mode_silent_join:${appId}`,
+      async () => {
+        const session = this.sessions.get(sessionId);
+        if (!session) {
+          return;
+        }
+        this.clearBotModeSilentJoinTimer(session, appId);
+        const participant = session.participants.get(appId);
+        if (
+          !participant ||
+          !this.isBotModeEnabled(session) ||
+          session.botMuted ||
+          participant.lastUserMessageAt ||
+          participant.botModeSilentJoinPromptSentAt
+        ) {
+          return;
+        }
+        const dueAtMs = joinedAtMs + this.getBotModeSilentJoinDelayMs();
+        if (Date.now() < dueAtMs) {
+          this.scheduleSilentJoinPrompt(sessionId, appId);
+          return;
+        }
+        const sentAt = nowIso();
+        const languageInstruction = buildBotModeLanguageInstruction(session);
+        const messages = await this.resolveBridgeMessages(session, {
+          sessionId,
+          invite: session.invite,
+          message: buildBotModeSilentJoinPrompt({
+            participantLabel: participant.displayName,
+            joinedAt: participant.joinedAt,
+            ...(languageInstruction ? { languageInstruction } : {}),
+          }),
+          history: this.buildBridgeHistory(session),
+        });
+        if (messages.length === 0) {
+          this.scheduleSilentJoinPrompt(sessionId, appId);
+          return;
+        }
+        for (const message of messages) {
+          await this.sendAssistantMessage(sessionId, {
+            text: message.text,
+            sentAt,
+            ...(message.attachments ? { attachments: message.attachments } : {}),
+          });
+        }
+        participant.botModeSilentJoinPromptSentAt = sentAt;
+      },
+    );
   }
 
   private async handleGroupIdlePrompt(
     sessionId: string,
     lastActivityMs: number,
   ): Promise<void> {
-    const session = this.sessions.get(sessionId);
-    if (!session) {
-      return;
-    }
-    this.clearBotModeIdleTimer(session);
-    if (
-      !this.isBotModeEnabled(session) ||
-      session.botMuted ||
-      session.participants.size === 0
-    ) {
-      return;
-    }
-    const currentActivityMs = this.getGroupIdleScheduleAnchorMs(session);
-    if (currentActivityMs > lastActivityMs) {
-      this.scheduleGroupIdlePrompt(sessionId, currentActivityMs);
-      return;
-    }
-    const dueAtMs = currentActivityMs + this.getBotModeIdleDelayMs();
-    if (Date.now() < dueAtMs) {
-      this.scheduleGroupIdlePrompt(sessionId, currentActivityMs);
-      return;
-    }
-    try {
-      const languageInstruction = buildBotModeLanguageInstruction(session);
-      const messages = await this.resolveBridgeMessages(session, {
-        sessionId,
-        invite: session.invite,
-        message: buildBotModeIdlePrompt({
-          lastGroupActivityAt: session.lastGroupActivityAt ?? nowIso(),
-          ...(languageInstruction ? { languageInstruction } : {}),
-        }),
-        history: this.buildBridgeHistory(session),
-      });
-      if (messages.length === 0) {
-        this.scheduleGroupIdlePrompt(sessionId, Date.now());
-        return;
-      }
-      const sentAt = nowIso();
-      for (const message of messages) {
-        await this.sendAssistantMessage(sessionId, {
-          text: message.text,
-          sentAt,
-          ...(message.attachments ? { attachments: message.attachments } : {}),
-        });
-      }
-      session.botModeLastIdlePromptAt = sentAt;
-      this.scheduleGroupIdlePrompt(sessionId);
-    } catch (error) {
-      this.options.onLog?.(
-        `[provider] bot mode idle prompt bridge error for ${sessionId}: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      this.scheduleGroupIdlePrompt(sessionId, Date.now());
-    }
+    await this.enqueueSessionBridgeTask(
+      sessionId,
+      "bot_mode_idle_prompt",
+      async () => {
+        const session = this.sessions.get(sessionId);
+        if (!session) {
+          return;
+        }
+        this.clearBotModeIdleTimer(session);
+        if (
+          !this.isBotModeEnabled(session) ||
+          session.botMuted ||
+          session.participants.size === 0
+        ) {
+          return;
+        }
+        const currentActivityMs = this.getGroupIdleScheduleAnchorMs(session);
+        if (currentActivityMs > lastActivityMs) {
+          this.scheduleGroupIdlePrompt(sessionId, currentActivityMs);
+          return;
+        }
+        const dueAtMs = currentActivityMs + this.getBotModeIdleDelayMs();
+        if (Date.now() < dueAtMs) {
+          this.scheduleGroupIdlePrompt(sessionId, currentActivityMs);
+          return;
+        }
+        try {
+          const languageInstruction = buildBotModeLanguageInstruction(session);
+          const topic = pickSessionIdleTopic(session);
+          const messages = await this.resolveBridgeMessages(session, {
+            sessionId,
+            invite: session.invite,
+            message: buildBotModeIdlePrompt({
+              lastGroupActivityAt: session.lastGroupActivityAt ?? nowIso(),
+              topicTitle: topic.title,
+              topicPrompt: topic.prompt,
+              ...(languageInstruction ? { languageInstruction } : {}),
+            }),
+            history: this.buildBridgeHistory(session),
+          });
+          if (messages.length === 0) {
+            this.scheduleGroupIdlePrompt(sessionId, Date.now());
+            return;
+          }
+          const sentAt = nowIso();
+          for (const message of messages) {
+            await this.sendAssistantMessage(sessionId, {
+              text: message.text,
+              sentAt,
+              ...(message.attachments ? { attachments: message.attachments } : {}),
+            });
+          }
+          session.botModeLastIdlePromptAt = sentAt;
+          session.botModeLastIdleTopicId = topic.id;
+          this.scheduleGroupIdlePrompt(sessionId);
+        } catch (error) {
+          this.options.onLog?.(
+            `[provider] bot mode idle prompt bridge error for ${sessionId}: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          this.scheduleGroupIdlePrompt(sessionId, Date.now());
+        }
+      },
+    );
   }
 
   private async sendRenewalReminder(sessionId: string): Promise<void> {
@@ -1897,20 +2145,6 @@ export class PrivateClawProvider {
       return;
     }
     session.history.push(turn);
-  }
-
-  private updateStoredUserBridgeText(
-    session: ProviderSessionState,
-    messageId: string,
-    bridgeText: string,
-  ): void {
-    for (let index = session.history.length - 1; index >= 0; index -= 1) {
-      const turn = session.history[index];
-      if (turn?.role === "user" && turn.messageId === messageId) {
-        turn.bridgeText = bridgeText;
-        return;
-      }
-    }
   }
 
   private async sendWelcomeMessage(
@@ -2457,7 +2691,12 @@ export class PrivateClawProvider {
         const containsAudioAttachment = hasAudioAttachments(payload.attachments);
         const shouldHandleVoiceAsynchronously =
           containsAudioAttachment && supportsVoiceTranscription;
-        const voiceFeedbackParams =
+        const voiceFeedbackParams:
+          | {
+              targetAppId: string;
+              storeHistory: false;
+            }
+          | undefined =
           shouldHandleVoiceAsynchronously && participant
             ? {
                 targetAppId: participant.appId,
@@ -2465,8 +2704,8 @@ export class PrivateClawProvider {
               }
             : undefined;
 
-        if (shouldHandleVoiceAsynchronously) {
-          if (session.groupMode) {
+        if (session.groupMode && session.botMuted && !directBridgeSlashCommand) {
+          if (shouldHandleVoiceAsynchronously) {
             this.storeUserMessageTurn(session, {
               messageId: payload.clientMessageId,
               text: payload.text,
@@ -2486,17 +2725,6 @@ export class PrivateClawProvider {
               storeHistory: false,
             });
           } else {
-            this.storeUserMessageTurn(session, {
-              messageId: payload.clientMessageId,
-              text: payload.text,
-              sentAt: payload.sentAt,
-              ...(payload.attachments ? { attachments: payload.attachments } : {}),
-            });
-          }
-        }
-
-        if (session.groupMode && session.botMuted && !directBridgeSlashCommand) {
-          if (!shouldHandleVoiceAsynchronously) {
             await this.sendParticipantMessage(sessionId, {
               text: payload.text,
               senderAppId: participant!.appId,
@@ -2507,6 +2735,31 @@ export class PrivateClawProvider {
             });
           }
           return;
+        }
+
+        if (session.groupMode) {
+          if (shouldHandleVoiceAsynchronously) {
+            await this.sendParticipantMessageToGroupParticipants(sessionId, {
+              text: payload.text,
+              senderAppId: participant!.appId,
+              senderDisplayName: participant!.displayName,
+              clientMessageId: payload.clientMessageId,
+              sentAt: payload.sentAt,
+              ...(payload.attachments ? { attachments: payload.attachments } : {}),
+              excludeAppId: participant!.appId,
+              storeHistory: false,
+            });
+          } else {
+            await this.sendParticipantMessage(sessionId, {
+              text: payload.text,
+              senderAppId: participant!.appId,
+              senderDisplayName: participant!.displayName,
+              clientMessageId: payload.clientMessageId,
+              sentAt: payload.sentAt,
+              ...(payload.attachments ? { attachments: payload.attachments } : {}),
+              storeHistory: false,
+            });
+          }
         }
 
         if (voiceFeedbackParams) {
@@ -2524,159 +2777,18 @@ export class PrivateClawProvider {
           });
         }
 
-        let preparedMessage: PreparedUserMessage;
-        try {
-          preparedMessage = await this.prepareUserMessage(
-            session,
-            payload,
-            participant,
-          );
-        } catch (error) {
-          await this.sendSystemMessage(
-            sessionId,
-            buildBridgeErrorMessage(
-              error instanceof Error ? error.message : String(error),
-            ),
-            "error",
-            payload.clientMessageId,
-            voiceFeedbackParams,
-          );
-          return;
-        }
-
-        if (shouldHandleVoiceAsynchronously) {
-          if (preparedMessage.historyBridgeText) {
-            this.updateStoredUserBridgeText(
-              session,
-              payload.clientMessageId,
-              preparedMessage.historyBridgeText,
+        await this.enqueueSessionBridgeTask(
+          sessionId,
+          `user_message:${payload.clientMessageId}`,
+          async () => {
+            await this.processQueuedUserMessage(
+              sessionId,
+              payload,
+              participant,
+              voiceFeedbackParams,
             );
-          }
-        } else if (session.groupMode) {
-          await this.sendParticipantMessage(sessionId, {
-            text: preparedMessage.text,
-            senderAppId: participant!.appId,
-            senderDisplayName: participant!.displayName,
-            clientMessageId: payload.clientMessageId,
-            sentAt: payload.sentAt,
-            ...(preparedMessage.attachments
-              ? { attachments: preparedMessage.attachments }
-              : {}),
-            ...(preparedMessage.historyBridgeText
-              ? { bridgeText: preparedMessage.historyBridgeText }
-              : {}),
-          });
-        } else {
-          this.storeUserMessageTurn(session, {
-            messageId: payload.clientMessageId,
-            text: preparedMessage.text,
-            sentAt: payload.sentAt,
-            ...(preparedMessage.historyBridgeText
-              ? { bridgeText: preparedMessage.historyBridgeText }
-              : {}),
-            ...(preparedMessage.attachments
-              ? { attachments: preparedMessage.attachments }
-              : {}),
-          });
-        }
-
-        const bridgeMessage =
-          preparedMessage.bridgeText ??
-          (session.groupMode && participant
-            ? `${participant.displayName}: ${preparedMessage.text}`
-            : preparedMessage.text);
-        const supportsThinkingTrace =
-          this.options.bridge.supportsThinkingTrace === true;
-        const thinkingMessageId = buildThinkingMessageId(payload.clientMessageId);
-        let latestThinkingSummary = "";
-        let latestThinkingEntries: PrivateClawThinkingEntry[] = [];
-        try {
-          if (supportsThinkingTrace) {
-            await this.sendThinkingMessage(sessionId, {
-              messageId: thinkingMessageId,
-              status: "started",
-              summary: "",
-              entries: [],
-              replyTo: payload.clientMessageId,
-              sentAt: payload.sentAt,
-              storeHistory: false,
-            });
-          }
-          const messages = await this.resolveBridgeMessages(session, {
-            sessionId,
-            invite: session.invite,
-            message: bridgeMessage,
-            ...(preparedMessage.bridgeAttachments
-              ? { attachments: preparedMessage.bridgeAttachments }
-              : preparedMessage.attachments
-                ? { attachments: preparedMessage.attachments }
-               : {}),
-            history: this.buildBridgeHistory(session),
-            ...(supportsThinkingTrace
-              ? {
-                  onThinkingTrace: async (snapshot) => {
-                    latestThinkingSummary = snapshot.summary;
-                    latestThinkingEntries = cloneThinkingEntries(snapshot.entries);
-                    await this.sendThinkingMessage(sessionId, {
-                      messageId: thinkingMessageId,
-                      status: "streaming",
-                      summary: snapshot.summary,
-                      entries: snapshot.entries,
-                      replyTo: payload.clientMessageId,
-                      sentAt: snapshot.sentAt,
-                      storeHistory: snapshot.entries.length > 0,
-                    });
-                  },
-                }
-              : {}),
-          });
-          if (supportsThinkingTrace) {
-            await this.sendThinkingMessage(sessionId, {
-              messageId: thinkingMessageId,
-              status: "completed",
-              summary: latestThinkingSummary,
-              entries: latestThinkingEntries,
-              replyTo: payload.clientMessageId,
-              storeHistory: latestThinkingEntries.length > 0,
-            });
-          }
-
-          for (const message of messages) {
-            this.options.onLog?.(
-              `[provider] bridge_message_out session=${sessionId} textChars=${message.text.length} attachments=${message.attachments?.length ?? 0}`,
-            );
-            for (const attachment of message.attachments ?? []) {
-              this.options.onLog?.(
-                `[provider] attachment_out session=${sessionId} name=${JSON.stringify(attachment.name)} mimeType=${attachment.mimeType} sizeBytes=${attachment.sizeBytes} hasData=${Boolean(attachment.dataBase64?.trim())}`,
-              );
-            }
-            await this.sendAssistantMessage(sessionId, {
-              text: message.text,
-              replyTo: payload.clientMessageId,
-              ...(message.attachments ? { attachments: message.attachments } : {}),
-            });
-          }
-        } catch (error) {
-          if (supportsThinkingTrace) {
-            await this.sendThinkingMessage(sessionId, {
-              messageId: thinkingMessageId,
-              status: "failed",
-              summary: latestThinkingSummary,
-              entries: latestThinkingEntries,
-              replyTo: payload.clientMessageId,
-              storeHistory: latestThinkingEntries.length > 0,
-            });
-          }
-          await this.sendSystemMessage(
-            sessionId,
-            buildBridgeErrorMessage(
-              error instanceof Error ? error.message : String(error),
-            ),
-            "error",
-            payload.clientMessageId,
-            voiceFeedbackParams,
-          );
-        }
+          },
+        );
         return;
       }
       case "session_close": {

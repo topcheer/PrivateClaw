@@ -42,6 +42,11 @@ import { serveRelayWebRequest } from "./relay-web.js";
 
 const HEARTBEAT_INTERVAL_MS = 15_000;
 const PUSH_WAKE_COOLDOWN_MS = 5_000;
+const DEFAULT_PROTOCOL_MESSAGE_BYTES = 24 * 1024 * 1024;
+const DEFAULT_APP_MESSAGES_PER_MINUTE = 120;
+const DEFAULT_PROVIDER_MESSAGES_PER_MINUTE = 600;
+const MESSAGE_SIZE_SLACK_BYTES = 1 * 1024 * 1024;
+const APP_MESSAGE_RATE_LIMIT_WINDOW_MS = 60_000;
 
 class RelayProtocolError extends Error {
   constructor(
@@ -102,6 +107,122 @@ function parseJson(raw: string): unknown {
   }
 }
 
+function assertMessageSizeWithinLimit(
+  raw: string,
+  maxBytes: number,
+  actorLabel: "App" | "Provider",
+): void {
+  const rawBytes = Buffer.byteLength(raw, "utf8");
+  if (rawBytes <= maxBytes) {
+    return;
+  }
+  throw new RelayProtocolError(
+    "message_too_large",
+    `${actorLabel} message exceeds the ${maxBytes}-byte relay limit.`,
+  );
+}
+
+class FixedWindowRateLimiter {
+  private readonly entries = new Map<string, { count: number; windowStartedAt: number }>();
+
+  constructor(
+    private readonly params: {
+      maxPerWindow: number;
+      windowMs: number;
+      now?: () => number;
+    },
+  ) {}
+
+  private now(): number {
+    return this.params.now?.() ?? Date.now();
+  }
+
+  allow(key: string): boolean {
+    const now = this.now();
+    const existing = this.entries.get(key);
+    if (!existing || now - existing.windowStartedAt >= this.params.windowMs) {
+      this.entries.set(key, { count: 1, windowStartedAt: now });
+      this.prune(now);
+      return true;
+    }
+
+    if (existing.count >= this.params.maxPerWindow) {
+      this.prune(now);
+      return false;
+    }
+
+    existing.count += 1;
+    this.prune(now);
+    return true;
+  }
+
+  private prune(now: number): void {
+    if (this.entries.size < 512) {
+      return;
+    }
+    for (const [key, entry] of this.entries.entries()) {
+      if (now - entry.windowStartedAt >= this.params.windowMs * 2) {
+        this.entries.delete(key);
+      }
+    }
+  }
+}
+
+export class WakeCooldownTracker {
+  private readonly entries = new Map<string, number>();
+
+  constructor(
+    private readonly params: {
+      cooldownMs: number;
+      now?: () => number;
+      pruneAfterMs?: number;
+    },
+  ) {}
+
+  private now(): number {
+    return this.params.now?.() ?? Date.now();
+  }
+
+  private prune(now: number): void {
+    const pruneAfterMs = this.params.pruneAfterMs ?? this.params.cooldownMs;
+    for (const [key, sentAt] of this.entries.entries()) {
+      if (now - sentAt >= pruneAfterMs) {
+        this.entries.delete(key);
+      }
+    }
+  }
+
+  getLastSentAt(key: string): number | undefined {
+    const now = this.now();
+    this.prune(now);
+    return this.entries.get(key);
+  }
+
+  recordSent(key: string): void {
+    const now = this.now();
+    this.entries.set(key, now);
+    this.prune(now);
+  }
+
+  clearSession(sessionId: string, appId?: string): void {
+    if (appId) {
+      this.entries.delete(`${sessionId}:${appId}`);
+      return;
+    }
+    const prefix = `${sessionId}:`;
+    for (const key of this.entries.keys()) {
+      if (key.startsWith(prefix)) {
+        this.entries.delete(key);
+      }
+    }
+  }
+
+  entryCount(): number {
+    this.prune(this.now());
+    return this.entries.size;
+  }
+}
+
 function toRelayProtocolError(error: unknown): RelayProtocolError {
   if (error instanceof RelayProtocolError) {
     return error;
@@ -159,10 +280,15 @@ class SessionHub {
   private readonly sessionProviders = new Map<string, string>();
   private readonly sessionApps = new Map<string, Map<string, WebSocket>>();
   private readonly appSessions = new Map<WebSocket, AppSessionBinding>();
-  private readonly recentWakeSentAt = new Map<string, number>();
+  private readonly wakeCooldownTracker: WakeCooldownTracker;
   private cluster: RelayClusterClient | undefined;
 
-  constructor(private readonly params: SessionHubParams) {}
+  constructor(private readonly params: SessionHubParams) {
+    this.wakeCooldownTracker = new WakeCooldownTracker({
+      cooldownMs: PUSH_WAKE_COOLDOWN_MS,
+      ...(params.now ? { now: params.now } : {}),
+    });
+  }
 
   setCluster(cluster: RelayClusterClient | undefined): void {
     this.cluster = cluster;
@@ -177,16 +303,11 @@ class SessionHub {
   }
 
   private clearWakeState(sessionId: string, appId?: string): void {
-    if (appId) {
-      this.recentWakeSentAt.delete(this.wakeKey(sessionId, appId));
-      return;
-    }
-    const prefix = `${sessionId}:`;
-    for (const key of this.recentWakeSentAt.keys()) {
-      if (key.startsWith(prefix)) {
-        this.recentWakeSentAt.delete(key);
-      }
-    }
+    this.wakeCooldownTracker.clearSession(sessionId, appId);
+  }
+
+  getProviderRateLimitKey(providerSocket: WebSocket): string {
+    return this.requireProviderId(providerSocket);
   }
 
   get usesPersistentSessions(): boolean {
@@ -524,7 +645,7 @@ class SessionHub {
     for (const registration of matchingRegistrations) {
       const wakeKey = this.wakeKey(registration.sessionId, registration.appId);
       const now = this.now();
-      const lastWakeSentAt = this.recentWakeSentAt.get(wakeKey);
+      const lastWakeSentAt = this.wakeCooldownTracker.getLastSentAt(wakeKey);
       if (
         lastWakeSentAt !== undefined &&
         now - lastWakeSentAt < PUSH_WAKE_COOLDOWN_MS
@@ -534,7 +655,7 @@ class SessionHub {
         );
         continue;
       }
-      this.recentWakeSentAt.set(wakeKey, now);
+      this.wakeCooldownTracker.recordSent(wakeKey);
       try {
         const result = await this.params.pushNotifier.sendWake(registration);
         console.info(
@@ -978,6 +1099,12 @@ export function createRelayServer(
   config: RelayServerConfig,
   deps: RelayServerDependencies = {},
 ): RelayServerInstance {
+  const maxMessageBytes = config.maxMessageBytes ?? DEFAULT_PROTOCOL_MESSAGE_BYTES;
+  const appMessagesPerMinute =
+    config.appMessagesPerMinute ?? DEFAULT_APP_MESSAGES_PER_MINUTE;
+  const providerMessagesPerMinute =
+    config.providerMessagesPerMinute ?? DEFAULT_PROVIDER_MESSAGES_PER_MINUTE;
+  const websocketMaxPayloadBytes = maxMessageBytes + MESSAGE_SIZE_SLACK_BYTES;
   const ownsFrameCache = !deps.frameCache;
   const frameCache =
     deps.frameCache ??
@@ -1016,6 +1143,16 @@ export function createRelayServer(
     sessionStore,
     pushRegistrationStore,
     pushNotifier,
+    ...(deps.now ? { now: deps.now } : {}),
+  });
+  const appMessageRateLimiter = new FixedWindowRateLimiter({
+    maxPerWindow: appMessagesPerMinute,
+    windowMs: APP_MESSAGE_RATE_LIMIT_WINDOW_MS,
+    ...(deps.now ? { now: deps.now } : {}),
+  });
+  const providerMessageRateLimiter = new FixedWindowRateLimiter({
+    maxPerWindow: providerMessagesPerMinute,
+    windowMs: APP_MESSAGE_RATE_LIMIT_WINDOW_MS,
     ...(deps.now ? { now: deps.now } : {}),
   });
 
@@ -1115,8 +1252,14 @@ export function createRelayServer(
     void handleHttpRequest(request, response);
   });
 
-  const providerWss = new WebSocketServer({ noServer: true });
-  const appWss = new WebSocketServer({ noServer: true });
+  const providerWss = new WebSocketServer({
+    noServer: true,
+    maxPayload: websocketMaxPayloadBytes,
+  });
+  const appWss = new WebSocketServer({
+    noServer: true,
+    maxPayload: websocketMaxPayloadBytes,
+  });
 
   const expiryTimer = setInterval(() => {
     void sessionHub.purgeExpiredSessions().catch((error) => {
@@ -1150,11 +1293,26 @@ export function createRelayServer(
     let requestId: string | undefined;
 
     try {
+      assertMessageSizeWithinLimit(raw, maxMessageBytes, "Provider");
       const message = parseJson(raw) as ProviderToRelayMessage | unknown;
       if (!isObject(message) || typeof message.type !== "string") {
         throw new RelayProtocolError(
           "invalid_message",
           "Provider message is missing a type field.",
+        );
+      }
+      if (
+        "requestId" in message &&
+        typeof message.requestId === "string" &&
+        message.requestId !== ""
+      ) {
+        requestId = message.requestId;
+      }
+      const providerRateLimitKey = sessionHub.getProviderRateLimitKey(socket);
+      if (!providerMessageRateLimiter.allow(providerRateLimitKey)) {
+        throw new RelayProtocolError(
+          "rate_limit_exceeded",
+          "Too many provider messages. Slow down and retry.",
         );
       }
 
@@ -1333,6 +1491,13 @@ export function createRelayServer(
     raw: string,
   ): Promise<void> {
     try {
+      assertMessageSizeWithinLimit(raw, maxMessageBytes, "App");
+      if (!appMessageRateLimiter.allow(`${sessionId}:${appId}`)) {
+        throw new RelayProtocolError(
+          "rate_limit_exceeded",
+          "Too many app messages. Slow down and retry.",
+        );
+      }
       const message = parseJson(raw) as AppToRelayMessage | unknown;
       if (!isObject(message) || typeof message.type !== "string") {
         throw new RelayProtocolError(

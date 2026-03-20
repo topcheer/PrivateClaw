@@ -82,16 +82,149 @@ function occupantValue(nodeId: string, appId: string): string {
   return JSON.stringify({ nodeId, appId });
 }
 
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isEncryptedEnvelope(value: unknown): value is EncryptedEnvelope {
+  if (!isObject(value)) {
+    return false;
+  }
+
+  return (
+    value.version === 1 &&
+    typeof value.messageId === "string" &&
+    typeof value.iv === "string" &&
+    typeof value.ciphertext === "string" &&
+    typeof value.tag === "string" &&
+    typeof value.sentAt === "string"
+  );
+}
+
+function parseJsonObject(
+  raw: string,
+  label: string,
+): Record<string, unknown> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw) as unknown;
+  } catch {
+    throw new Error(`${label} must be valid JSON.`);
+  }
+  if (!isObject(parsed)) {
+    throw new Error(`${label} must be a JSON object.`);
+  }
+  return parsed;
+}
+
+function parseRequiredString(
+  value: unknown,
+  field: string,
+  label: string,
+): string {
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new Error(`${label} is missing a valid ${field}.`);
+  }
+  return value;
+}
+
 function parseOccupant(
   raw: string,
 ): {
   nodeId: string;
   appId: string;
 } {
-  return JSON.parse(raw) as {
-    nodeId: string;
-    appId: string;
+  const parsed = parseJsonObject(raw, "Relay cluster occupant payload");
+  return {
+    nodeId: parseRequiredString(
+      parsed.nodeId,
+      "nodeId",
+      "Relay cluster occupant payload",
+    ),
+    appId: parseRequiredString(
+      parsed.appId,
+      "appId",
+      "Relay cluster occupant payload",
+    ),
   };
+}
+
+function parseFrameMessage(
+  raw: string,
+  label: string,
+): RelayBusFrameMessage {
+  const parsed = parseJsonObject(raw, label);
+  if (!isEncryptedEnvelope(parsed.envelope)) {
+    throw new Error(`${label} is missing a valid encrypted envelope.`);
+  }
+  return {
+    originNodeId: parseRequiredString(parsed.originNodeId, "originNodeId", label),
+    sessionId: parseRequiredString(parsed.sessionId, "sessionId", label),
+    envelope: parsed.envelope,
+  };
+}
+
+function parseProviderReconnectMessage(
+  raw: string,
+): RelayBusProviderReconnectMessage {
+  const label = "Relay provider reconnect payload";
+  const parsed = parseJsonObject(raw, label);
+  const kind = parseRequiredString(parsed.kind, "kind", label);
+  if (kind !== "provider_reconnected") {
+    throw new Error(`${label} has unsupported kind ${kind}.`);
+  }
+  return {
+    kind,
+    originNodeId: parseRequiredString(parsed.originNodeId, "originNodeId", label),
+    targetNodeId: parseRequiredString(parsed.targetNodeId, "targetNodeId", label),
+    providerId: parseRequiredString(parsed.providerId, "providerId", label),
+  };
+}
+
+function parseSessionControlMessage(
+  raw: string,
+): RelayBusSessionControlMessage {
+  const label = "Relay session control payload";
+  const parsed = parseJsonObject(raw, label);
+  const kind = parseRequiredString(parsed.kind, "kind", label);
+  const originNodeId = parseRequiredString(
+    parsed.originNodeId,
+    "originNodeId",
+    label,
+  );
+  const sessionId = parseRequiredString(parsed.sessionId, "sessionId", label);
+
+  if (kind === "session_closed") {
+    return {
+      kind,
+      originNodeId,
+      sessionId,
+      reason: parseRequiredString(parsed.reason, "reason", label),
+    };
+  }
+  if (kind === "app_closed") {
+    return {
+      kind,
+      originNodeId,
+      sessionId,
+      appId: parseRequiredString(parsed.appId, "appId", label),
+      reason: parseRequiredString(parsed.reason, "reason", label),
+    };
+  }
+  if (kind === "app_reconnected") {
+    return {
+      kind,
+      originNodeId,
+      sessionId,
+      appId: parseRequiredString(parsed.appId, "appId", label),
+      targetNodeId: parseRequiredString(
+        parsed.targetNodeId,
+        "targetNodeId",
+        label,
+      ),
+    };
+  }
+  throw new Error(`${label} has unsupported kind ${kind}.`);
 }
 
 async function compareAndDelete(
@@ -338,7 +471,7 @@ abstract class BaseRelayClusterClient implements RelayClusterClient {
       if (!providerMatch) {
         return;
       }
-      const message = JSON.parse(payload) as RelayBusProviderReconnectMessage;
+      const message = parseProviderReconnectMessage(payload);
       if (
         message.originNodeId === this.nodeId ||
         message.targetNodeId !== this.nodeId
@@ -353,7 +486,7 @@ abstract class BaseRelayClusterClient implements RelayClusterClient {
       /^privateclaw:bus:v1:session:([^:]+):app:broadcast$/,
     );
     if (broadcastMatch) {
-      const message = JSON.parse(payload) as RelayBusFrameMessage;
+      const message = parseFrameMessage(payload, "Relay app broadcast payload");
       if (message.originNodeId === this.nodeId) {
         return;
       }
@@ -365,7 +498,7 @@ abstract class BaseRelayClusterClient implements RelayClusterClient {
       /^privateclaw:bus:v1:session:([^:]+):app:([^:]+)$/,
     );
     if (targetedAppMatch) {
-      const message = JSON.parse(payload) as RelayBusFrameMessage;
+      const message = parseFrameMessage(payload, "Relay targeted app payload");
       if (message.originNodeId === this.nodeId) {
         return;
       }
@@ -381,7 +514,7 @@ abstract class BaseRelayClusterClient implements RelayClusterClient {
       /^privateclaw:bus:v1:session:([^:]+):provider$/,
     );
     if (providerFrameMatch) {
-      const message = JSON.parse(payload) as RelayBusFrameMessage;
+      const message = parseFrameMessage(payload, "Relay provider frame payload");
       if (message.originNodeId === this.nodeId) {
         return;
       }
@@ -399,7 +532,7 @@ abstract class BaseRelayClusterClient implements RelayClusterClient {
       return;
     }
 
-    const message = JSON.parse(payload) as RelayBusSessionControlMessage;
+    const message = parseSessionControlMessage(payload);
     if (message.originNodeId === this.nodeId) {
       return;
     }

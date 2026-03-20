@@ -10,6 +10,7 @@ const HEARTBEAT_INTERVAL_MS = 15_000;
 const HEARTBEAT_TIMEOUT_MS = 45_000;
 const INITIAL_RECONNECT_DELAY_MS = 1_000;
 const MAX_RECONNECT_DELAY_MS = 30_000;
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 
 interface RelayProviderClientOptions {
   providerWsUrl: string;
@@ -17,17 +18,24 @@ interface RelayProviderClientOptions {
   onFrame?: (sessionId: string, envelope: EncryptedEnvelope) => Promise<void> | void;
   onSessionClosed?: (sessionId: string, reason: string) => Promise<void> | void;
   onError?: (message: string) => void;
+  requestTimeoutMs?: number;
 }
 
-interface PendingSessionCreation {
-  resolve: (value: { sessionId: string; expiresAt: string }) => void;
+interface PendingRequest<T> {
+  resolve: (value: T) => void;
   reject: (error: Error) => void;
+  timeout: NodeJS.Timeout;
 }
 
-interface PendingSessionRenewal {
-  resolve: (value: { sessionId: string; expiresAt: string }) => void;
-  reject: (error: Error) => void;
-}
+type PendingSessionCreation = PendingRequest<{
+  sessionId: string;
+  expiresAt: string;
+}>;
+
+type PendingSessionRenewal = PendingRequest<{
+  sessionId: string;
+  expiresAt: string;
+}>;
 
 function parseRelayMessage(raw: string): RelayToProviderMessage {
   return JSON.parse(raw) as RelayToProviderMessage;
@@ -39,6 +47,7 @@ export class RelayProviderClient {
   private readonly pendingSessionCreations = new Map<string, PendingSessionCreation>();
   private readonly pendingSessionRenewals = new Map<string, PendingSessionRenewal>();
   private readonly providerId: string;
+  private readonly requestTimeoutMs: number;
   private reconnectTimer: NodeJS.Timeout | undefined;
   private heartbeatTimer: NodeJS.Timeout | undefined;
   private reconnectDelayMs = INITIAL_RECONNECT_DELAY_MS;
@@ -48,6 +57,13 @@ export class RelayProviderClient {
 
   constructor(private readonly options: RelayProviderClientOptions) {
     this.providerId = options.providerId?.trim() || randomUUID();
+    this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+    if (
+      !Number.isInteger(this.requestTimeoutMs) ||
+      this.requestTimeoutMs <= 0
+    ) {
+      throw new Error("Relay provider requestTimeoutMs must be a positive integer.");
+    }
   }
 
   private buildProviderUrl(): string {
@@ -180,13 +196,61 @@ export class RelayProviderClient {
 
   private rejectPending(error: Error): void {
     for (const pending of this.pendingSessionCreations.values()) {
+      clearTimeout(pending.timeout);
       pending.reject(error);
     }
     for (const pending of this.pendingSessionRenewals.values()) {
+      clearTimeout(pending.timeout);
       pending.reject(error);
     }
     this.pendingSessionCreations.clear();
     this.pendingSessionRenewals.clear();
+  }
+
+  private takePendingRequest<T>(
+    pendingRequests: Map<string, PendingRequest<T>>,
+    requestId: string,
+  ): PendingRequest<T> | undefined {
+    const pending = pendingRequests.get(requestId);
+    if (!pending) {
+      return undefined;
+    }
+    pendingRequests.delete(requestId);
+    clearTimeout(pending.timeout);
+    return pending;
+  }
+
+  private queuePendingRequest<T>(params: {
+    pendingRequests: Map<string, PendingRequest<T>>;
+    requestId: string;
+    timeoutMessage: string;
+    send: () => void;
+  }): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        if (params.pendingRequests.delete(params.requestId)) {
+          reject(new Error(params.timeoutMessage));
+        }
+      }, this.requestTimeoutMs);
+
+      params.pendingRequests.set(params.requestId, {
+        resolve,
+        reject,
+        timeout,
+      });
+
+      try {
+        params.send();
+      } catch (error) {
+        clearTimeout(timeout);
+        params.pendingRequests.delete(params.requestId);
+        reject(
+          error instanceof Error
+            ? error
+            : new Error(String(error)),
+        );
+      }
+    });
   }
 
   private async handleMessage(
@@ -200,26 +264,30 @@ export class RelayProviderClient {
           hooks?.markReady?.();
           return;
         case "relay:session_created": {
-          const pending = this.pendingSessionCreations.get(message.requestId);
+          const pending = this.takePendingRequest(
+            this.pendingSessionCreations,
+            message.requestId,
+          );
           if (!pending) {
             this.options.onError?.(
               `Received relay:session_created for unknown request ${message.requestId}.`,
             );
             return;
           }
-          this.pendingSessionCreations.delete(message.requestId);
           pending.resolve({ sessionId: message.sessionId, expiresAt: message.expiresAt });
           return;
         }
         case "relay:session_renewed": {
-          const pending = this.pendingSessionRenewals.get(message.requestId);
+          const pending = this.takePendingRequest(
+            this.pendingSessionRenewals,
+            message.requestId,
+          );
           if (!pending) {
             this.options.onError?.(
               `Received relay:session_renewed for unknown request ${message.requestId}.`,
             );
             return;
           }
-          this.pendingSessionRenewals.delete(message.requestId);
           pending.resolve({ sessionId: message.sessionId, expiresAt: message.expiresAt });
           return;
         }
@@ -231,15 +299,19 @@ export class RelayProviderClient {
           return;
         case "relay:error": {
           if (message.requestId) {
-            const creation = this.pendingSessionCreations.get(message.requestId);
+            const creation = this.takePendingRequest(
+              this.pendingSessionCreations,
+              message.requestId,
+            );
             if (creation) {
-              this.pendingSessionCreations.delete(message.requestId);
               creation.reject(new Error(`[${message.code}] ${message.message}`));
               return;
             }
-            const renewal = this.pendingSessionRenewals.get(message.requestId);
+            const renewal = this.takePendingRequest(
+              this.pendingSessionRenewals,
+              message.requestId,
+            );
             if (renewal) {
-              this.pendingSessionRenewals.delete(message.requestId);
               renewal.reject(new Error(`[${message.code}] ${message.message}`));
               return;
             }
@@ -271,16 +343,21 @@ export class RelayProviderClient {
   ): Promise<{ sessionId: string; expiresAt: string }> {
     await this.connect();
 
-    return new Promise((resolve, reject) => {
-      const requestId = randomUUID();
-      this.pendingSessionCreations.set(requestId, { resolve, reject });
-      this.send({
-        type: "provider:create_session",
-        requestId,
-        ...(ttlMs ? { ttlMs } : {}),
-        ...(label ? { label } : {}),
-        ...(typeof groupMode === "boolean" ? { groupMode } : {}),
-      });
+    const requestId = randomUUID();
+    return this.queuePendingRequest({
+      pendingRequests: this.pendingSessionCreations,
+      requestId,
+      timeoutMessage:
+        `Timed out waiting for relay to create a session after ${this.requestTimeoutMs}ms.`,
+      send: () => {
+        this.send({
+          type: "provider:create_session",
+          requestId,
+          ...(ttlMs ? { ttlMs } : {}),
+          ...(label ? { label } : {}),
+          ...(typeof groupMode === "boolean" ? { groupMode } : {}),
+        });
+      },
     });
   }
 
@@ -290,15 +367,20 @@ export class RelayProviderClient {
   ): Promise<{ sessionId: string; expiresAt: string }> {
     await this.connect();
 
-    return new Promise((resolve, reject) => {
-      const requestId = randomUUID();
-      this.pendingSessionRenewals.set(requestId, { resolve, reject });
-      this.send({
-        type: "provider:renew_session",
-        requestId,
-        sessionId,
-        ttlMs,
-      });
+    const requestId = randomUUID();
+    return this.queuePendingRequest({
+      pendingRequests: this.pendingSessionRenewals,
+      requestId,
+      timeoutMessage:
+        `Timed out waiting for relay to renew session ${sessionId} after ${this.requestTimeoutMs}ms.`,
+      send: () => {
+        this.send({
+          type: "provider:renew_session",
+          requestId,
+          sessionId,
+          ttlMs,
+        });
+      },
     });
   }
 

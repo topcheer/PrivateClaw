@@ -17,7 +17,7 @@ import type {
   RelayPushNotifier,
   RelayPushSendResult,
 } from "./push-notifier.js";
-import { createRelayServer } from "./relay-server.js";
+import { createRelayServer, WakeCooldownTracker } from "./relay-server.js";
 import { InMemoryRelaySessionStore } from "./session-store.js";
 
 function waitForOpen(socket: WebSocket): Promise<void> {
@@ -113,6 +113,28 @@ class TestPushNotifier implements RelayPushNotifier {
 
   async close(): Promise<void> {}
 }
+
+test("WakeCooldownTracker prunes stale entries while keeping active cooldowns", () => {
+  let now = 1_000;
+  const tracker = new WakeCooldownTracker({
+    cooldownMs: 5_000,
+    now: () => now,
+  });
+
+  tracker.recordSent("session-a:app-a");
+  tracker.recordSent("session-a:app-b");
+  assert.equal(tracker.entryCount(), 2);
+
+  now += 6_000;
+  tracker.recordSent("session-b:app-a");
+
+  assert.equal(tracker.getLastSentAt("session-a:app-a"), undefined);
+  assert.equal(tracker.getLastSentAt("session-a:app-b"), undefined);
+  assert.equal(tracker.entryCount(), 1);
+
+  tracker.clearSession("session-b");
+  assert.equal(tracker.entryCount(), 0);
+});
 
 test("relay exposes health endpoints for container platforms", async (t) => {
   const relay = createRelayServer({
@@ -289,6 +311,145 @@ test("relay server creates a session and forwards encrypted frames", async (t) =
   });
   assert.equal(decryptedUser.kind, "user_message");
   assert.equal(decryptedUser.text, "ping");
+
+  appSocket.close();
+  providerSocket.close();
+  await Promise.all([waitForClose(appSocket), waitForClose(providerSocket)]);
+});
+
+test("relay rate limits repeated app messages from the same app session", async (t) => {
+  const relay = createRelayServer({
+    host: "127.0.0.1",
+    port: 0,
+    sessionTtlMs: 60_000,
+    frameCacheSize: 8,
+    appMessagesPerMinute: 3,
+  });
+  const { port } = await relay.start();
+  t.after(async () => {
+    await relay.stop();
+  });
+
+  const providerSocket = new WebSocket(`ws://127.0.0.1:${port}/ws/provider`);
+  const readyPromise = nextMessage(providerSocket);
+  await waitForOpen(providerSocket);
+  assert.equal((await readyPromise).type, "relay:provider_ready");
+
+  providerSocket.send(
+    JSON.stringify({ type: "provider:create_session", requestId: "req-1", ttlMs: 60_000 }),
+  );
+  const created = await nextMessage(providerSocket);
+  assert.equal(created.type, "relay:session_created");
+  const sessionId = String(created.sessionId);
+
+  const appSocket = new WebSocket(`ws://127.0.0.1:${port}/ws/app?sessionId=${sessionId}`);
+  const attachedPromise = nextMessage(appSocket);
+  await waitForOpen(appSocket);
+  assert.equal((await attachedPromise).type, "relay:attached");
+
+  const errorPromise = nextMessage(appSocket);
+  for (let index = 0; index < 4; index += 1) {
+    appSocket.send(JSON.stringify({ type: "app:unregister_push" }));
+  }
+
+  const error = await errorPromise;
+  assert.equal(error.type, "relay:error");
+  assert.equal(error.code, "rate_limit_exceeded");
+  assert.equal(error.sessionId, sessionId);
+
+  appSocket.close();
+  providerSocket.close();
+  await Promise.all([waitForClose(appSocket), waitForClose(providerSocket)]);
+});
+
+test("relay rate limits repeated provider messages from the same provider", async (t) => {
+  const relay = createRelayServer({
+    host: "127.0.0.1",
+    port: 0,
+    sessionTtlMs: 60_000,
+    frameCacheSize: 8,
+    providerMessagesPerMinute: 2,
+  });
+  const { port } = await relay.start();
+  t.after(async () => {
+    await relay.stop();
+  });
+
+  const providerSocket = new WebSocket(
+    `ws://127.0.0.1:${port}/ws/provider?providerId=provider-rate-limited`,
+  );
+  const readyPromise = nextMessage(providerSocket);
+  await waitForOpen(providerSocket);
+  assert.equal((await readyPromise).type, "relay:provider_ready");
+
+  providerSocket.send(
+    JSON.stringify({ type: "provider:create_session", requestId: "req-1", ttlMs: 60_000 }),
+  );
+  providerSocket.send(
+    JSON.stringify({ type: "provider:create_session", requestId: "req-2", ttlMs: 60_000 }),
+  );
+  providerSocket.send(
+    JSON.stringify({ type: "provider:create_session", requestId: "req-3", ttlMs: 60_000 }),
+  );
+
+  const responses = await nextMessages(providerSocket, 3);
+  const created = responses.filter(
+    (response) => response.type === "relay:session_created",
+  );
+  const errors = responses.filter((response) => response.type === "relay:error");
+
+  assert.equal(created.length, 2);
+  assert.equal(errors.length, 1);
+  const [error] = errors;
+  assert.equal(error.type, "relay:error");
+  assert.equal(error.code, "rate_limit_exceeded");
+  assert.equal(error.requestId, "req-3");
+
+  providerSocket.close();
+  await waitForClose(providerSocket);
+});
+
+test("relay rejects oversized app messages with a protocol error", async (t) => {
+  const relay = createRelayServer({
+    host: "127.0.0.1",
+    port: 0,
+    sessionTtlMs: 60_000,
+    frameCacheSize: 8,
+    maxMessageBytes: 256,
+  });
+  const { port } = await relay.start();
+  t.after(async () => {
+    await relay.stop();
+  });
+
+  const providerSocket = new WebSocket(`ws://127.0.0.1:${port}/ws/provider`);
+  const readyPromise = nextMessage(providerSocket);
+  await waitForOpen(providerSocket);
+  assert.equal((await readyPromise).type, "relay:provider_ready");
+
+  providerSocket.send(
+    JSON.stringify({ type: "provider:create_session", requestId: "req-1", ttlMs: 60_000 }),
+  );
+  const created = await nextMessage(providerSocket);
+  assert.equal(created.type, "relay:session_created");
+  const sessionId = String(created.sessionId);
+
+  const appSocket = new WebSocket(`ws://127.0.0.1:${port}/ws/app?sessionId=${sessionId}`);
+  const attachedPromise = nextMessage(appSocket);
+  await waitForOpen(appSocket);
+  assert.equal((await attachedPromise).type, "relay:attached");
+
+  const errorPromise = nextMessage(appSocket);
+  appSocket.send(
+    JSON.stringify({
+      type: "app:register_push",
+      token: "x".repeat(512),
+    }),
+  );
+  const error = await errorPromise;
+  assert.equal(error.type, "relay:error");
+  assert.equal(error.code, "message_too_large");
+  assert.equal(error.sessionId, sessionId);
 
   appSocket.close();
   providerSocket.close();

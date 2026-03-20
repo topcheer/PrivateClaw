@@ -1,1 +1,1 @@
-Added a home-screen Scan QR shortcut for faster pairing, and clarified that push notifications work out of the box on the official relay while custom relays need their own Firebase setup.
+Melhoramos a estabilidade da bandeja de fotos e restauramos a navegação por fotos recentes no Android com o tratamento correto de permissões.

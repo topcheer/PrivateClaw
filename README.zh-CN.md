@@ -134,6 +134,8 @@ openclaw channels add --channel telegram --token <token>
 
 然后在该渠道里发送 `/privateclaw`，再用 App 扫描返回的二维码。
 
+安全提示：邀请二维码 / `privateclaw://connect?payload=...` 本身就携带这次会话的一次性 session key。只要有人能扫码或拿到这段邀请链接，就能在过期前加入会话，因此请只在当面场景或你信任的渠道里分享。
+
 如果你想开启加密群聊模式，可以发送 `/privateclaw group`；这样同一个会话允许多个 App 客户端加入，并共享同一段 OpenClaw 对话上下文。参与者在会话有效期内离开后也可以重新加入；任意已连接参与者都可以用 `/session-qr` 重新分享当前会话二维码；当剩余时间少于 30 分钟时，provider 会提醒大家运行 `/renew-session`。群聊中任意参与者也可以用 `/mute-bot` / `/unmute-bot` 暂停或恢复 assistant 参与讨论。
 
 如果只是这一张邀请码想临时走别的 relay，可以直接把 relay 写在 slash 命令里，这两种形式都支持：

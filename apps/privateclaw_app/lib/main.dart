@@ -247,6 +247,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
   _EmojiPickerTab _emojiPickerTab = _EmojiPickerTab.frequent;
   bool _isPhotoTrayVisible = false;
   bool _isLoadingRecentPhotos = false;
+  String _photoTrayStatusText = '';
   bool _isScannerSheetOpen = false;
   bool _hasCompletedFirstFrame = false;
   bool _hasPendingQuickActionScan = false;
@@ -448,6 +449,10 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     unawaited(_disposeClient(reason: 'widget_disposed', notifyRemote: false));
     _sessionExpiryRefreshTimer?.cancel();
     _voiceRecordingTicker?.cancel();
+    _recentPhotoAssets.clear();
+    _photoThumbnailFutures.clear();
+    _photoAttachmentIdsByAssetId.clear();
+    _loadingPhotoAssetIds.clear();
     _inviteController.dispose();
     _composerFocusNode.dispose();
     _messageController
@@ -1270,20 +1275,16 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
 
     setState(() {
       _isLoadingRecentPhotos = true;
+      _photoTrayStatusText = '';
     });
     try {
-      if (Platform.isAndroid) {
-        if (!mounted) {
-          return;
-        }
-        setState(() {
-          _recentPhotoAssets.clear();
-        });
-        return;
-      }
       final PermissionState permission =
           await PhotoManager.requestPermissionExtend(
             requestOption: const PermissionRequestOption(
+              androidPermission: AndroidPermission(
+                type: RequestType.image,
+                mediaLocation: false,
+              ),
               iosAccessLevel: IosAccessLevel.readWrite,
             ),
           );
@@ -1296,7 +1297,8 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
         }
         setState(() {
           _recentPhotoAssets.clear();
-          _statusText = l10n.photoLibraryPermissionDenied;
+          _photoThumbnailFutures.clear();
+          _photoTrayStatusText = l10n.photoLibraryPermissionDenied;
         });
         return;
       }
@@ -1317,10 +1319,18 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       if (!mounted) {
         return;
       }
+      final Set<String> visibleAssetIds = assets
+          .map((AssetEntity asset) => asset.id)
+          .toSet();
       setState(() {
         _recentPhotoAssets
           ..clear()
           ..addAll(assets);
+        _photoThumbnailFutures.removeWhere(
+          (String assetId, Future<Uint8List?> _) =>
+              !visibleAssetIds.contains(assetId),
+        );
+        _photoTrayStatusText = assets.isEmpty ? l10n.photoTrayNoImages : '';
       });
     } catch (error) {
       if (!mounted) {
@@ -1328,6 +1338,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       }
       setState(() {
         _statusText = l10n.sendFailed(error.toString());
+        _photoTrayStatusText = l10n.sendFailed(error.toString());
       });
     } finally {
       if (!mounted) {
@@ -1455,6 +1466,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       if (bytes == null || bytes.isEmpty) {
         setState(() {
           _statusText = l10n.photoTrayNoImages;
+          _photoTrayStatusText = l10n.photoTrayNoImages;
         });
         return;
       }
@@ -2952,7 +2964,9 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
                     : _recentPhotoAssets.isEmpty
                     ? Center(
                         child: Text(
-                          l10n.photoTrayNoImages,
+                          _photoTrayStatusText.isEmpty
+                              ? l10n.photoTrayNoImages
+                              : _photoTrayStatusText,
                           style: theme.textTheme.bodyMedium,
                         ),
                       )

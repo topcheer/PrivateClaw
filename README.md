@@ -155,6 +155,8 @@ openclaw channels add --channel telegram --token <token>
 
 Then send `/privateclaw` from that chat surface and scan the returned QR code in the app.
 
+Security note: the invite QR / `privateclaw://connect?payload=...` payload carries the one-time session key. Anyone who can scan or paste it can join the session until it expires, so share it only in person or over a channel you trust.
+
 If you want the session to behave like an encrypted group chat, use `/privateclaw group` instead. That keeps one OpenClaw conversation state for the session while allowing multiple app clients to join with distinct participant labels. Individual participants can leave and later rejoin the same invite until the session TTL expires, any connected participant can run `/session-qr` to re-share the current invite QR, and once less than 30 minutes remain the provider emits a reminder to run `/renew-session`. While the group is active, any participant can also use `/mute-bot` and `/unmute-bot` to pause or resume assistant replies without stopping participant-to-participant chat delivery.
 
 If you want just one invite to use a different relay, pass the relay on the slash command itself. Both forms below work:

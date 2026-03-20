@@ -598,6 +598,12 @@ abstract class AppLocalizations {
   /// **'No photos available.'**
   String get photoTrayNoImages;
 
+  /// No description provided for @photoTrayAndroidRecentPhotosUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Recent photo browsing is turned off on Android in this build. Use Camera or Gallery instead.'**
+  String get photoTrayAndroidRecentPhotosUnavailable;
+
   /// Status text shown when recent photo access was denied.
   ///
   /// In en, this message translates to:

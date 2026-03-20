@@ -275,6 +275,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get photoTrayNoImages => '暂无照片';
 
   @override
+  String get photoTrayAndroidRecentPhotosUnavailable =>
+      '这个 Android 版本不会直接浏览最近照片；请改用“拍照”或“图库”。';
+
+  @override
   String get photoLibraryPermissionDenied => '需要允许访问照片，才能浏览最近图片。';
 
   @override

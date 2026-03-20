@@ -292,6 +292,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get photoTrayNoImages => 'No photos available.';
 
   @override
+  String get photoTrayAndroidRecentPhotosUnavailable =>
+      'Recent photo browsing is turned off on Android in this build. Use Camera or Gallery instead.';
+
+  @override
   String get photoLibraryPermissionDenied =>
       'Photo access is required to browse recent images.';
 

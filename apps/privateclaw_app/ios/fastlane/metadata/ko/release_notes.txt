@@ -1,1 +1,1 @@
-Added a home-screen Scan QR shortcut for faster pairing, and clarified that push notifications work out of the box on the official relay while custom relays need their own Firebase setup.
+사진 트레이 안정성을 개선하고, Android에서 최근 사진 탐색과 관련 권한 처리를 다시 복구했습니다.

@@ -188,6 +188,7 @@
   "photoTrayCameraButton": "Camera",
   "photoTrayGalleryButton": "Gallery",
   "photoTrayNoImages": "No photos available.",
+  "photoTrayAndroidRecentPhotosUnavailable": "Recent photo browsing is turned off on Android in this build. Use Camera or Gallery instead.",
   "photoLibraryPermissionDenied": "Photo access is required to browse recent images.",
   "filePickerTooltip": "Files",
   "voiceRecordingSlideUpToCancel": "Release to send · slide up to cancel",

@@ -248,6 +248,17 @@ class BotModeBridge {
   }
 }
 
+class NoReplyThenJokeBridge {
+  readonly prompts: string[] = [];
+
+  async handleUserMessage(params: {
+    message: string;
+  }): Promise<string> {
+    this.prompts.push(params.message);
+    return params.message.includes("\"NO_REPLY\"") ? "Fallback joke" : "NO_REPLY";
+  }
+}
+
 class ThinkingTraceBridge {
   readonly supportsThinkingTrace = true;
   readonly conversationMessages: string[] = [];
@@ -457,6 +468,90 @@ test("provider creates one-time invites and replies through the encrypted relay"
   const assistant = await nextRelayPayload(appSocket, invite);
   assert.equal(assistant.kind, "assistant_message");
   assert.match(assistant.text, /你好/);
+
+  appSocket.terminate();
+});
+
+test("provider turns a NO_REPLY bridge response into a fallback joke", async (t) => {
+  const relay = createRelayServer({
+    host: "127.0.0.1",
+    port: 0,
+    sessionTtlMs: 60_000,
+    frameCacheSize: 8,
+  });
+  const { port } = await relay.start();
+  t.after(async () => {
+    await relay.stop();
+  });
+
+  const bridge = new NoReplyThenJokeBridge();
+  const provider = new PrivateClawProvider({
+    providerWsUrl: `ws://127.0.0.1:${port}/ws/provider`,
+    appWsUrl: `ws://127.0.0.1:${port}/ws/app`,
+    bridge,
+    defaultTtlMs: DEFAULT_SESSION_TTL_MS,
+    welcomeMessage: "欢迎来到 PrivateClaw",
+  });
+  await provider.connect();
+  t.after(async () => {
+    await provider.dispose();
+  });
+
+  const inviteBundle = await provider.createInviteBundle();
+  const invite = decodeInviteString(inviteBundle.inviteUri);
+
+  const appSocket = new WebSocket(invite.appWsUrl);
+  const attachedPromise = nextMessage(appSocket);
+  await waitForOpen(appSocket);
+  assert.equal((await attachedPromise).type, "relay:attached");
+
+  appSocket.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "client_hello",
+          appVersion: "flutter-test",
+          deviceLabel: "Simulator",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+  await nextMessages(appSocket, 2);
+
+  appSocket.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "user_message",
+          text: "你好",
+          clientMessageId: "no-reply-user-1",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+
+  const assistant = await nextRelayPayload(appSocket, invite);
+  assert.equal(assistant.kind, "assistant_message");
+  assert.equal(assistant.replyTo, "no-reply-user-1");
+  assert.equal(assistant.text, "Fallback joke");
+  assert.equal(bridge.prompts[0], "你好");
+  assert.equal(bridge.prompts.length, 2);
+  assert.match(
+    bridge.prompts[1] ?? "",
+    /Your previous assistant reply for this turn was exactly "NO_REPLY"\./u,
+  );
+  assert.match(
+    bridge.prompts[1] ?? "",
+    /same language as the recent user\/assistant conversation already in this session/u,
+  );
 
   appSocket.terminate();
 });
@@ -2295,6 +2390,34 @@ test("group bot mode greets a silent participant after the configured join delay
     /write the proactive message in English/u,
   );
   await waitForNoMessage(app, 120);
+});
+
+test("group bot mode turns a NO_REPLY proactive prompt into a fallback joke", async (t) => {
+  const bridge = new NoReplyThenJokeBridge();
+  const { invite } = await createGroupBotModeHarness(t, bridge, {
+    botMode: true,
+    botModeSilentJoinDelayMs: 40,
+    botModeIdleDelayMs: 250,
+  });
+  const app = await connectGroupApp({
+    invite,
+    appId: "app-one",
+    displayName: "SolarFox",
+  });
+  t.after(async () => {
+    app.close();
+    await waitForClose(app);
+  });
+
+  const proactive = await nextRelayPayload(app, invite);
+  assert.equal(proactive.kind, "assistant_message");
+  assert.equal(proactive.text, "Fallback joke");
+  assert.equal(bridge.prompts.length, 2);
+  assert.match(bridge.prompts[0] ?? "", /joined this PrivateClaw group chat/u);
+  assert.match(
+    bridge.prompts[1] ?? "",
+    /Your previous assistant reply for this turn was exactly "NO_REPLY"\./u,
+  );
 });
 
 test("group bot mode cancels the silent-join greeting after the participant speaks", async (t) => {

@@ -41,3 +41,8 @@ apps/privateclaw_app/ios/Flutter/PrivateClawLocal.xcconfig
 *.xcarchive
 *.xcresult
 *.log
+
+# Local review artifacts
+.qoder/
+claude-review.md
+qoder-review.md

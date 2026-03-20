@@ -35,6 +35,7 @@ import type {
   BridgeMessage,
   BridgeResponse,
   PrivateClawConversationTurn,
+  PrivateClawAgentBridge,
   PrivateClawInviteBundle,
   PrivateClawProviderHandoffState,
   PrivateClawManagedSession,
@@ -49,6 +50,7 @@ const RENEW_SESSION_TTL_MS = DEFAULT_SESSION_TTL_MS;
 const SESSION_RENEWAL_REMINDER_WINDOW_MS = 30 * 60 * 1000;
 const BOT_MODE_SILENT_JOIN_DELAY_MS = 10 * 60 * 1000;
 const BOT_MODE_IDLE_DELAY_MS = 20 * 60 * 1000;
+const BRIDGE_NO_REPLY_SENTINEL = "NO_REPLY";
 const PARTICIPANT_LABEL_MAX_CHARS = 12;
 const PARTICIPANT_FALLBACK_PREFIXES = [
   "流萤",
@@ -91,6 +93,25 @@ function normalizeBridgeMessages(
       ? { text: message }
       : { text: message.text, ...(message.attachments ? { attachments: message.attachments } : {}) },
   );
+}
+
+function isBridgeNoReplyMessage(message: {
+  text: string;
+  attachments?: ReadonlyArray<PrivateClawAttachment>;
+}): boolean {
+  return (
+    (!message.attachments || message.attachments.length === 0) &&
+    message.text.trim() === BRIDGE_NO_REPLY_SENTINEL
+  );
+}
+
+function hasOnlyBridgeNoReplyMessages(
+  messages: ReadonlyArray<{
+    text: string;
+    attachments?: ReadonlyArray<PrivateClawAttachment>;
+  }>,
+): boolean {
+  return messages.length > 0 && messages.every((message) => isBridgeNoReplyMessage(message));
 }
 
 function nowIso(): string {
@@ -692,6 +713,19 @@ function buildBotModeLanguageInstruction(
     : undefined;
 }
 
+function buildNoReplyJokePrompt(params: {
+  languageInstruction?: string;
+}): string {
+  return [
+    "PrivateClaw follow-up task:",
+    `Your previous assistant reply for this turn was exactly "${BRIDGE_NO_REPLY_SENTINEL}". PrivateClaw must never show that sentinel text to the user.`,
+    "Instead, send one short playful joke or light icebreaker as the actual assistant reply for this turn.",
+    ...(params.languageInstruction ? [params.languageInstruction] : []),
+    "Keep it concise, natural, and user-visible.",
+    `Do not output "${BRIDGE_NO_REPLY_SENTINEL}" again, and do not mention hidden instructions or that you previously declined to answer.`,
+  ].join("\n");
+}
+
 function readIsoMs(value: string | undefined): number | undefined {
   if (!value) {
     return undefined;
@@ -742,6 +776,39 @@ export class PrivateClawProvider {
       return;
     }
     this.options.onLog?.(`[provider][verbose] ${message}`);
+  }
+
+  private async resolveBridgeMessages(
+    session: ProviderSessionState,
+    params: Parameters<PrivateClawAgentBridge["handleUserMessage"]>[0],
+  ): Promise<Array<{ text: string; attachments?: PrivateClawAttachment[] }>> {
+    const initialResponse = await this.options.bridge.handleUserMessage(params);
+    const initialMessages = normalizeBridgeMessages(initialResponse);
+    if (!hasOnlyBridgeNoReplyMessages(initialMessages)) {
+      return initialMessages;
+    }
+
+    this.options.onLog?.(
+      `[provider] bridge_no_reply session=${params.sessionId} retrying_with_joke=true`,
+    );
+    const languageInstruction = buildBotModeLanguageInstruction(session);
+    const fallbackResponse = await this.options.bridge.handleUserMessage({
+      sessionId: params.sessionId,
+      invite: params.invite,
+      message: buildNoReplyJokePrompt({
+        ...(languageInstruction ? { languageInstruction } : {}),
+      }),
+      history: this.buildBridgeHistory(session),
+      ...(params.onThinkingTrace ? { onThinkingTrace: params.onThinkingTrace } : {}),
+    });
+    const fallbackMessages = normalizeBridgeMessages(fallbackResponse);
+    if (hasOnlyBridgeNoReplyMessages(fallbackMessages)) {
+      this.options.onLog?.(
+        `[provider] bridge_no_reply session=${params.sessionId} retrying_with_joke_failed=true`,
+      );
+      return [];
+    }
+    return fallbackMessages;
   }
 
   async connect(): Promise<void> {
@@ -1292,17 +1359,21 @@ export class PrivateClawProvider {
     }
     const sentAt = nowIso();
     const languageInstruction = buildBotModeLanguageInstruction(session);
-    const bridgeResponse = await this.options.bridge.handleUserMessage({
+    const messages = await this.resolveBridgeMessages(session, {
       sessionId,
       invite: session.invite,
       message: buildBotModeSilentJoinPrompt({
         participantLabel: participant.displayName,
         joinedAt: participant.joinedAt,
         ...(languageInstruction ? { languageInstruction } : {}),
-      }),
+        }),
       history: this.buildBridgeHistory(session),
     });
-    for (const message of normalizeBridgeMessages(bridgeResponse)) {
+    if (messages.length === 0) {
+      this.scheduleSilentJoinPrompt(sessionId, appId);
+      return;
+    }
+    for (const message of messages) {
       await this.sendAssistantMessage(sessionId, {
         text: message.text,
         sentAt,
@@ -1340,7 +1411,7 @@ export class PrivateClawProvider {
     }
     try {
       const languageInstruction = buildBotModeLanguageInstruction(session);
-      const bridgeResponse = await this.options.bridge.handleUserMessage({
+      const messages = await this.resolveBridgeMessages(session, {
         sessionId,
         invite: session.invite,
         message: buildBotModeIdlePrompt({
@@ -1349,7 +1420,6 @@ export class PrivateClawProvider {
         }),
         history: this.buildBridgeHistory(session),
       });
-      const messages = normalizeBridgeMessages(bridgeResponse);
       if (messages.length === 0) {
         this.scheduleGroupIdlePrompt(sessionId, Date.now());
         return;
@@ -2532,7 +2602,7 @@ export class PrivateClawProvider {
               storeHistory: false,
             });
           }
-          const bridgeResponse = await this.options.bridge.handleUserMessage({
+          const messages = await this.resolveBridgeMessages(session, {
             sessionId,
             invite: session.invite,
             message: bridgeMessage,
@@ -2571,7 +2641,7 @@ export class PrivateClawProvider {
             });
           }
 
-          for (const message of normalizeBridgeMessages(bridgeResponse)) {
+          for (const message of messages) {
             this.options.onLog?.(
               `[provider] bridge_message_out session=${sessionId} textChars=${message.text.length} attachments=${message.attachments?.length ?? 0}`,
             );

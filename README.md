@@ -151,6 +151,13 @@ openclaw config set plugins.entries.privateclaw.config.botMode true
 
 That makes the provider greet silent new joiners after about 10 minutes and send a short re-engagement message after about 20 minutes of group silence. `/mute-bot` and `/unmute-bot` also pause or resume these proactive messages.
 
+For advanced tuning, the provider also accepts:
+
+- plugin config overrides: `botModeSilentJoinDelayMs`, `botModeIdleDelayMs`
+- environment variables: `PRIVATECLAW_BOT_MODE`, `PRIVATECLAW_BOT_MODE_SILENT_JOIN_DELAY_MS`, `PRIVATECLAW_BOT_MODE_IDLE_DELAY_MS`
+
+The timeout values are in milliseconds. The defaults are `600000` (10 minutes) for silent-join greetings and `1200000` (20 minutes) for idle-group follow-ups. If both plugin config and environment variables are set, plugin config wins.
+
 ### 2. Choose how to start a session
 
 #### Path A: existing OpenClaw chat channel

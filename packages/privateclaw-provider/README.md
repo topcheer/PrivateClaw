@@ -145,7 +145,14 @@ When `botMode` is enabled, group sessions do two extra things:
 - greet a newly joined participant if they stay silent for about 10 minutes
 - send a short proactive re-engagement message after about 20 minutes of group silence
 
-Both behaviors go through the same upstream bridge / OpenClaw agent path as normal assistant replies, and `/mute-bot` or `/unmute-bot` also pause or resume these proactive turns. For advanced tuning or tests, the plugin config also accepts optional `botModeSilentJoinDelayMs` and `botModeIdleDelayMs` overrides.
+Both behaviors go through the same upstream bridge / OpenClaw agent path as normal assistant replies, and `/mute-bot` or `/unmute-bot` also pause or resume these proactive turns.
+
+For advanced tuning or tests, you can override the defaults in either of these ways:
+
+- plugin config: `botModeSilentJoinDelayMs`, `botModeIdleDelayMs`
+- environment variables: `PRIVATECLAW_BOT_MODE`, `PRIVATECLAW_BOT_MODE_SILENT_JOIN_DELAY_MS`, `PRIVATECLAW_BOT_MODE_IDLE_DELAY_MS`
+
+The timeout values are milliseconds. The defaults are `600000` (10 minutes) for silent-join greetings and `1200000` (20 minutes) for idle-group follow-ups. If both plugin config and environment variables are present, plugin config takes precedence.
 
 ## Channel QR delivery notes
 

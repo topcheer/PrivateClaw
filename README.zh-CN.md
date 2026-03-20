@@ -241,6 +241,31 @@ openclaw config validate
 - `PRIVATECLAW_WHISPER_DEVICE`
 - `PRIVATECLAW_WHISPER_MODEL_DIR`
 
+如果你希望 provider 在群聊里更像一个会主动参与的成员，可以开启 bot mode：
+
+```bash
+openclaw config set plugins.entries.privateclaw.config.botMode true
+```
+
+开启 `botMode` 之后，群聊会额外有两种主动行为：
+
+- 新加入的成员如果大约 10 分钟都没有发言，会收到一条主动问候
+- 群里如果大约 20 分钟都没有新的用户消息，会收到一条主动活跃气氛的消息
+
+这两种行为都走和普通 assistant 回复相同的 upstream bridge / OpenClaw agent 路径，`/mute-bot` 和 `/unmute-bot` 也会暂停或恢复这些主动消息。
+
+如果需要更细的调优，还可以使用：
+
+- plugin config 覆盖项：`botModeSilentJoinDelayMs`、`botModeIdleDelayMs`
+- 环境变量：`PRIVATECLAW_BOT_MODE`、`PRIVATECLAW_BOT_MODE_SILENT_JOIN_DELAY_MS`、`PRIVATECLAW_BOT_MODE_IDLE_DELAY_MS`
+
+这两个超时都使用毫秒。默认值分别是：
+
+- `600000`：静默入群问候（10 分钟）
+- `1200000`：群聊静默后的主动热场（20 分钟）
+
+如果 plugin config 和环境变量同时设置，以 plugin config 为准。
+
 ### 3. 运行 App
 
 ```bash

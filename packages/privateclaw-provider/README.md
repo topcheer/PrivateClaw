@@ -134,6 +134,17 @@ That means the installed extension can surface `/privateclaw`, `/privateclaw gro
 
 Capabilities advertise `/renew-session` and `/session-qr` for active sessions, and for group sessions they also advertise `/mute-bot` or `/unmute-bot` depending on the current session state.
 
+## Channel QR delivery notes
+
+When the plugin sends a pairing QR back through an existing OpenClaw chat transport, it must follow the channel outbound contract rather than the provider's internal attachment schema. In practice that means OpenClaw `ReplyPayload` with `text` plus `mediaUrl` / `mediaUrls`.
+
+- Rich-media transports such as `discord`, `telegram`, `slack`, `signal`, `imessage`, `bluebubbles`, `mattermost`, `msteams`, `matrix`, `googlechat`, `feishu`, `whatsapp`, `line`, and `zalouser` can usually render a generated QR directly from `mediaUrl`.
+- `qqbot` still supports legacy inline `<qqimg>...</qqimg>` text, but its current gateway also accepts structured `mediaUrl` / `mediaUrls`, so both paths are valid.
+- `zalo`, `tlon`, and `synology-chat` are effectively URL-only for QR delivery: they need a reachable HTTP(S) image URL rather than a private local file path.
+- `irc`, `nextcloud-talk`, and `twitch` degrade to plain text links, while `nostr` currently has `media: false`, so those channels should always rely on the invite URI text as the guaranteed fallback.
+
+The current provider implementation already special-cases QQ-style inline image replies for compatibility and uses `mediaUrl` for the general path. If you extend pairing delivery in the future, think in four buckets instead of just `qq` vs everyone else: `qqbot`, rich-media channels, URL-only channels, and no-media / text-only channels.
+
 ## Demo CLI
 
 ```bash

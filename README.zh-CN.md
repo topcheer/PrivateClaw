@@ -147,6 +147,17 @@ openclaw channels add --channel telegram --token <token>
 
 如果你使用官方默认 relay `https://relay.privateclaw.us`，官方分发的 App 才会直接具备现成的消息推送能力。若改用自定义 relay，则需要你把 relay 侧和 App 构建一起接入你自己的 Firebase / FCM 账号与凭据。
 
+##### 渠道二维码投递兼容性
+
+当 `/privateclaw` 通过已有 OpenClaw 聊天渠道回配对二维码时，真正受约束的是该渠道的出站 `ReplyPayload`（`text` 加 `mediaUrl` / `mediaUrls`），而不是 provider 内部的附件模型。
+
+- `discord`、`telegram`、`slack`、`signal`、`imessage`、`bluebubbles`、`mattermost`、`msteams`、`matrix`、`googlechat`、`feishu`、`whatsapp`、`line`、`zalouser` 这类富媒体渠道，通常可以直接把生成好的二维码作为 `mediaUrl` 发出去。
+- `qqbot` 仍然兼容旧的 `<qqimg>...</qqimg>` 内联标签，但当前 gateway 也已经会消费结构化的 `mediaUrl` / `mediaUrls`，所以它不再是“只能吃标签”的特殊渠道。
+- `zalo`、`tlon`、`synology-chat` 更偏向 URL 模式：它们期待的是可访问的 HTTP(S) 图片地址，而不是本地 PNG 路径。
+- `irc`、`nextcloud-talk`、`twitch` 只会退化成文本链接；`nostr` 当前则直接声明 `media: false`。因此这些渠道一定要在文字里同时带上原始 invite URI，不能只依赖二维码图片。
+
+为了跨渠道稳妥起见，建议始终在公告文字里保留 invite URI，即便同时附带了二维码图片。
+
 #### 方式 B：直接用 OpenClaw CLI 本地起配对会话
 
 如果你不想借助另一个聊天工具，可以直接使用插件提供给 OpenClaw 的 provider CLI。相同的公开子命令也可以通过独立 npm 二进制 `privateclaw-provider <subcommand>` 使用；下面先用 OpenClaw 里的别名来举例：

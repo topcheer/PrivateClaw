@@ -166,6 +166,17 @@ If you want just one invite to use a different relay, pass the relay on the slas
 
 The mobile app and web chat both warn before connecting when the QR/invite points at a non-default relay.
 
+##### Channel QR delivery compatibility
+
+When `/privateclaw` returns a pairing QR through an existing OpenClaw chat channel, the practical delivery format is the channel's outbound `ReplyPayload` (`text` plus `mediaUrl` / `mediaUrls`), not the provider's internal attachment model.
+
+- Rich-media channels such as `discord`, `telegram`, `slack`, `signal`, `imessage`, `bluebubbles`, `mattermost`, `msteams`, `matrix`, `googlechat`, `feishu`, `whatsapp`, `line`, and `zalouser` can normally render the generated QR when PrivateClaw sends it as `mediaUrl`.
+- `qqbot` still supports the legacy inline `<qqimg>...</qqimg>` path, but its current gateway also consumes structured `mediaUrl` / `mediaUrls`, so it is no longer a tag-only channel.
+- `zalo`, `tlon`, and `synology-chat` are URL-oriented: they expect a reachable HTTP(S) media URL rather than a local PNG path.
+- `irc`, `nextcloud-talk`, and `twitch` only fall back to a plain text link, and `nostr` currently advertises `media: false`, so those channels should always include the raw invite URI in text because the QR itself may not render inline.
+
+For cross-channel safety, keep the invite URI in the announcement text even when a QR image is also attached.
+
 #### Path B: local pairing directly from the OpenClaw CLI
 
 If you want to start a session without another chat app, use the provider CLI that the plugin adds to OpenClaw. The same public subcommands also exist on the standalone npm binary as `privateclaw-provider <subcommand>`; the examples below use the OpenClaw alias:

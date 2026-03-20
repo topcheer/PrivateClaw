@@ -47,6 +47,8 @@ import type {
 export const DEFAULT_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 const RENEW_SESSION_TTL_MS = DEFAULT_SESSION_TTL_MS;
 const SESSION_RENEWAL_REMINDER_WINDOW_MS = 30 * 60 * 1000;
+const BOT_MODE_SILENT_JOIN_DELAY_MS = 10 * 60 * 1000;
+const BOT_MODE_IDLE_DELAY_MS = 20 * 60 * 1000;
 const PARTICIPANT_LABEL_MAX_CHARS = 12;
 const PARTICIPANT_FALLBACK_PREFIXES = [
   "流萤",
@@ -286,6 +288,15 @@ function toProviderSessionHandoff(
     ...(session.renewalReminderSentAt
       ? { renewalReminderSentAt: session.renewalReminderSentAt }
       : {}),
+    ...(session.lastGroupActivityAt
+      ? { lastGroupActivityAt: session.lastGroupActivityAt }
+      : {}),
+    ...(session.botModeIdleAnchorAt
+      ? { botModeIdleAnchorAt: session.botModeIdleAnchorAt }
+      : {}),
+    ...(session.botModeLastIdlePromptAt
+      ? { botModeLastIdlePromptAt: session.botModeLastIdlePromptAt }
+      : {}),
   };
 }
 
@@ -309,7 +320,22 @@ function fromProviderSessionHandoff(
     ...(snapshot.renewalReminderSentAt
       ? { renewalReminderSentAt: snapshot.renewalReminderSentAt }
       : {}),
+    ...(snapshot.lastGroupActivityAt
+      ? { lastGroupActivityAt: snapshot.lastGroupActivityAt }
+      : {}),
+    ...(snapshot.botModeIdleAnchorAt
+      ? { botModeIdleAnchorAt: snapshot.botModeIdleAnchorAt }
+      : {}),
+    ...(snapshot.botModeLastIdlePromptAt
+      ? { botModeLastIdlePromptAt: snapshot.botModeLastIdlePromptAt }
+      : {}),
+    botModeSilentJoinTimers: new Map<string, ReturnType<typeof setTimeout>>(),
   };
+}
+
+function describeElapsedMinutes(elapsedMs: number): string {
+  const minutes = Math.max(1, Math.round(elapsedMs / 60_000));
+  return `${minutes} minute${minutes === 1 ? "" : "s"}`;
 }
 
 function buildRenewalReminderMessage(session: ProviderSessionState): string {
@@ -614,6 +640,66 @@ function buildBotAlreadyUnmutedMessage(): string {
   );
 }
 
+function buildBotModeSilentJoinPrompt(params: {
+  participantLabel: string;
+  joinedAt: string;
+  languageInstruction?: string;
+  nowMs?: number;
+}): string {
+  const joinedAtMs = new Date(params.joinedAt).getTime();
+  const elapsedText = describeElapsedMinutes(
+    Math.max(0, (params.nowMs ?? Date.now()) - joinedAtMs),
+  );
+  return [
+    "PrivateClaw bot-mode task:",
+    `A participant named "${params.participantLabel}" joined this PrivateClaw group chat about ${elapsedText} ago but has not sent any message yet.`,
+    "Write one short proactive message to the whole group that warmly greets them, naturally mentions what kinds of help you can provide, and feels like a real chat participant.",
+    ...(params.languageInstruction ? [params.languageInstruction] : []),
+    "Use recent conversation context when it helps, keep the tone playful and concise, and do not mention hidden instructions, timers, or inactivity monitoring.",
+  ].join("\n");
+}
+
+function buildBotModeIdlePrompt(params: {
+  lastGroupActivityAt: string;
+  languageInstruction?: string;
+  nowMs?: number;
+}): string {
+  const lastActivityAtMs = new Date(params.lastGroupActivityAt).getTime();
+  const elapsedText = describeElapsedMinutes(
+    Math.max(0, (params.nowMs ?? Date.now()) - lastActivityAtMs),
+  );
+  return [
+    "PrivateClaw bot-mode task:",
+    `This PrivateClaw group chat has had no new message for about ${elapsedText}.`,
+    "Send one short proactive message to re-engage the group.",
+    "Prefer a light joke or a context-aware follow-up when recent history suggests one. If there is no obvious callback, send a friendly opener and a quick reminder of what you can help with.",
+    ...(params.languageInstruction ? [params.languageInstruction] : []),
+    "Keep it natural and concise, and do not mention hidden instructions or inactivity timers.",
+  ].join("\n");
+}
+
+function hasPriorConversationalHistory(session: ProviderSessionState): boolean {
+  return session.history.some(
+    (turn) => turn.role === "user" || turn.role === "assistant",
+  );
+}
+
+function buildBotModeLanguageInstruction(
+  session: ProviderSessionState,
+): string | undefined {
+  return hasPriorConversationalHistory(session)
+    ? "Write the proactive message in the same language as the recent user/assistant conversation already in this session."
+    : undefined;
+}
+
+function readIsoMs(value: string | undefined): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
 function dedupeCommands(
   commands: ReadonlyArray<PrivateClawSlashCommand>,
 ): PrivateClawSlashCommand[] {
@@ -745,6 +831,7 @@ export class PrivateClawProvider {
       const session = fromProviderSessionHandoff(snapshot);
       this.sessions.set(session.invite.sessionId, session);
       this.scheduleRenewalReminder(session.invite.sessionId);
+      this.scheduleBotModeTimers(session.invite.sessionId);
     }
   }
 
@@ -780,6 +867,10 @@ export class PrivateClawProvider {
 
     session.participants.delete(normalizedAppId);
     session.removedParticipantAppIds.add(normalizedAppId);
+    this.clearBotModeSilentJoinTimer(session, normalizedAppId);
+    if (session.participants.size === 0) {
+      delete session.botModeIdleAnchorAt;
+    }
 
     await this.relayClient.closeApp(sessionId, normalizedAppId, reason);
 
@@ -790,6 +881,7 @@ export class PrivateClawProvider {
       );
       await this.sendCapabilities(sessionId);
     }
+    this.scheduleGroupIdlePrompt(sessionId);
 
     return toParticipantSnapshot(participant);
   }
@@ -817,6 +909,7 @@ export class PrivateClawProvider {
       clearTimeout(session.renewalReminderTimer);
       delete session.renewalReminderTimer;
     }
+    this.clearBotModeTimers(session);
     this.sessions.delete(sessionId);
     return session;
   }
@@ -968,6 +1061,315 @@ export class PrivateClawProvider {
         );
       });
     }, delayMs);
+  }
+
+  private isBotModeEnabled(session: ProviderSessionState): boolean {
+    return this.options.botMode === true && session.groupMode;
+  }
+
+  private getBotModeSilentJoinDelayMs(): number {
+    return this.options.botModeSilentJoinDelayMs ?? BOT_MODE_SILENT_JOIN_DELAY_MS;
+  }
+
+  private getBotModeIdleDelayMs(): number {
+    return this.options.botModeIdleDelayMs ?? BOT_MODE_IDLE_DELAY_MS;
+  }
+
+  private clearBotModeSilentJoinTimer(
+    session: ProviderSessionState,
+    appId: string,
+  ): void {
+    const timer = session.botModeSilentJoinTimers?.get(appId);
+    if (timer) {
+      clearTimeout(timer);
+    }
+    session.botModeSilentJoinTimers?.delete(appId);
+  }
+
+  private clearBotModeIdleTimer(session: ProviderSessionState): void {
+    if (session.botModeIdleTimer) {
+      clearTimeout(session.botModeIdleTimer);
+      delete session.botModeIdleTimer;
+    }
+  }
+
+  private clearBotModeTimers(session: ProviderSessionState): void {
+    this.clearBotModeIdleTimer(session);
+    for (const appId of session.botModeSilentJoinTimers?.keys() ?? []) {
+      this.clearBotModeSilentJoinTimer(session, appId);
+    }
+    delete session.botModeSilentJoinTimers;
+  }
+
+  private ensureGroupIdleAnchor(
+    session: ProviderSessionState,
+    fallbackSentAt?: string,
+  ): void {
+    if (!session.groupMode || session.botModeIdleAnchorAt || session.lastGroupActivityAt) {
+      return;
+    }
+    const participantJoinedAtMs = [...session.participants.values()]
+      .map((participant) => ({
+        joinedAt: participant.joinedAt,
+        joinedAtMs: readIsoMs(participant.joinedAt),
+      }))
+      .filter(
+        (
+          item,
+        ): item is {
+          joinedAt: string;
+          joinedAtMs: number;
+        } => typeof item.joinedAtMs === "number",
+      )
+      .sort((left, right) => left.joinedAtMs - right.joinedAtMs)[0]?.joinedAt;
+    const nextAnchor = participantJoinedAtMs ?? fallbackSentAt;
+    if (nextAnchor) {
+      session.botModeIdleAnchorAt = nextAnchor;
+    }
+  }
+
+  private getGroupIdleScheduleAnchorMs(
+    session: ProviderSessionState,
+    lastActivityMsOverride?: number,
+  ): number {
+    this.ensureGroupIdleAnchor(session);
+    const anchorMsCandidates = [
+      typeof lastActivityMsOverride === "number" ? lastActivityMsOverride : undefined,
+      readIsoMs(session.lastGroupActivityAt),
+      readIsoMs(session.botModeLastIdlePromptAt),
+      readIsoMs(session.botModeIdleAnchorAt),
+    ].filter((value): value is number => typeof value === "number");
+    return anchorMsCandidates.length > 0 ? Math.max(...anchorMsCandidates) : Date.now();
+  }
+
+  private noteGroupActivity(sessionId: string, sentAt: string): void {
+    const session = this.sessions.get(sessionId);
+    if (!session || !session.groupMode) {
+      return;
+    }
+    delete session.botModeLastIdlePromptAt;
+    session.lastGroupActivityAt = sentAt;
+    if (this.isBotModeEnabled(session) && !session.botMuted) {
+      this.scheduleGroupIdlePrompt(sessionId);
+      return;
+    }
+    this.clearBotModeIdleTimer(session);
+  }
+
+  private markParticipantSpoke(
+    sessionId: string,
+    appId: string,
+    sentAt: string,
+  ): void {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return;
+    }
+    const participant = session.participants.get(appId);
+    if (!participant) {
+      return;
+    }
+    participant.lastSeenAt = sentAt;
+    participant.lastUserMessageAt = sentAt;
+    this.clearBotModeSilentJoinTimer(session, appId);
+    this.noteGroupActivity(sessionId, sentAt);
+  }
+
+  private scheduleBotModeTimers(sessionId: string): void {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return;
+    }
+    if (!session.botModeSilentJoinTimers) {
+      session.botModeSilentJoinTimers = new Map<string, ReturnType<typeof setTimeout>>();
+    }
+    if (!this.isBotModeEnabled(session) || session.botMuted) {
+      this.clearBotModeTimers(session);
+      return;
+    }
+    this.ensureGroupIdleAnchor(session);
+    this.scheduleGroupIdlePrompt(sessionId);
+    for (const appId of session.participants.keys()) {
+      this.scheduleSilentJoinPrompt(sessionId, appId);
+    }
+  }
+
+  private scheduleSilentJoinPrompt(sessionId: string, appId: string): void {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return;
+    }
+    if (!session.botModeSilentJoinTimers) {
+      session.botModeSilentJoinTimers = new Map<string, ReturnType<typeof setTimeout>>();
+    }
+    this.clearBotModeSilentJoinTimer(session, appId);
+    if (!this.isBotModeEnabled(session) || session.botMuted) {
+      return;
+    }
+    const participant = session.participants.get(appId);
+    if (
+      !participant ||
+      participant.lastUserMessageAt ||
+      participant.botModeSilentJoinPromptSentAt
+    ) {
+      return;
+    }
+    const joinedAtMsRaw = new Date(participant.joinedAt).getTime();
+    const joinedAtMs = Number.isFinite(joinedAtMsRaw) ? joinedAtMsRaw : Date.now();
+    const delayMs = Math.max(
+      0,
+      joinedAtMs + this.getBotModeSilentJoinDelayMs() - Date.now(),
+    );
+    session.botModeSilentJoinTimers.set(
+      appId,
+      setTimeout(() => {
+        void this.handleSilentJoinPrompt(sessionId, appId, joinedAtMs).catch((error) => {
+          this.options.onLog?.(
+            `[provider] bot mode silent join prompt failed for ${sessionId}/${appId}: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        });
+      }, delayMs),
+    );
+  }
+
+  private scheduleGroupIdlePrompt(
+    sessionId: string,
+    lastActivityMsOverride?: number,
+  ): void {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return;
+    }
+    this.clearBotModeIdleTimer(session);
+    if (
+      !this.isBotModeEnabled(session) ||
+      session.botMuted ||
+      session.participants.size === 0
+    ) {
+      return;
+    }
+    const lastActivityMs = this.getGroupIdleScheduleAnchorMs(
+      session,
+      lastActivityMsOverride,
+    );
+    const delayMs = Math.max(
+      0,
+      lastActivityMs + this.getBotModeIdleDelayMs() - Date.now(),
+    );
+    session.botModeIdleTimer = setTimeout(() => {
+      void this.handleGroupIdlePrompt(sessionId, lastActivityMs).catch((error) => {
+        this.options.onLog?.(
+          `[provider] bot mode idle prompt failed for ${sessionId}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
+    }, delayMs);
+  }
+
+  private async handleSilentJoinPrompt(
+    sessionId: string,
+    appId: string,
+    joinedAtMs: number,
+  ): Promise<void> {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return;
+    }
+    this.clearBotModeSilentJoinTimer(session, appId);
+    const participant = session.participants.get(appId);
+    if (
+      !participant ||
+      !this.isBotModeEnabled(session) ||
+      session.botMuted ||
+      participant.lastUserMessageAt ||
+      participant.botModeSilentJoinPromptSentAt
+    ) {
+      return;
+    }
+    const dueAtMs = joinedAtMs + this.getBotModeSilentJoinDelayMs();
+    if (Date.now() < dueAtMs) {
+      this.scheduleSilentJoinPrompt(sessionId, appId);
+      return;
+    }
+    const sentAt = nowIso();
+    const languageInstruction = buildBotModeLanguageInstruction(session);
+    const bridgeResponse = await this.options.bridge.handleUserMessage({
+      sessionId,
+      invite: session.invite,
+      message: buildBotModeSilentJoinPrompt({
+        participantLabel: participant.displayName,
+        joinedAt: participant.joinedAt,
+        ...(languageInstruction ? { languageInstruction } : {}),
+      }),
+      history: this.buildBridgeHistory(session),
+    });
+    for (const message of normalizeBridgeMessages(bridgeResponse)) {
+      await this.sendAssistantMessage(sessionId, {
+        text: message.text,
+        sentAt,
+        ...(message.attachments ? { attachments: message.attachments } : {}),
+      });
+    }
+    participant.botModeSilentJoinPromptSentAt = sentAt;
+  }
+
+  private async handleGroupIdlePrompt(
+    sessionId: string,
+    lastActivityMs: number,
+  ): Promise<void> {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return;
+    }
+    this.clearBotModeIdleTimer(session);
+    if (
+      !this.isBotModeEnabled(session) ||
+      session.botMuted ||
+      session.participants.size === 0
+    ) {
+      return;
+    }
+    const currentActivityMs = this.getGroupIdleScheduleAnchorMs(session);
+    if (currentActivityMs > lastActivityMs) {
+      this.scheduleGroupIdlePrompt(sessionId, currentActivityMs);
+      return;
+    }
+    const dueAtMs = currentActivityMs + this.getBotModeIdleDelayMs();
+    if (Date.now() < dueAtMs) {
+      this.scheduleGroupIdlePrompt(sessionId, currentActivityMs);
+      return;
+    }
+    try {
+      const languageInstruction = buildBotModeLanguageInstruction(session);
+      const bridgeResponse = await this.options.bridge.handleUserMessage({
+        sessionId,
+        invite: session.invite,
+        message: buildBotModeIdlePrompt({
+          lastGroupActivityAt: session.lastGroupActivityAt ?? nowIso(),
+          ...(languageInstruction ? { languageInstruction } : {}),
+        }),
+        history: this.buildBridgeHistory(session),
+      });
+      const messages = normalizeBridgeMessages(bridgeResponse);
+      if (messages.length === 0) {
+        this.scheduleGroupIdlePrompt(sessionId, Date.now());
+        return;
+      }
+      const sentAt = nowIso();
+      for (const message of messages) {
+        await this.sendAssistantMessage(sessionId, {
+          text: message.text,
+          sentAt,
+          ...(message.attachments ? { attachments: message.attachments } : {}),
+        });
+      }
+      session.botModeLastIdlePromptAt = sentAt;
+      this.scheduleGroupIdlePrompt(sessionId);
+    } catch (error) {
+      this.options.onLog?.(
+        `[provider] bot mode idle prompt bridge error for ${sessionId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      this.scheduleGroupIdlePrompt(sessionId, Date.now());
+    }
   }
 
   private async sendRenewalReminder(sessionId: string): Promise<void> {
@@ -1681,6 +2083,9 @@ export class PrivateClawProvider {
           `client_hello_processed session=${sessionId} appId=${JSON.stringify(participant.appId)} isNew=${participantState.isNew} participants=${session.participants.size} awaitingHello=${wasAwaitingHello} renewing=${wasRenewing} groupMode=${session.groupMode}`,
         );
         session.state = "active";
+        this.ensureGroupIdleAnchor(session, payload.sentAt);
+        this.scheduleGroupIdlePrompt(sessionId);
+        this.scheduleSilentJoinPrompt(sessionId, participant.appId);
         if (wasRenewing) {
           session.history.push({
             messageId: buildMessageId("system"),
@@ -1757,6 +2162,9 @@ export class PrivateClawProvider {
           (session.participants.size === 1
             ? [...session.participants.values()][0]
             : undefined);
+        if (session.groupMode && participant) {
+          this.markParticipantSpoke(sessionId, participant.appId, payload.sentAt);
+        }
 
         const normalizedCommand = payload.text.trim().toLowerCase();
         const directBridgeSlashCommand = normalizeBridgeSlashCommandText(payload.text);
@@ -1943,6 +2351,11 @@ export class PrivateClawProvider {
               messageId,
             },
           );
+          if (shouldMute) {
+            this.clearBotModeTimers(session);
+          } else {
+            this.scheduleBotModeTimers(sessionId);
+          }
           await this.sendCapabilities(sessionId);
           return;
         }
@@ -2214,6 +2627,10 @@ export class PrivateClawProvider {
 
         const participant = session.participants.get(participantAppId);
         session.participants.delete(participantAppId);
+        this.clearBotModeSilentJoinTimer(session, participantAppId);
+        if (session.participants.size === 0) {
+          delete session.botModeIdleAnchorAt;
+        }
         if (participant && session.participants.size > 0) {
           await this.sendSystemMessageToGroupParticipants(
             sessionId,
@@ -2224,6 +2641,7 @@ export class PrivateClawProvider {
         if (session.participants.size > 0) {
           await this.sendCapabilities(sessionId);
         }
+        this.scheduleGroupIdlePrompt(sessionId);
         return;
       }
       case "assistant_message":
@@ -2279,6 +2697,7 @@ export class PrivateClawProvider {
       participants: new Map<string, ProviderParticipantState>(),
       removedParticipantAppIds: new Set<string>(),
       state: "awaiting_hello",
+      botModeSilentJoinTimers: new Map<string, ReturnType<typeof setTimeout>>(),
     });
     this.scheduleRenewalReminder(sessionId);
     this.verboseLog(

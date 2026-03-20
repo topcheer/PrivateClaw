@@ -134,6 +134,19 @@ That means the installed extension can surface `/privateclaw`, `/privateclaw gro
 
 Capabilities advertise `/renew-session` and `/session-qr` for active sessions, and for group sessions they also advertise `/mute-bot` or `/unmute-bot` depending on the current session state.
 
+If you want the provider to behave more like a proactive participant in group sessions, enable bot mode in plugin config:
+
+```bash
+openclaw config set plugins.entries.privateclaw.config.botMode true
+```
+
+When `botMode` is enabled, group sessions do two extra things:
+
+- greet a newly joined participant if they stay silent for about 10 minutes
+- send a short proactive re-engagement message after about 20 minutes of group silence
+
+Both behaviors go through the same upstream bridge / OpenClaw agent path as normal assistant replies, and `/mute-bot` or `/unmute-bot` also pause or resume these proactive turns. For advanced tuning or tests, the plugin config also accepts optional `botModeSilentJoinDelayMs` and `botModeIdleDelayMs` overrides.
+
 ## Channel QR delivery notes
 
 When the plugin sends a pairing QR back through an existing OpenClaw chat transport, it must follow the channel outbound contract rather than the provider's internal attachment schema. In practice that means OpenClaw `ReplyPayload` with `text` plus `mediaUrl` / `mediaUrls`.

@@ -90,6 +90,9 @@ export interface PrivateClawPluginConfig {
   relayBaseUrl?: string;
   sessionTtlMs?: number;
   welcomeMessage?: string;
+  botMode?: boolean;
+  botModeSilentJoinDelayMs?: number;
+  botModeIdleDelayMs?: number;
   providerLabel?: string;
   webhookUrl?: string;
   webhookToken?: string;
@@ -114,6 +117,9 @@ interface ResolvedPrivateClawPluginConfig {
   providerLabel: string;
   sessionTtlMs?: number;
   welcomeMessage?: string;
+  botMode?: boolean;
+  botModeSilentJoinDelayMs?: number;
+  botModeIdleDelayMs?: number;
   webhookUrl?: string;
   webhookToken?: string;
   echoPrefix?: string;
@@ -259,6 +265,15 @@ function resolvePluginConfig(
   const welcomeMessage =
     readString(pluginConfig?.welcomeMessage) ??
     readString(process.env.PRIVATECLAW_WELCOME_MESSAGE);
+  const botMode =
+    readBoolean(pluginConfig?.botMode) ??
+    readBoolean(process.env.PRIVATECLAW_BOT_MODE);
+  const botModeSilentJoinDelayMs =
+    readNumber(pluginConfig?.botModeSilentJoinDelayMs) ??
+    readNumber(process.env.PRIVATECLAW_BOT_MODE_SILENT_JOIN_DELAY_MS);
+  const botModeIdleDelayMs =
+    readNumber(pluginConfig?.botModeIdleDelayMs) ??
+    readNumber(process.env.PRIVATECLAW_BOT_MODE_IDLE_DELAY_MS);
   const webhookUrl =
     readString(pluginConfig?.webhookUrl) ??
     readString(process.env.PRIVATECLAW_WEBHOOK_URL);
@@ -305,6 +320,11 @@ function resolvePluginConfig(
       DEFAULT_PROVIDER_LABEL,
     ...(typeof sessionTtlMs === "number" ? { sessionTtlMs } : {}),
     ...(welcomeMessage ? { welcomeMessage } : {}),
+    ...(typeof botMode === "boolean" ? { botMode } : {}),
+    ...(typeof botModeSilentJoinDelayMs === "number"
+      ? { botModeSilentJoinDelayMs }
+      : {}),
+    ...(typeof botModeIdleDelayMs === "number" ? { botModeIdleDelayMs } : {}),
     ...(webhookUrl ? { webhookUrl } : {}),
     ...(webhookToken ? { webhookToken } : {}),
     ...(echoPrefix ? { echoPrefix } : {}),
@@ -545,6 +565,15 @@ function buildProviderOptions(
         }
       },
       ...(pluginConfig.welcomeMessage ? { welcomeMessage: pluginConfig.welcomeMessage } : {}),
+      ...(typeof pluginConfig.botMode === "boolean"
+        ? { botMode: pluginConfig.botMode }
+        : {}),
+      ...(typeof pluginConfig.botModeSilentJoinDelayMs === "number"
+        ? { botModeSilentJoinDelayMs: pluginConfig.botModeSilentJoinDelayMs }
+        : {}),
+      ...(typeof pluginConfig.botModeIdleDelayMs === "number"
+        ? { botModeIdleDelayMs: pluginConfig.botModeIdleDelayMs }
+        : {}),
       verboseController,
       onLog: log,
     },
@@ -567,6 +596,23 @@ function buildDaemonEnvFromPluginConfig(
       : {}),
     ...(pluginConfig.welcomeMessage
       ? { PRIVATECLAW_WELCOME_MESSAGE: pluginConfig.welcomeMessage }
+      : {}),
+    ...(typeof pluginConfig.botMode === "boolean"
+      ? {
+          PRIVATECLAW_BOT_MODE: pluginConfig.botMode ? "true" : "false",
+        }
+      : {}),
+    ...(typeof pluginConfig.botModeSilentJoinDelayMs === "number"
+      ? {
+          PRIVATECLAW_BOT_MODE_SILENT_JOIN_DELAY_MS: String(
+            pluginConfig.botModeSilentJoinDelayMs,
+          ),
+        }
+      : {}),
+    ...(typeof pluginConfig.botModeIdleDelayMs === "number"
+      ? {
+          PRIVATECLAW_BOT_MODE_IDLE_DELAY_MS: String(pluginConfig.botModeIdleDelayMs),
+        }
       : {}),
     ...(pluginConfig.webhookUrl
       ? { PRIVATECLAW_WEBHOOK_URL: pluginConfig.webhookUrl }

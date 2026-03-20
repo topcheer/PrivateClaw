@@ -18,6 +18,21 @@ export const privateClawConfigSchema = {
       type: "string",
       description: "Encrypted welcome message sent to the client after handshake.",
     },
+    botMode: {
+      type: "boolean",
+      description:
+        "Enable proactive bot-mode group replies: greet silent joiners after 10 minutes and re-engage quiet groups after 20 minutes.",
+    },
+    botModeSilentJoinDelayMs: {
+      type: "number",
+      description: "Optional override for the silent-join proactive greeting delay in milliseconds.",
+      minimum: 0,
+    },
+    botModeIdleDelayMs: {
+      type: "number",
+      description: "Optional override for the quiet-group proactive re-engagement delay in milliseconds.",
+      minimum: 0,
+    },
     providerLabel: {
       type: "string",
       description: "Label rendered into the invite payload and QR metadata.",

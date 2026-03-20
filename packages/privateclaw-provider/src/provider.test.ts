@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { type TestContext } from "node:test";
 import {
   decodeInviteString,
   decryptPayload,
@@ -115,6 +115,76 @@ async function nextRelayPayload(
   });
 }
 
+async function connectGroupApp(params: {
+  invite: ReturnType<typeof decodeInviteString>;
+  appId: string;
+  displayName: string;
+  deviceLabel?: string;
+  expectedFrameCount?: number;
+}): Promise<WebSocket> {
+  const appUrl = new URL(params.invite.appWsUrl);
+  appUrl.searchParams.set("appId", params.appId);
+  const socket = new WebSocket(appUrl.toString());
+  const attached = nextMessage(socket);
+  await waitForOpen(socket);
+  assert.equal((await attached).type, "relay:attached");
+  const initialFrames = nextMessages(socket, params.expectedFrameCount ?? 3);
+  socket.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: params.invite.sessionId,
+        sessionKey: params.invite.sessionKey,
+        payload: {
+          kind: "client_hello",
+          appId: params.appId,
+          displayName: params.displayName,
+          appVersion: "flutter-test",
+          deviceLabel: params.deviceLabel ?? `${params.displayName} device`,
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+  await initialFrames;
+  return socket;
+}
+
+async function createGroupBotModeHarness(
+  t: TestContext,
+  bridge: { handleUserMessage(params: { message: string }): Promise<string> },
+  providerOptions?: Partial<ConstructorParameters<typeof PrivateClawProvider>[0]>,
+): Promise<{ invite: ReturnType<typeof decodeInviteString>; provider: PrivateClawProvider }> {
+  const relay = createRelayServer({
+    host: "127.0.0.1",
+    port: 0,
+    sessionTtlMs: 60_000,
+    frameCacheSize: 8,
+  });
+  const { port } = await relay.start();
+  t.after(async () => {
+    await relay.stop();
+  });
+
+  const provider = new PrivateClawProvider({
+    providerWsUrl: `ws://127.0.0.1:${port}/ws/provider`,
+    appWsUrl: `ws://127.0.0.1:${port}/ws/app`,
+    bridge,
+    defaultTtlMs: DEFAULT_SESSION_TTL_MS,
+    ...providerOptions,
+  });
+  await provider.connect();
+  t.after(async () => {
+    await provider.dispose();
+  });
+
+  const inviteBundle = await provider.createInviteBundle({ groupMode: true });
+  return {
+    provider,
+    invite: decodeInviteString(inviteBundle.inviteUri),
+  };
+}
+
 function decryptRelayPayload(
   frame: Record<string, unknown>,
   params: { sessionId: string; sessionKey: string },
@@ -153,6 +223,27 @@ class HistoryRecordingBridge {
         text: turn.text,
       })),
     );
+    return `OpenClaw bridge: ${params.message}`;
+  }
+}
+
+class BotModeBridge {
+  readonly prompts: string[] = [];
+  readonly promptKinds: Array<"silent_join" | "idle_group" | "user"> = [];
+
+  async handleUserMessage(params: {
+    message: string;
+  }): Promise<string> {
+    this.prompts.push(params.message);
+    if (params.message.includes("joined this PrivateClaw group chat")) {
+      this.promptKinds.push("silent_join");
+      return "Bot mode hello";
+    }
+    if (params.message.includes("has had no new message")) {
+      this.promptKinds.push("idle_group");
+      return "Bot mode joke";
+    }
+    this.promptKinds.push("user");
     return `OpenClaw bridge: ${params.message}`;
   }
 }
@@ -2153,6 +2244,341 @@ test("group sessions can mute and unmute bot replies without stopping participan
   appOne.close();
   appTwo.close();
   await Promise.all([waitForClose(appOne), waitForClose(appTwo)]);
+});
+
+test("group bot mode stays quiet when disabled", async (t) => {
+  const bridge = new BotModeBridge();
+  const { invite } = await createGroupBotModeHarness(t, bridge, {
+    botMode: false,
+    botModeSilentJoinDelayMs: 30,
+    botModeIdleDelayMs: 30,
+  });
+  const app = await connectGroupApp({
+    invite,
+    appId: "app-one",
+    displayName: "SolarFox",
+  });
+  t.after(async () => {
+    app.close();
+    await waitForClose(app);
+  });
+
+  await waitForNoMessage(app, 120);
+  assert.deepEqual(bridge.promptKinds, []);
+});
+
+test("group bot mode greets a silent participant after the configured join delay", async (t) => {
+  const bridge = new BotModeBridge();
+  const { invite } = await createGroupBotModeHarness(t, bridge, {
+    botMode: true,
+    botModeSilentJoinDelayMs: 40,
+    botModeIdleDelayMs: 250,
+  });
+  const app = await connectGroupApp({
+    invite,
+    appId: "app-one",
+    displayName: "SolarFox",
+  });
+  t.after(async () => {
+    app.close();
+    await waitForClose(app);
+  });
+
+  const proactive = await nextRelayPayload(app, invite);
+  assert.equal(proactive.kind, "assistant_message");
+  assert.equal(proactive.text, "Bot mode hello");
+  assert.deepEqual(bridge.promptKinds, ["silent_join"]);
+  assert.match(bridge.prompts[0]!, /SolarFox/u);
+  assert.match(bridge.prompts[0]!, /has not sent any message yet/u);
+  assert.doesNotMatch(
+    bridge.prompts[0]!,
+    /write the proactive message in English/u,
+  );
+  await waitForNoMessage(app, 120);
+});
+
+test("group bot mode cancels the silent-join greeting after the participant speaks", async (t) => {
+  const bridge = new BotModeBridge();
+  const { invite } = await createGroupBotModeHarness(t, bridge, {
+    botMode: true,
+    botModeSilentJoinDelayMs: 80,
+    botModeIdleDelayMs: 250,
+  });
+  const app = await connectGroupApp({
+    invite,
+    appId: "app-one",
+    displayName: "SolarFox",
+  });
+  t.after(async () => {
+    app.close();
+    await waitForClose(app);
+  });
+
+  const replyFramesPromise = nextMessages(app, 2);
+  app.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "user_message",
+          appId: "app-one",
+          text: "hello there",
+          clientMessageId: "bot-mode-user-1",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+
+  const replyFrames = await replyFramesPromise;
+  const participantEcho = decryptRelayPayload(replyFrames[0]!, invite);
+  const assistantReply = decryptRelayPayload(replyFrames[1]!, invite);
+  assert.equal(participantEcho.kind, "participant_message");
+  assert.equal(assistantReply.kind, "assistant_message");
+  assert.deepEqual(bridge.promptKinds, ["user"]);
+  await waitForNoMessage(app, 140);
+});
+
+test("group bot mode sends an idle follow-up after the room stays quiet", async (t) => {
+  const bridge = new BotModeBridge();
+  const { invite } = await createGroupBotModeHarness(t, bridge, {
+    botMode: true,
+    botModeSilentJoinDelayMs: 250,
+    botModeIdleDelayMs: 60,
+  });
+  const app = await connectGroupApp({
+    invite,
+    appId: "app-one",
+    displayName: "SolarFox",
+  });
+  t.after(async () => {
+    app.close();
+    await waitForClose(app);
+  });
+
+  const replyFramesPromise = nextMessages(app, 2);
+  app.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "user_message",
+          appId: "app-one",
+          text: "keep this in mind",
+          clientMessageId: "bot-mode-user-2",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+  const replyFrames = await replyFramesPromise;
+  assert.equal(decryptRelayPayload(replyFrames[0]!, invite).kind, "participant_message");
+  assert.equal(decryptRelayPayload(replyFrames[1]!, invite).kind, "assistant_message");
+
+  const idleFollowUp = await nextRelayPayload(app, invite);
+  assert.equal(idleFollowUp.kind, "assistant_message");
+  assert.equal(idleFollowUp.text, "Bot mode joke");
+  assert.deepEqual(bridge.promptKinds, ["user", "idle_group"]);
+  assert.match(bridge.prompts[1]!, /has had no new message/u);
+  assert.match(
+    bridge.prompts[1]!,
+    /Write the proactive message in the same language as the recent user\/assistant conversation already in this session\./u,
+  );
+});
+
+test("group bot mode idle timing ignores non-human assistant broadcasts", async (t) => {
+  const bridge = new BotModeBridge();
+  const { invite, provider } = await createGroupBotModeHarness(t, bridge, {
+    botMode: true,
+    botModeSilentJoinDelayMs: 250,
+    botModeIdleDelayMs: 160,
+  });
+  const app = await connectGroupApp({
+    invite,
+    appId: "app-one",
+    displayName: "SolarFox",
+  });
+  t.after(async () => {
+    app.close();
+    await waitForClose(app);
+  });
+
+  const replyFramesPromise = nextMessages(app, 2);
+  app.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "user_message",
+          appId: "app-one",
+          text: "keep the room warm",
+          clientMessageId: "bot-mode-user-3",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+  await replyFramesPromise;
+
+  await new Promise((resolve) => setTimeout(resolve, 110));
+  const qrPayloadPromise = nextRelayPayload(app, invite);
+  await provider.getSessionQrBundle(invite.sessionId, { notifyParticipants: true });
+  const qrPayload = await qrPayloadPromise;
+  assert.equal(qrPayload.kind, "assistant_message");
+
+  const idleWaitStartedAt = Date.now();
+  const idleFollowUp = await nextRelayPayload(app, invite);
+  const idleElapsedMs = Date.now() - idleWaitStartedAt;
+  assert.equal(idleFollowUp.kind, "assistant_message");
+  assert.equal(idleFollowUp.text, "Bot mode joke");
+  assert.ok(
+    idleElapsedMs < 120,
+    `expected idle follow-up without assistant reset, waited ${idleElapsedMs}ms`,
+  );
+});
+
+test("group bot mode idle timing ignores participant joins", async (t) => {
+  const bridge = new BotModeBridge();
+  const { invite } = await createGroupBotModeHarness(t, bridge, {
+    botMode: true,
+    botModeSilentJoinDelayMs: 250,
+    botModeIdleDelayMs: 160,
+  });
+  const appOne = await connectGroupApp({
+    invite,
+    appId: "app-one",
+    displayName: "SolarFox",
+  });
+  let appTwo: WebSocket | undefined;
+  t.after(async () => {
+    appOne.close();
+    if (appTwo) {
+      appTwo.close();
+    }
+    await Promise.all([
+      waitForClose(appOne),
+      ...(appTwo ? [waitForClose(appTwo)] : []),
+    ]);
+  });
+
+  const replyFramesPromise = nextMessages(appOne, 2);
+  appOne.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "user_message",
+          appId: "app-one",
+          text: "staying active",
+          clientMessageId: "bot-mode-user-4",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+  await replyFramesPromise;
+
+  await new Promise((resolve) => setTimeout(resolve, 110));
+  const joinFramesPromise = nextMessages(appOne, 2);
+  appTwo = await connectGroupApp({
+    invite,
+    appId: "app-two",
+    displayName: "RiverCat",
+    expectedFrameCount: 5,
+  });
+  await joinFramesPromise;
+
+  const idleWaitStartedAt = Date.now();
+  const idleFollowUp = await nextRelayPayload(appOne, invite);
+  const idleElapsedMs = Date.now() - idleWaitStartedAt;
+  assert.equal(idleFollowUp.kind, "assistant_message");
+  assert.equal(idleFollowUp.text, "Bot mode joke");
+  assert.ok(
+    idleElapsedMs < 120,
+    `expected idle follow-up without join reset, waited ${idleElapsedMs}ms`,
+  );
+});
+
+test("group bot mode respects /mute-bot and suppresses proactive replies", async (t) => {
+  const bridge = new BotModeBridge();
+  const { invite } = await createGroupBotModeHarness(t, bridge, {
+    botMode: true,
+    botModeSilentJoinDelayMs: 50,
+    botModeIdleDelayMs: 70,
+  });
+  const app = await connectGroupApp({
+    invite,
+    appId: "app-one",
+    displayName: "SolarFox",
+  });
+  t.after(async () => {
+    app.close();
+    await waitForClose(app);
+  });
+
+  const muteFramesPromise = nextMessages(app, 2);
+  app.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "user_message",
+          appId: "app-one",
+          text: "/mute-bot",
+          clientMessageId: "bot-mode-mute-1",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+  await muteFramesPromise;
+
+  await waitForNoMessage(app, 150);
+  assert.deepEqual(bridge.promptKinds, []);
+});
+
+test("group bot mode does not greet the same silent participant twice after reconnect", async (t) => {
+  const bridge = new BotModeBridge();
+  const { invite } = await createGroupBotModeHarness(t, bridge, {
+    botMode: true,
+    botModeSilentJoinDelayMs: 40,
+    botModeIdleDelayMs: 250,
+  });
+  const app = await connectGroupApp({
+    invite,
+    appId: "app-one",
+    displayName: "SolarFox",
+  });
+
+  const proactive = await nextRelayPayload(app, invite);
+  assert.equal(proactive.kind, "assistant_message");
+  assert.equal(proactive.text, "Bot mode hello");
+  app.close();
+  await waitForClose(app);
+
+  const reconnect = await connectGroupApp({
+    invite,
+    appId: "app-one",
+    displayName: "SolarFox",
+    expectedFrameCount: 4,
+  });
+  t.after(async () => {
+    reconnect.close();
+    await waitForClose(reconnect);
+  });
+
+  await waitForNoMessage(reconnect, 120);
+  assert.deepEqual(bridge.promptKinds, ["silent_join"]);
 });
 
 test("provider forwards unknown slash commands verbatim to the bridge even when bot replies are muted", async (t) => {

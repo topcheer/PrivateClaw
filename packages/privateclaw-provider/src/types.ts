@@ -85,6 +85,9 @@ export interface PrivateClawProviderOptions {
   defaultTtlMs?: number;
   providerLabel?: string;
   welcomeMessage?: string;
+  botMode?: boolean;
+  botModeSilentJoinDelayMs?: number;
+  botModeIdleDelayMs?: number;
   commandsProvider?: () => Promise<PrivateClawSlashCommand[]>;
   verboseController?: PrivateClawVerboseController;
   onLog?: (message: string) => void;
@@ -92,6 +95,8 @@ export interface PrivateClawProviderOptions {
 
 export interface ProviderParticipantState extends PrivateClawParticipant {
   lastSeenAt: string;
+  lastUserMessageAt?: string;
+  botModeSilentJoinPromptSentAt?: string;
   supportsThinkingTrace?: boolean;
 }
 
@@ -124,12 +129,17 @@ export interface ProviderSessionState {
   participants: Map<string, ProviderParticipantState>;
   removedParticipantAppIds: Set<string>;
   state: "awaiting_hello" | "active";
+  lastGroupActivityAt?: string;
+  botModeIdleAnchorAt?: string;
+  botModeLastIdlePromptAt?: string;
   pendingRenewal?: {
     expiresAt: string;
     sentAt: string;
   };
   renewalReminderSentAt?: string;
   renewalReminderTimer?: ReturnType<typeof setTimeout>;
+  botModeIdleTimer?: ReturnType<typeof setTimeout>;
+  botModeSilentJoinTimers?: Map<string, ReturnType<typeof setTimeout>>;
 }
 
 export interface PrivateClawProviderSessionHandoff {
@@ -146,6 +156,9 @@ export interface PrivateClawProviderSessionHandoff {
     sentAt: string;
   };
   renewalReminderSentAt?: string;
+  lastGroupActivityAt?: string;
+  botModeIdleAnchorAt?: string;
+  botModeLastIdlePromptAt?: string;
 }
 
 export interface PrivateClawProviderHandoffState {

@@ -143,6 +143,14 @@ openclaw plugins enable privateclaw
 
 After `openclaw plugins install`, `openclaw plugins enable`, or any `openclaw config set plugins.entries.privateclaw.config...` change, restart the running OpenClaw gateway/service before testing so it reloads the plugin and config. In practice, that means restarting the running `openclaw start` process or whichever service unit is hosting your gateway.
 
+If you want group sessions to feel more like a live chat with a proactive bot participant, you can also enable:
+
+```bash
+openclaw config set plugins.entries.privateclaw.config.botMode true
+```
+
+That makes the provider greet silent new joiners after about 10 minutes and send a short re-engagement message after about 20 minutes of group silence. `/mute-bot` and `/unmute-bot` also pause or resume these proactive messages.
+
 ### 2. Choose how to start a session
 
 #### Path A: existing OpenClaw chat channel

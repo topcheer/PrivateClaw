@@ -110,6 +110,9 @@ test("privateclaw schema advertises the public relay default", () => {
     privateClawConfigSchema.properties.relayBaseUrl.default,
     DEFAULT_RELAY_BASE_URL,
   );
+  assert.equal(privateClawConfigSchema.properties.botMode.type, "boolean");
+  assert.equal(privateClawConfigSchema.properties.botModeSilentJoinDelayMs.minimum, 0);
+  assert.equal(privateClawConfigSchema.properties.botModeIdleDelayMs.minimum, 0);
 });
 
 test("privateclaw command writes QR media into the OpenClaw state media directory", async (t) => {

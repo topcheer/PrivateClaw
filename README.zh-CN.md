@@ -122,6 +122,14 @@ openclaw plugins enable privateclaw
 
 执行完 `openclaw plugins install`、`openclaw plugins enable`，或者任何 `openclaw config set plugins.entries.privateclaw.config...` 改动后，在测试前都要重启正在运行的 OpenClaw gateway / service，让它重新加载插件和配置。实际操作上，就是重启正在跑的 `openclaw start` 进程，或者你用来托管 gateway 的 service。
 
+如果你想让群聊会话更像“有一个会主动搭话的机器人参与者”，也可以额外打开：
+
+```bash
+openclaw config set plugins.entries.privateclaw.config.botMode true
+```
+
+打开后，provider 会在新加入成员安静大约 10 分钟时主动打招呼，并且在群聊大约 20 分钟没有新消息时主动发一条轻量的重新活跃消息。`/mute-bot` 和 `/unmute-bot` 也会一并暂停或恢复这些主动消息。
+
 ### 2. 选择如何启动会话
 
 #### 方式 A：通过已有 OpenClaw 聊天渠道触发

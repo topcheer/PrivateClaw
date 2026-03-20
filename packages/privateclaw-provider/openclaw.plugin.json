@@ -2,7 +2,7 @@
   "id": "privateclaw",
   "name": "PrivateClaw",
   "description": "Ephemeral end-to-end encrypted private session plugin for OpenClaw.",
-  "version": "0.1.14",
+  "version": "0.1.25",
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
@@ -20,6 +20,20 @@
       "welcomeMessage": {
         "type": "string",
         "description": "Encrypted welcome message sent to the client after handshake."
+      },
+      "botMode": {
+        "type": "boolean",
+        "description": "Enable proactive bot-mode group replies: greet silent joiners after 10 minutes and re-engage quiet groups after 20 minutes."
+      },
+      "botModeSilentJoinDelayMs": {
+        "type": "number",
+        "description": "Optional override for the silent-join proactive greeting delay in milliseconds.",
+        "minimum": 0
+      },
+      "botModeIdleDelayMs": {
+        "type": "number",
+        "description": "Optional override for the quiet-group proactive re-engagement delay in milliseconds.",
+        "minimum": 0
       },
       "providerLabel": {
         "type": "string",

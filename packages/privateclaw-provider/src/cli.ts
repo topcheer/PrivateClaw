@@ -75,6 +75,22 @@ function parsePositiveInteger(value: string | undefined, fallback: number): numb
   return parsed;
 }
 
+function parseNonNegativeInteger(
+  value: string | undefined,
+  fallback: number,
+): number {
+  if (!value || value.trim() === "") {
+    return fallback;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error(`Expected a non-negative integer, received: ${value}`);
+  }
+
+  return parsed;
+}
+
 function parseBooleanFlag(value: string | undefined): boolean {
   return value != null && /^(1|true|yes|on)$/i.test(value.trim());
 }
@@ -216,6 +232,16 @@ function createProvider(params?: {
     process.env.PRIVATECLAW_SESSION_TTL_MS,
     DEFAULT_SESSION_TTL_MS,
   );
+  const botMode = parseBooleanFlag(process.env.PRIVATECLAW_BOT_MODE);
+  const botModeSilentJoinDelayMs = process.env.PRIVATECLAW_BOT_MODE_SILENT_JOIN_DELAY_MS
+    ? parseNonNegativeInteger(
+        process.env.PRIVATECLAW_BOT_MODE_SILENT_JOIN_DELAY_MS,
+        0,
+      )
+    : undefined;
+  const botModeIdleDelayMs = process.env.PRIVATECLAW_BOT_MODE_IDLE_DELAY_MS
+    ? parseNonNegativeInteger(process.env.PRIVATECLAW_BOT_MODE_IDLE_DELAY_MS, 0)
+    : undefined;
   const providerLabel =
     process.env.PRIVATECLAW_PROVIDER_LABEL?.trim() || "PrivateClaw";
   const welcomeMessage = process.env.PRIVATECLAW_WELCOME_MESSAGE?.trim();
@@ -230,6 +256,13 @@ function createProvider(params?: {
       defaultTtlMs: ttlMs,
       providerLabel,
       ...(verboseController ? { verboseController } : {}),
+      ...(botMode ? { botMode: true } : {}),
+      ...(typeof botModeSilentJoinDelayMs === "number"
+        ? { botModeSilentJoinDelayMs }
+        : {}),
+      ...(typeof botModeIdleDelayMs === "number"
+        ? { botModeIdleDelayMs }
+        : {}),
       commandsProvider: async () => {
         try {
           return await loadAvailableOpenClawCommands();

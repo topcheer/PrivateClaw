@@ -7,8 +7,20 @@ import 'package:privateclaw_app/models/chat_attachment.dart';
 import 'package:privateclaw_app/models/chat_message.dart';
 import 'package:privateclaw_app/widgets/chat_message_bubble.dart';
 import 'package:privateclaw_app/widgets/privateclaw_avatar.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 void main() {
+  tearDown(() {
+    attachmentUrlLauncher =
+        (Uri url, {LaunchMode mode = LaunchMode.platformDefault}) {
+          return launchUrl(url, mode: mode);
+        };
+    attachmentHandoffPresenter =
+        ({required ChatAttachment attachment, required Uri source}) async {
+          return false;
+        };
+  });
+
   testWidgets('ChatMessageBubble shows a pending assistant indicator', (
     WidgetTester tester,
   ) async {
@@ -97,6 +109,163 @@ void main() {
       ),
       findsOneWidget,
     );
+  });
+
+  testWidgets(
+    'ChatMessageBubble opens image attachments in a fullscreen viewer',
+    (WidgetTester tester) async {
+      final Uint8List imageBytes = Uint8List.fromList(
+        base64Decode(
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7Y0v8AAAAASUVORK5CYII=',
+        ),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ChatMessageBubble(
+              message: ChatMessage(
+                id: 'assistant-image-viewer-1',
+                sender: ChatSender.assistant,
+                text: '',
+                sentAt: DateTime.utc(2026, 1, 1),
+                attachments: <ChatAttachment>[
+                  ChatAttachment(
+                    id: 'attachment-image-viewer-1',
+                    name: 'pixel.png',
+                    mimeType: 'image/png',
+                    sizeBytes: imageBytes.length,
+                    dataBase64: base64Encode(imageBytes),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final Finder imageFinder = find.byKey(
+        const ValueKey<String>('attachment-image-attachment-image-viewer-1'),
+      );
+      await tester.ensureVisible(imageFinder);
+      await tester.tap(imageFinder);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(
+          const ValueKey<String>('attachment-viewer-attachment-image-viewer-1'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('pixel.png'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'ChatMessageBubble opens generic attachments through the launcher',
+    (WidgetTester tester) async {
+      Uri? launchedUri;
+      LaunchMode? launchedMode;
+      bool nativePresenterCalled = false;
+      attachmentUrlLauncher =
+          (Uri url, {LaunchMode mode = LaunchMode.platformDefault}) async {
+            launchedUri = url;
+            launchedMode = mode;
+            return true;
+          };
+      attachmentHandoffPresenter =
+          ({required ChatAttachment attachment, required Uri source}) async {
+            nativePresenterCalled = true;
+            return false;
+          };
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ChatMessageBubble(
+              message: ChatMessage(
+                id: 'assistant-file-1',
+                sender: ChatSender.assistant,
+                text: '',
+                sentAt: DateTime.utc(2026, 1, 1),
+                attachments: <ChatAttachment>[
+                  ChatAttachment(
+                    id: 'attachment-file-open-1',
+                    name: 'notes.txt',
+                    mimeType: 'text/plain',
+                    sizeBytes: 5,
+                    uri: 'https://example.com/notes.txt',
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('attachment-open-attachment-file-open-1'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(launchedUri, isNotNull);
+      expect(launchedUri!.scheme, 'https');
+      expect(launchedMode, LaunchMode.externalApplication);
+      expect(nativePresenterCalled, isFalse);
+    },
+  );
+
+  testWidgets('local handoff smoke', (WidgetTester tester) async {
+    ChatAttachment? presentedAttachment;
+    Uri? presentedSource;
+    bool launcherCalled = false;
+    attachmentUrlLauncher =
+        (Uri url, {LaunchMode mode = LaunchMode.platformDefault}) async {
+          launcherCalled = true;
+          return false;
+        };
+    attachmentHandoffPresenter =
+        ({required ChatAttachment attachment, required Uri source}) async {
+          presentedAttachment = attachment;
+          presentedSource = source;
+          return true;
+        };
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ChatMessageBubble(
+            message: ChatMessage(
+              id: 'assistant-file-local-1',
+              sender: ChatSender.assistant,
+              text: '',
+              sentAt: DateTime.utc(2026, 1, 1),
+              attachments: <ChatAttachment>[
+                ChatAttachment(
+                  id: 'attachment-file-local-open-1',
+                  name: 'notes.txt',
+                  mimeType: 'text/plain',
+                  sizeBytes: 5,
+                  uri: 'file:///tmp/notes.txt',
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('attachment-open-attachment-file-local-open-1'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(launcherCalled, isFalse);
+    expect(presentedAttachment, isNotNull);
+    expect(presentedAttachment!.id, 'attachment-file-local-open-1');
+    expect(presentedSource, isNotNull);
+    expect(presentedSource!.scheme, 'file');
   });
 
   testWidgets('ChatMessageBubble reuses cached inline image providers', (

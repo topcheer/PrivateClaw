@@ -2,9 +2,11 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:intl/intl.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 
 import '../l10n/app_localizations.dart';
@@ -16,6 +18,50 @@ import 'privateclaw_avatar.dart';
 final Map<String, Future<Uri?>> _attachmentUriCache = <String, Future<Uri?>>{};
 final Map<String, ImageProvider<Object>?> _attachmentImageProviderCache =
     <String, ImageProvider<Object>?>{};
+const MethodChannel _attachmentHandoffChannel = MethodChannel(
+  'gg.ai.privateclaw/attachment_handoff',
+);
+
+typedef AttachmentUrlLauncher =
+    Future<bool> Function(Uri url, {LaunchMode mode});
+typedef AttachmentHandoffPresenter =
+    Future<bool> Function({
+      required ChatAttachment attachment,
+      required Uri source,
+    });
+
+Future<bool> _defaultAttachmentUrlLauncher(
+  Uri url, {
+  LaunchMode mode = LaunchMode.platformDefault,
+}) {
+  return launchUrl(url, mode: mode);
+}
+
+AttachmentUrlLauncher attachmentUrlLauncher = _defaultAttachmentUrlLauncher;
+
+Future<bool> _defaultAttachmentHandoffPresenter({
+  required ChatAttachment attachment,
+  required Uri source,
+}) async {
+  if (!(Platform.isIOS || Platform.isAndroid)) {
+    return false;
+  }
+
+  final Map<String, Object?> arguments = <String, Object?>{
+    'name': attachment.name,
+    'mimeType': attachment.mimeType,
+    if (source.scheme == 'file') 'filePath': source.toFilePath(),
+    if (source.scheme != 'file') 'url': source.toString(),
+  };
+  final bool? presented = await _attachmentHandoffChannel.invokeMethod<bool>(
+    'present',
+    arguments,
+  );
+  return presented == true;
+}
+
+AttachmentHandoffPresenter attachmentHandoffPresenter =
+    _defaultAttachmentHandoffPresenter;
 
 class ChatMessageBubble extends StatelessWidget {
   const ChatMessageBubble({required this.message, super.key});
@@ -79,9 +125,11 @@ class ChatMessageBubble extends StatelessWidget {
                   const _PendingBubbleIndicator(),
                   const SizedBox(height: 8),
                 ],
-                if (message.text.trim().isNotEmpty) ..._buildTextContent(context),
+                if (message.text.trim().isNotEmpty)
+                  ..._buildTextContent(context),
                 if (message.attachments.isNotEmpty) ...<Widget>[
-                  if (message.text.trim().isNotEmpty) const SizedBox(height: 12),
+                  if (message.text.trim().isNotEmpty)
+                    const SizedBox(height: 12),
                   ...message.attachments.map(
                     (ChatAttachment attachment) => Padding(
                       key: ValueKey<String>('attachment-${attachment.id}'),
@@ -207,7 +255,8 @@ class _ThinkingTraceCardState extends State<_ThinkingTraceCard> {
   @override
   void didUpdateWidget(covariant _ThinkingTraceCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.message.isThinkingActive && !widget.message.isThinkingActive) {
+    if (oldWidget.message.isThinkingActive &&
+        !widget.message.isThinkingActive) {
       _isExpanded = false;
     }
   }
@@ -303,7 +352,9 @@ class _ThinkingTraceCardState extends State<_ThinkingTraceCard> {
                                 ? TextOverflow.visible
                                 : TextOverflow.ellipsis,
                             style: theme.textTheme.bodyMedium?.copyWith(
-                              color: colorScheme.onSurface.withValues(alpha: 0.88),
+                              color: colorScheme.onSurface.withValues(
+                                alpha: 0.88,
+                              ),
                             ),
                           ),
                           const SizedBox(height: 8),
@@ -331,9 +382,11 @@ class _ThinkingTraceCardState extends State<_ThinkingTraceCard> {
                                 ),
                               _ThinkingTracePill(
                                 icon: Icons.format_list_bulleted_rounded,
-                                label: '${widget.message.thinkingEntries.length}',
+                                label:
+                                    '${widget.message.thinkingEntries.length}',
                                 foregroundColor: colorScheme.onSurfaceVariant,
-                                backgroundColor: colorScheme.surfaceContainerHighest,
+                                backgroundColor:
+                                    colorScheme.surfaceContainerHighest,
                               ),
                             ],
                           ),
@@ -344,7 +397,8 @@ class _ThinkingTraceCardState extends State<_ThinkingTraceCard> {
                 ),
               ),
             ),
-            if (_isExpanded && widget.message.thinkingEntries.isNotEmpty) ...<Widget>[
+            if (_isExpanded &&
+                widget.message.thinkingEntries.isNotEmpty) ...<Widget>[
               const SizedBox(height: 12),
               ...widget.message.thinkingEntries.map(
                 (ChatThinkingEntry entry) => Padding(
@@ -412,7 +466,11 @@ class _ThinkingTraceEntryTile extends StatelessWidget {
           children: <Widget>[
             Padding(
               padding: const EdgeInsets.only(top: 2),
-              child: Icon(visuals.icon, size: 18, color: visuals.foregroundColor),
+              child: Icon(
+                visuals.icon,
+                size: 18,
+                color: visuals.foregroundColor,
+              ),
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -650,7 +708,15 @@ class _AttachmentCard extends StatelessWidget {
         ? Icons.videocam
         : Icons.attach_file;
 
-    return _GenericAttachmentCard(attachment: attachment, icon: icon);
+    return _GenericAttachmentCard(
+      attachment: attachment,
+      icon: icon,
+      onTap: _canOpenAttachment(attachment)
+          ? () {
+              unawaited(_openAttachment(context, attachment));
+            }
+          : null,
+    );
   }
 }
 
@@ -664,12 +730,35 @@ class _ImageAttachmentCard extends StatelessWidget {
     final ImageProvider<Object>? imageProvider =
         _resolveAttachmentImageProvider(attachment);
     if (imageProvider != null) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: Image(
-          image: imageProvider,
-          fit: BoxFit.cover,
-          gaplessPlayback: true,
+      return Material(
+        color: Colors.transparent,
+        child: InkWell(
+          key: ValueKey<String>('attachment-image-${attachment.id}'),
+          borderRadius: BorderRadius.circular(12),
+          onTap: () {
+            Navigator.of(context).push<void>(
+              MaterialPageRoute<void>(
+                builder: (BuildContext context) => _ImageAttachmentViewerPage(
+                  attachment: attachment,
+                  imageProvider: imageProvider,
+                ),
+              ),
+            );
+          },
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minWidth: 160, minHeight: 96),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Hero(
+                tag: _attachmentHeroTag(attachment.id),
+                child: Image(
+                  image: imageProvider,
+                  fit: BoxFit.cover,
+                  gaplessPlayback: true,
+                ),
+              ),
+            ),
+          ),
         ),
       );
     }
@@ -677,19 +766,29 @@ class _ImageAttachmentCard extends StatelessWidget {
     return _GenericAttachmentCard(
       attachment: attachment,
       icon: Icons.image_outlined,
+      onTap: _canOpenAttachment(attachment)
+          ? () {
+              unawaited(_openAttachment(context, attachment));
+            }
+          : null,
     );
   }
 }
 
 class _GenericAttachmentCard extends StatelessWidget {
-  const _GenericAttachmentCard({required this.attachment, required this.icon});
+  const _GenericAttachmentCard({
+    required this.attachment,
+    required this.icon,
+    this.onTap,
+  });
 
   final ChatAttachment attachment;
   final IconData icon;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
+    final Widget content = DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),
         color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.45),
@@ -717,7 +816,64 @@ class _GenericAttachmentCard extends StatelessWidget {
                 ],
               ),
             ),
+            if (onTap != null) ...<Widget>[
+              const SizedBox(width: 12),
+              const Icon(Icons.open_in_new_rounded, size: 18),
+            ],
           ],
+        ),
+      ),
+    );
+
+    if (onTap == null) {
+      return content;
+    }
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        key: ValueKey<String>('attachment-open-${attachment.id}'),
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: content,
+      ),
+    );
+  }
+}
+
+class _ImageAttachmentViewerPage extends StatelessWidget {
+  const _ImageAttachmentViewerPage({
+    required this.attachment,
+    required this.imageProvider,
+  });
+
+  final ChatAttachment attachment;
+  final ImageProvider<Object> imageProvider;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      key: ValueKey<String>('attachment-viewer-${attachment.id}'),
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        title: Text(attachment.name),
+      ),
+      body: SafeArea(
+        child: Center(
+          child: InteractiveViewer(
+            minScale: 0.8,
+            maxScale: 4,
+            child: Hero(
+              tag: _attachmentHeroTag(attachment.id),
+              child: Image(
+                image: imageProvider,
+                fit: BoxFit.contain,
+                gaplessPlayback: true,
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -1168,6 +1324,85 @@ String _formatDuration(Duration value) {
   }
 
   return '${value.inMinutes}:${twoDigits(seconds)}';
+}
+
+bool _canOpenAttachment(ChatAttachment attachment) {
+  return attachment.hasInlineData || attachment.hasRemoteUri;
+}
+
+String _attachmentHeroTag(String attachmentId) {
+  return 'attachment-hero-$attachmentId';
+}
+
+Future<void> _openAttachment(
+  BuildContext context,
+  ChatAttachment attachment,
+) async {
+  try {
+    final Uri? source = await _resolveAttachmentUri(attachment);
+    if (source == null) {
+      throw StateError('Attachment source is unavailable.');
+    }
+
+    if (_shouldPreferNativeAttachmentHandoff(source)) {
+      final bool presented = await attachmentHandoffPresenter(
+        attachment: attachment,
+        source: source,
+      );
+      if (presented) {
+        return;
+      }
+    } else {
+      final bool launched = await attachmentUrlLauncher(
+        source,
+        mode: LaunchMode.externalApplication,
+      );
+      if (launched) {
+        return;
+      }
+      final bool presented = await attachmentHandoffPresenter(
+        attachment: attachment,
+        source: source,
+      );
+      if (presented) {
+        return;
+      }
+    }
+  } on PlatformException {
+    // Fall through to the shared user-visible error.
+  } on MissingPluginException {
+    // Fall through to the shared user-visible error.
+  } on FileSystemException {
+    // Fall through to the shared user-visible error.
+  } on StateError {
+    // Fall through to the shared user-visible error.
+  } on ArgumentError {
+    // Fall through to the shared user-visible error.
+  } on UnsupportedError {
+    // Fall through to the shared user-visible error.
+  } on Exception {
+    // Fall through to the shared user-visible error.
+  }
+
+  if (!context.mounted) {
+    return;
+  }
+  final ScaffoldMessengerState? messenger = ScaffoldMessenger.maybeOf(context);
+  if (messenger == null) {
+    return;
+  }
+  messenger.hideCurrentSnackBar();
+  messenger.showSnackBar(
+    SnackBar(
+      content: Text(
+        AppLocalizations.of(context)!.attachmentOpenFailed(attachment.name),
+      ),
+    ),
+  );
+}
+
+bool _shouldPreferNativeAttachmentHandoff(Uri source) {
+  return source.scheme == 'file';
 }
 
 Future<Uri?> _resolveAttachmentUri(ChatAttachment attachment) {

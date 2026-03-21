@@ -2793,8 +2793,6 @@ export class PrivateClawProvider {
       }
       case "session_close": {
         if (!session.groupMode) {
-          this.deleteSession(sessionId);
-          await this.relayClient.closeSession(sessionId, payload.reason);
           return;
         }
 

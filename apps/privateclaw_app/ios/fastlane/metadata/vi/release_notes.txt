@@ -1,1 +1,2 @@
-Cải thiện độ ổn định của khay ảnh và khôi phục duyệt ảnh gần đây trên Android với xử lý quyền phù hợp.
+Đã cải thiện việc phân tích liên kết mời và xử lý lỗi phiên.
+Tệp đính kèm giờ mở ổn định hơn: ảnh xem toàn màn hình, các tệp khác có thể chia sẻ hoặc mở bằng ứng dụng khác.

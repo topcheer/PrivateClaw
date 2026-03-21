@@ -573,4 +573,45 @@ void main() {
       findsNothing,
     );
   });
+
+  testWidgets(
+    'non-default relay announcement text is parsed when it contains a full invite link',
+    (WidgetTester tester) async {
+      final PrivateClawInvite invite = PrivateClawInvite(
+        version: 1,
+        sessionId: 'session-custom-relay-text',
+        sessionKey:
+            'c2Vzc2lvbl9rZXlfZm9yX2N1c3RvbV9yZWxheV90ZXh0XzEyMzQ1Njc4OQ',
+        appWsUrl:
+            'ws://127.0.0.1:8787/ws/app?sessionId=session-custom-relay-text',
+        expiresAt: DateTime.utc(2030, 1, 1),
+      );
+
+      await tester.pumpWidget(
+        const PrivateClawApp(
+          screenshotConfig: StoreScreenshotConfig(localeOverride: Locale('en')),
+        ),
+      );
+
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('invite-input-field')),
+        '''
+PrivateClaw session copied from chat:
+邀请链接 / Invite URI: <${encodePrivateClawInviteUri(invite)}>
+Open it before it expires.
+''',
+      );
+      await tester.tap(
+        find.byKey(const ValueKey<String>('connect-session-button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey<String>('relay-warning-dialog')),
+        findsOneWidget,
+      );
+      expect(find.text('Custom relay server'), findsOneWidget);
+      expect(find.textContaining('127.0.0.1:8787'), findsOneWidget);
+    },
+  );
 }

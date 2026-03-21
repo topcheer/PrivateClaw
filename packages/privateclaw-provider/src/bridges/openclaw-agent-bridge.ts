@@ -87,6 +87,7 @@ interface PrivateClawStructuredMessage {
 interface PrivateClawStructuredResponse {
   version?: number;
   messages?: PrivateClawStructuredMessage[];
+  attachments?: PrivateClawStructuredMessageAttachment[];
   data?: unknown;
 }
 
@@ -1355,6 +1356,7 @@ function buildStructuredResponseContractPrompt(): string {
     "- Put user-visible text only in messages[].text.",
     "- To send images/files, add an attachments array to the message: {\"text\":\"...\",\"attachments\":[{\"name\":\"file.png\",\"mimeType\":\"image/png\",\"filePath\":\"relative/path/in/current/workspace/or/absolute/local/path\"}]}",
     "- Or use dataBase64 for inline binary: {\"name\":\"file.png\",\"mimeType\":\"image/png\",\"dataBase64\":\"...\"}",
+    "- Never put attachments at the top level of the response object. Files must live inside messages[].attachments.",
     "- Never put channel-specific markup such as <qqimg>...</qqimg>, markdown image syntax, or raw local file paths inside messages[].text. Put files only in messages[].attachments.",
     "- Use data for optional machine-readable extraction results that PrivateClaw may consume in future file-processing flows.",
     "- Do not wrap the JSON in markdown fences.",
@@ -1428,12 +1430,12 @@ function parseStructuredResponseResult(
   },
 ): NormalizedBridgeResult | undefined {
   const structured = parseStructuredResponseBlock(raw);
-  if (!structured?.messages || structured.messages.length === 0) {
+  if (!structured) {
     return undefined;
   }
 
   const messages: NormalizedBridgeMessage[] = [];
-  for (const message of structured.messages) {
+  for (const message of structured.messages ?? []) {
     const text = typeof message.text === "string" ? message.text.trim() : "";
     const qqimgResult = extractInlineQqimgAttachments(text, options);
     const attachments = [
@@ -1446,6 +1448,13 @@ function parseStructuredResponseResult(
         ...(attachments.length > 0 ? { attachments } : {}),
       });
     }
+  }
+  const topLevelAttachments = resolveStructuredAttachments(structured.attachments, options);
+  if (topLevelAttachments.length > 0) {
+    messages.push({
+      text: "",
+      attachments: topLevelAttachments,
+    });
   }
   if (messages.length === 0) {
     return undefined;

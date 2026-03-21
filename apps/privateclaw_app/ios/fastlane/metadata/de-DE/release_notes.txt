@@ -1,1 +1,2 @@
-Die Zuverlässigkeit der Fotoablage wurde verbessert und das Durchsuchen kürzlich aufgenommener Fotos auf Android mit korrekter Berechtigungsabfrage wiederhergestellt.
+Die Verarbeitung von Einladungslinks und die Anzeige von Sitzungsfehlern wurden verbessert.
+Anhänge lassen sich jetzt zuverlässiger öffnen: Bilder im Vollbild, andere Dateien per Teilen oder in anderen Apps.

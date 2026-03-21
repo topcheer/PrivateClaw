@@ -18,6 +18,10 @@ const Duration _connectTimeout = Duration(seconds: 15);
 const Duration _pingInterval = Duration(seconds: 20);
 const Duration _initialReconnectDelay = Duration(seconds: 1);
 const Duration _maxReconnectDelay = Duration(seconds: 30);
+const Set<String> _terminalRelayErrorCodes = <String>{
+  'unknown_session',
+  'session_expired',
+};
 
 enum PrivateClawSessionStatus {
   idle,
@@ -259,11 +263,23 @@ class PrivateClawSessionClient {
         return;
       case 'relay:error':
         final Object? message = decoded['message'];
+        final String errorCode = (decoded['code'] ?? 'unknown_error')
+            .toString()
+            .trim();
+        final bool isTerminalRelayError = _terminalRelayErrorCodes.contains(
+          errorCode,
+        );
+        if (isTerminalRelayError) {
+          _sawTerminalClose = true;
+          _hasEstablishedSession = false;
+        }
         _emitEvent(
           PrivateClawSessionEvent(
             notice: PrivateClawSessionNotice.relayError,
-            details: (message ?? 'unknown_error').toString(),
-            connectionStatus: PrivateClawSessionStatus.error,
+            details: (message ?? errorCode).toString(),
+            connectionStatus: isTerminalRelayError
+                ? PrivateClawSessionStatus.closed
+                : PrivateClawSessionStatus.error,
           ),
         );
         return;

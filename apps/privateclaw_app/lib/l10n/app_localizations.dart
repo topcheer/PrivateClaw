@@ -616,6 +616,12 @@ abstract class AppLocalizations {
   /// **'Files'**
   String get filePickerTooltip;
 
+  /// No description provided for @attachmentOpenFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t open {name}.'**
+  String attachmentOpenFailed(String name);
+
   /// Hint shown while voice recording is active and can still be cancelled by sliding up.
   ///
   /// In en, this message translates to:

@@ -304,6 +304,11 @@ class AppLocalizationsEs extends AppLocalizations {
   String get filePickerTooltip => 'Files';
 
   @override
+  String attachmentOpenFailed(String name) {
+    return 'Couldn\'t open $name.';
+  }
+
+  @override
   String get voiceRecordingSlideUpToCancel =>
       'Release to send · slide up to cancel';
 

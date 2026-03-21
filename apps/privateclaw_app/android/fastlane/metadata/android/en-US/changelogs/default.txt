@@ -1,1 +1,2 @@
-Improved photo tray reliability and restored Android recent-photo browsing with proper permission handling.
+Improved invite link parsing and session error handling.
+Attachments now open more reliably, with full-screen images and better file handoff to other apps.

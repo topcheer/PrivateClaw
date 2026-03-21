@@ -191,6 +191,15 @@
   "photoTrayAndroidRecentPhotosUnavailable": "Recent photo browsing is turned off on Android in this build. Use Camera or Gallery instead.",
   "photoLibraryPermissionDenied": "Photo access is required to browse recent images.",
   "filePickerTooltip": "Files",
+  "attachmentOpenFailed": "Couldn't open {name}.",
+  "@attachmentOpenFailed": {
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "notes.txt"
+      }
+    }
+  },
   "voiceRecordingSlideUpToCancel": "Release to send · slide up to cancel",
   "voiceRecordingReleaseToCancel": "Release to cancel",
   "@composerExpandTooltip": {

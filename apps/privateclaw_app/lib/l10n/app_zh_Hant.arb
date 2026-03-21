@@ -178,6 +178,15 @@
   "photoTrayNoImages": "暫無照片",
   "photoLibraryPermissionDenied": "需要允許存取照片，才能瀏覽最近圖片。",
   "filePickerTooltip": "檔案",
+  "attachmentOpenFailed": "無法打開 {name}。",
+  "@attachmentOpenFailed": {
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "notes.txt"
+      }
+    }
+  },
   "voiceRecordingSlideUpToCancel": "鬆開傳送，上滑取消",
   "voiceRecordingReleaseToCancel": "鬆開取消傳送"
 }

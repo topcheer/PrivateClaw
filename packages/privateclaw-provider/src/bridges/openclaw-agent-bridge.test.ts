@@ -228,6 +228,65 @@ test("parseOpenClawAgentOutput resolves structured filePath attachments from the
   assert.equal(attachment.dataBase64, Buffer.from("hello from filePath").toString("base64"));
 });
 
+test("parseOpenClawAgentOutput preserves top-level structured attachments as a follow-up message", async (t) => {
+  const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "privateclaw-structured-workspace-"));
+  t.after(async () => {
+    await fs.rm(workspaceDir, { recursive: true, force: true });
+  });
+
+  const attachmentPath = path.join(workspaceDir, "tetris.jpg");
+  await fs.writeFile(attachmentPath, "top-level attachment bytes", "utf8");
+
+  const result = parseOpenClawAgentOutput(
+    JSON.stringify({
+      status: "ok",
+      result: {
+        payloads: [
+          {
+            text: [
+              "<privateclaw-response>",
+              JSON.stringify({
+                version: 1,
+                messages: [{ text: "搞定啦！截图如下～" }],
+                attachments: [
+                  {
+                    name: "tetris.jpg",
+                    mimeType: "image/jpeg",
+                    filePath: attachmentPath,
+                  },
+                ],
+              }),
+              "</privateclaw-response>",
+            ].join("\n"),
+          },
+        ],
+      },
+    }),
+    { workspaceDir },
+  );
+
+  if (typeof result === "string") {
+    assert.fail("Expected an attachment-bearing bridge response.");
+  }
+  assert.equal(result.messages.length, 2);
+  assert.deepEqual(result.messages[0], { text: "搞定啦！截图如下～" });
+  const attachmentMessage = result.messages[1];
+  assert(attachmentMessage && typeof attachmentMessage !== "string");
+  assert.equal(attachmentMessage.text, "");
+  const [attachment] = attachmentMessage.attachments ?? [];
+  assert(attachment);
+  assert.equal(attachment.name, "tetris.jpg");
+  assert.equal(attachment.mimeType, "image/jpeg");
+  assert.equal(
+    attachment.sizeBytes,
+    Buffer.byteLength("top-level attachment bytes"),
+  );
+  assert.equal(
+    attachment.dataBase64,
+    Buffer.from("top-level attachment bytes").toString("base64"),
+  );
+});
+
 test("parseOpenClawAgentOutput accepts structured absolute filePath attachments outside the workspace", async (t) => {
   const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "privateclaw-structured-workspace-"));
   const outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), "privateclaw-structured-outside-"));

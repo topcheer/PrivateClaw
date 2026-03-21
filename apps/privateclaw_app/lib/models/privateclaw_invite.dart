@@ -57,30 +57,25 @@ class PrivateClawInvite {
       throw const FormatException('Invite string cannot be empty.');
     }
 
-    final Match? embeddedInviteMatch = RegExp(
-      r'privateclaw://connect\?payload=[A-Za-z0-9_-]+',
-    ).firstMatch(input);
-    if (embeddedInviteMatch != null) {
-      final String embeddedInvite = embeddedInviteMatch.group(0)!;
-      if (embeddedInvite != input) {
-        return PrivateClawInvite.fromScan(embeddedInvite);
-      }
-    }
-
-    if (input.startsWith('privateclaw://connect')) {
-      final uri = Uri.parse(input);
-      final payload = uri.queryParameters['payload'];
-      if (payload == null || payload.isEmpty) {
-        throw const FormatException(
-          'Invite URI is missing the payload parameter.',
-        );
-      }
-      return PrivateClawInvite._fromPayload(payload);
-    }
-
     if (input.startsWith('{')) {
       return PrivateClawInvite.fromJson(
         jsonDecode(input) as Map<String, dynamic>,
+      );
+    }
+
+    final String? directPayload = _payloadFromInviteUri(input);
+    if (directPayload != null) {
+      return PrivateClawInvite._fromPayload(directPayload);
+    }
+
+    final PrivateClawInvite? embeddedInvite = _tryParseEmbeddedInvite(input);
+    if (embeddedInvite != null) {
+      return embeddedInvite;
+    }
+
+    if (input.startsWith('privateclaw://connect')) {
+      throw const FormatException(
+        'Invite URI is missing the payload parameter.',
       );
     }
 
@@ -171,6 +166,45 @@ String encodePrivateClawInviteUri(PrivateClawInvite invite) {
 }
 
 const Object _noValue = Object();
+final RegExp _embeddedInviteUriPattern = RegExp(
+  r'privateclaw://connect\?[^\s<>"`]+',
+  caseSensitive: false,
+);
+final RegExp _trailingInvitePunctuationPattern = RegExp(
+  r"""[\)\]\}>"'.,;:!?，。；：！？、]+$""",
+);
+
+PrivateClawInvite? _tryParseEmbeddedInvite(String input) {
+  for (final Match match in _embeddedInviteUriPattern.allMatches(input)) {
+    final String candidate = match
+        .group(0)!
+        .replaceFirst(_trailingInvitePunctuationPattern, '');
+    final String? payload = _payloadFromInviteUri(candidate);
+    if (payload == null) {
+      continue;
+    }
+    try {
+      return PrivateClawInvite._fromPayload(payload);
+    } on FormatException {
+      continue;
+    }
+  }
+  return null;
+}
+
+String? _payloadFromInviteUri(String rawInput) {
+  final Uri? uri = Uri.tryParse(rawInput);
+  if (uri == null ||
+      uri.scheme.toLowerCase() != 'privateclaw' ||
+      uri.host.toLowerCase() != 'connect') {
+    return null;
+  }
+  final String? payload = uri.queryParameters['payload'];
+  if (payload == null || payload.isEmpty) {
+    return null;
+  }
+  return payload;
+}
 
 Uri? _tryParseRelayUri(String rawUrl) {
   try {

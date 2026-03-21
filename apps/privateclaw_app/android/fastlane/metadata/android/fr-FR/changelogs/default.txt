@@ -1,1 +1,2 @@
-Amélioration de la fiabilité du panneau photo et rétablissement de l’accès aux photos récentes sur Android avec une gestion correcte des autorisations.
+Amélioration de l’analyse des liens d’invitation et des messages d’erreur de session.
+Les pièces jointes s’ouvrent de façon plus fiable : images en plein écran et autres fichiers via le partage ou d’autres apps.

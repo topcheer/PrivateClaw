@@ -1,1 +1,2 @@
-Keandalan baki foto ditingkatkan, dan penjelajahan foto terbaru di Android dipulihkan dengan penanganan izin yang benar.
+Peningkatan parsing tautan undangan dan penanganan error sesi.
+Lampiran kini lebih andal untuk dibuka: gambar bisa dilihat layar penuh, dan file lain dapat dibagikan atau dibuka dengan aplikasi lain.

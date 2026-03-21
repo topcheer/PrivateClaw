@@ -285,6 +285,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get filePickerTooltip => '文件';
 
   @override
+  String attachmentOpenFailed(String name) {
+    return '无法打开 $name。';
+  }
+
+  @override
   String get voiceRecordingSlideUpToCancel => '松开发送，上滑取消';
 
   @override
@@ -552,6 +557,11 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get filePickerTooltip => '檔案';
+
+  @override
+  String attachmentOpenFailed(String name) {
+    return '無法打開 $name。';
+  }
 
   @override
   String get voiceRecordingSlideUpToCancel => '鬆開傳送，上滑取消';

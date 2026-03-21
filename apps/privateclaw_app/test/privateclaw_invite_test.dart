@@ -27,54 +27,93 @@ void main() {
     expect(parsed.providerLabel, 'PrivateClaw');
   });
 
-  test('PrivateClawInvite extracts an invite URI from pasted announcement text', () {
-    final invite = {
-      'version': 1,
-      'sessionId': 'session-embedded',
-      'sessionKey': 'c2Vzc2lvbl9rZXlfZm9yX2VtYmVkZGVkX3Rlc3RpbmdfMTIzNDU',
-      'appWsUrl': 'wss://privateclaw.ystone.us/ws/app?sessionId=session-embedded',
-      'expiresAt': DateTime.utc(2030, 1, 1).toIso8601String(),
-      'providerLabel': 'PrivateClaw',
-    };
-    final payload = base64Url
-        .encode(utf8.encode(jsonEncode(invite)))
-        .replaceAll('=', '');
+  test(
+    'PrivateClawInvite extracts an invite URI from pasted announcement text',
+    () {
+      final invite = {
+        'version': 1,
+        'sessionId': 'session-embedded',
+        'sessionKey': 'c2Vzc2lvbl9rZXlfZm9yX2VtYmVkZGVkX3Rlc3RpbmdfMTIzNDU',
+        'appWsUrl':
+            'wss://privateclaw.ystone.us/ws/app?sessionId=session-embedded',
+        'expiresAt': DateTime.utc(2030, 1, 1).toIso8601String(),
+        'providerLabel': 'PrivateClaw',
+      };
+      final payload = base64Url
+          .encode(utf8.encode(jsonEncode(invite)))
+          .replaceAll('=', '');
 
-    final parsed = PrivateClawInvite.fromScan(
-      '''
+      final parsed = PrivateClawInvite.fromScan('''
 PrivateClaw session session-embedded is ready until 2030-01-01T00:00:00.000Z.
 Invite URI: privateclaw://connect?payload=$payload
-''',
-    );
+''');
 
-    expect(parsed.sessionId, 'session-embedded');
-    expect(parsed.appWsUrl, 'wss://privateclaw.ystone.us/ws/app?sessionId=session-embedded');
-    expect(parsed.providerLabel, 'PrivateClaw');
-  });
+      expect(parsed.sessionId, 'session-embedded');
+      expect(
+        parsed.appWsUrl,
+        'wss://privateclaw.ystone.us/ws/app?sessionId=session-embedded',
+      );
+      expect(parsed.providerLabel, 'PrivateClaw');
+    },
+  );
 
-  test('PrivateClawInvite derives relay display labels and default-relay detection', () {
-    final PrivateClawInvite defaultInvite = PrivateClawInvite(
-      version: 1,
-      sessionId: 'session-default',
-      sessionKey: 'c2Vzc2lvbl9rZXlfZm9yX2RlZmF1bHRfcmVsYXlfMTIzNDU2Nzg',
-      appWsUrl:
-          'wss://relay.privateclaw.us/ws/app?sessionId=session-default',
-      expiresAt: DateTime.utc(2030, 1, 1),
-    );
-    final PrivateClawInvite customInvite = PrivateClawInvite(
-      version: 1,
-      sessionId: 'session-custom',
-      sessionKey: 'c2Vzc2lvbl9rZXlfZm9yX2N1c3RvbV9yZWxheV8xMjM0NTY3ODk',
-      appWsUrl: 'ws://127.0.0.1:8787/ws/app?sessionId=session-custom',
-      expiresAt: DateTime.utc(2030, 1, 1),
-    );
+  test(
+    'PrivateClawInvite extracts a complete invite URI from arbitrary pasted text',
+    () {
+      final invite = {
+        'version': 1,
+        'sessionId': 'session-canonical-link',
+        'sessionKey': 'c2Vzc2lvbl9rZXlfZm9yX2Nhbm9uaWNhbF9saW5rX3Rlc3RfMTIzNA',
+        'appWsUrl':
+            'ws://127.0.0.1:8787/ws/app?sessionId=session-canonical-link',
+        'expiresAt': DateTime.utc(2030, 1, 1).toIso8601String(),
+        'providerLabel': 'PrivateClaw',
+      };
+      final payload = base64Url
+          .encode(utf8.encode(jsonEncode(invite)))
+          .replaceAll('=', '');
 
-    expect(defaultInvite.relayDisplayLabel, 'relay.privateclaw.us');
-    expect(defaultInvite.usesDefaultRelay, isTrue);
-    expect(defaultInvite.usesNonDefaultRelay, isFalse);
+      final parsed = PrivateClawInvite.fromScan('''
+Copied from chat:
+- docs: https://example.com/privateclaw
+- pair here: <privateclaw://connect?payload=$payload>.
+Thanks!
+''');
 
-    expect(customInvite.relayDisplayLabel, '127.0.0.1:8787');
-    expect(customInvite.usesDefaultRelay, isFalse);
-    expect(customInvite.usesNonDefaultRelay, isTrue);
-  });
+      expect(parsed.sessionId, 'session-canonical-link');
+      expect(
+        parsed.appWsUrl,
+        'ws://127.0.0.1:8787/ws/app?sessionId=session-canonical-link',
+      );
+      expect(parsed.providerLabel, 'PrivateClaw');
+    },
+  );
+
+  test(
+    'PrivateClawInvite derives relay display labels and default-relay detection',
+    () {
+      final PrivateClawInvite defaultInvite = PrivateClawInvite(
+        version: 1,
+        sessionId: 'session-default',
+        sessionKey: 'c2Vzc2lvbl9rZXlfZm9yX2RlZmF1bHRfcmVsYXlfMTIzNDU2Nzg',
+        appWsUrl: 'wss://relay.privateclaw.us/ws/app?sessionId=session-default',
+        expiresAt: DateTime.utc(2030, 1, 1),
+      );
+      final PrivateClawInvite customInvite = PrivateClawInvite(
+        version: 1,
+        sessionId: 'session-custom',
+        sessionKey: 'c2Vzc2lvbl9rZXlfZm9yX2N1c3RvbV9yZWxheV8xMjM0NTY3ODk',
+        appWsUrl: 'ws://127.0.0.1:8787/ws/app?sessionId=session-custom',
+        expiresAt: DateTime.utc(2030, 1, 1),
+      );
+
+      expect(defaultInvite.relayDisplayLabel, 'relay.privateclaw.us');
+      expect(defaultInvite.usesDefaultRelay, isTrue);
+      expect(defaultInvite.usesNonDefaultRelay, isFalse);
+
+      expect(customInvite.relayDisplayLabel, '127.0.0.1:8787');
+      expect(customInvite.usesDefaultRelay, isFalse);
+      expect(customInvite.usesNonDefaultRelay, isTrue);
+    },
+  );
 }

@@ -14,6 +14,7 @@ import video_player_avfoundation
 @objc class AppDelegate: FlutterAppDelegate {
   private let inviteQrDecoderChannelName = "gg.ai.privateclaw/invite_qr_decoder"
   private let audioRecorderChannelName = "gg.ai.privateclaw/audio_recorder"
+  private let attachmentHandoffChannelName = "gg.ai.privateclaw/attachment_handoff"
   private let localNotificationsChannelName = "gg.ai.privateclaw/local_notifications"
   private let pathProviderGetDirectoryPathChannelName =
     "dev.flutter.pigeon.path_provider_foundation.PathProviderApi.getDirectoryPath"
@@ -39,6 +40,7 @@ import video_player_avfoundation
     registerGeneratedPlugins(skipFirebasePushSetup: skipFirebasePushSetup)
     registerInviteQrDecoder()
     registerAudioRecorder()
+    registerAttachmentHandoff()
     registerLocalNotificationsFallback()
     registerPathProviderFallback()
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
@@ -177,6 +179,132 @@ import video_player_avfoundation
         result(FlutterMethodNotImplemented)
       }
     }
+  }
+
+  private func registerAttachmentHandoff() {
+    guard let controller = window?.rootViewController as? FlutterViewController else {
+      NSLog("[privateclaw-app] Could not register attachment handoff channel because the root FlutterViewController is missing.")
+      return
+    }
+
+    let channel = FlutterMethodChannel(
+      name: attachmentHandoffChannelName,
+      binaryMessenger: controller.binaryMessenger
+    )
+    channel.setMethodCallHandler { [weak self] call, result in
+      guard let self else {
+        result(
+          FlutterError(
+            code: "unavailable",
+            message: "The app delegate is unavailable.",
+            details: nil
+          )
+        )
+        return
+      }
+
+      switch call.method {
+      case "present":
+        self.presentAttachmentHandoff(call: call, result: result)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+  }
+
+  private func presentAttachmentHandoff(
+    call: FlutterMethodCall,
+    result: @escaping FlutterResult
+  ) {
+    guard let arguments = call.arguments as? [String: Any] else {
+      result(
+        FlutterError(
+          code: "bad_args",
+          message: "Attachment handoff arguments are missing or invalid.",
+          details: nil
+        )
+      )
+      return
+    }
+
+    let trimmedFilePath =
+      (arguments["filePath"] as? String)?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let trimmedUrl =
+      (arguments["url"] as? String)?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+
+    let activityItems: [Any]
+    if let filePath = trimmedFilePath, !filePath.isEmpty {
+      let fileUrl = URL(fileURLWithPath: filePath)
+      guard FileManager.default.fileExists(atPath: fileUrl.path) else {
+        result(
+          FlutterError(
+            code: "not_found",
+            message: "The attachment file does not exist anymore.",
+            details: filePath
+          )
+        )
+        return
+      }
+      activityItems = [fileUrl]
+    } else if let rawUrl = trimmedUrl, !rawUrl.isEmpty, let url = URL(string: rawUrl) {
+      activityItems = [url]
+    } else {
+      result(
+        FlutterError(
+          code: "bad_args",
+          message: "A file path or URL is required for attachment handoff.",
+          details: nil
+        )
+      )
+      return
+    }
+
+    DispatchQueue.main.async {
+      guard let presenter = self.topViewController(from: self.window?.rootViewController) else {
+        result(
+          FlutterError(
+            code: "unavailable",
+            message: "No active view controller is available to present the share sheet.",
+            details: nil
+          )
+        )
+        return
+      }
+
+      let activityController = UIActivityViewController(
+        activityItems: activityItems,
+        applicationActivities: nil
+      )
+      if let popover = activityController.popoverPresentationController {
+        popover.sourceView = presenter.view
+        popover.sourceRect = CGRect(
+          x: presenter.view.bounds.midX,
+          y: presenter.view.bounds.midY,
+          width: 1,
+          height: 1
+        )
+        popover.permittedArrowDirections = []
+      }
+
+      presenter.present(activityController, animated: true) {
+        result(true)
+      }
+    }
+  }
+
+  private func topViewController(from controller: UIViewController?) -> UIViewController? {
+    if let navigationController = controller as? UINavigationController {
+      return topViewController(from: navigationController.visibleViewController)
+    }
+    if let tabBarController = controller as? UITabBarController {
+      return topViewController(from: tabBarController.selectedViewController)
+    }
+    if let presentedController = controller?.presentedViewController {
+      return topViewController(from: presentedController)
+    }
+    return controller
   }
 
   private func registerPathProviderFallback() {

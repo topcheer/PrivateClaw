@@ -1,1 +1,2 @@
-Melhoramos a estabilidade da bandeja de fotos e restauramos a navegação por fotos recentes no Android com o tratamento correto de permissões.
+Melhoramos a leitura de links de convite e o tratamento de erros de sessão.
+Agora os anexos abrem com mais confiabilidade: imagens em tela cheia e outros arquivos por compartilhamento ou em outros apps.

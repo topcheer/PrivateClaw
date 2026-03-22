@@ -7,7 +7,7 @@ import {
   renderRelayProviderSetupGuidance,
 } from "./provider-setup.js";
 
-test("detectLocalOpenClawStatus falls back to the privateclaw help probe when commands list is unavailable", async () => {
+test("detectLocalOpenClawStatus uses the privateclaw help probe to confirm command availability", async () => {
   const status = await detectLocalOpenClawStatus(async (_command, args) => {
     if (args.length === 1 && args[0] === "--version") {
       return {
@@ -15,9 +15,6 @@ test("detectLocalOpenClawStatus falls back to the privateclaw help probe when co
         stderr: "",
         combined: "OpenClaw 2026.3.13\n",
       };
-    }
-    if (args[0] === "commands" && args[1] === "list") {
-      throw new Error("Command `openclaw commands list` exited with code 1: error: unknown command 'commands'");
     }
     if (
       args[0] === "privateclaw" &&
@@ -43,7 +40,7 @@ test("detectLocalOpenClawStatus falls back to the privateclaw help probe when co
   });
 });
 
-test("detectLocalOpenClawStatus marks the plugin as present when OpenClaw can inspect it", async () => {
+test("detectLocalOpenClawStatus does not trust commands-list mentions when the privateclaw help probe fails", async () => {
   const status = await detectLocalOpenClawStatus(async (_command, args) => {
     if (args.length === 1 && args[0] === "--version") {
       return {
@@ -52,8 +49,34 @@ test("detectLocalOpenClawStatus marks the plugin as present when OpenClaw can in
         combined: "OpenClaw 2026.3.13\n",
       };
     }
-    if (args[0] === "commands" && args[1] === "list") {
-      throw new Error("Command `openclaw commands list` exited with code 1: error: unknown command 'commands'");
+    if (
+      args[0] === "privateclaw" &&
+      args[1] === "pair" &&
+      args[2] === "--help"
+    ) {
+      throw new Error("Command `openclaw privateclaw pair --help` exited with code 1: error: unknown command 'privateclaw'");
+    }
+    if (args[0] === "plugins" && args[1] === "info" && args[2] === "privateclaw") {
+      throw new Error("Plugin not found");
+    }
+    throw new Error(`Unexpected command args: ${args.join(" ")}`);
+  });
+
+  assert.deepEqual(status, {
+    openClawAvailable: true,
+    privateClawCommandAvailable: false,
+    privateClawPluginPresent: false,
+  });
+});
+
+test("detectLocalOpenClawStatus marks the plugin as present when OpenClaw can inspect it", async () => {
+  const status = await detectLocalOpenClawStatus(async (_command, args) => {
+    if (args.length === 1 && args[0] === "--version") {
+      return {
+        stdout: "OpenClaw 2026.3.13\n",
+        stderr: "",
+        combined: "OpenClaw 2026.3.13\n",
+      };
     }
     if (
       args[0] === "privateclaw" &&

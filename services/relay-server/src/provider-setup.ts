@@ -136,10 +136,6 @@ async function runOneShotCommand(
   }
 }
 
-function outputMentionsPrivateClawCommand(output: string): boolean {
-  return /\/?privateclaw\b/iu.test(output);
-}
-
 async function runStreamingCommand(
   command: string,
   args: string[],
@@ -207,15 +203,6 @@ async function commandExists(
 async function detectPrivateClawCommandAvailability(
   runCommand: OneShotCommandRunner,
 ): Promise<boolean> {
-  try {
-    const commands = await runCommand("openclaw", ["commands", "list"]);
-    if (outputMentionsPrivateClawCommand(commands.combined)) {
-      return true;
-    }
-  } catch {
-    // Newer OpenClaw builds may not expose `openclaw commands list`.
-  }
-
   try {
     await runCommand("openclaw", ["privateclaw", "pair", "--help"]);
     return true;

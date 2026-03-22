@@ -19,6 +19,7 @@ import { resolvePrivateClawMediaDir } from "./invite-qr-files.js";
 import { DEFAULT_SESSION_TTL_MS, PrivateClawProvider } from "./provider.js";
 import {
   buildManagedSessionQrLegacyLines,
+  buildManagedSessionsReportLines,
   closeManagedSessionsFromStateDir,
   closeManagedSessionFromStateDir,
   followManagedSessionLogFromStateDir,
@@ -408,6 +409,38 @@ test("session control can follow a managed OpenClaw session log", async (t) => {
   assert.ok(printed.includes(secondLine));
 });
 
+test("session control reports append app install footer", () => {
+  const lines = buildManagedSessionsReportLines([
+    {
+      host: {
+        controlId: "control-1",
+        kind: "pair-daemon",
+        pid: 12345,
+        startedAt: "2026-03-22T08:00:00.000Z",
+      },
+      sessions: [
+        {
+          sessionId: "session-1",
+          expiresAt: "2026-03-23T08:00:00.000Z",
+          groupMode: false,
+          participantCount: 1,
+          participants: [
+            {
+              appId: "app-1",
+              displayName: "RiverCat",
+            },
+          ],
+          state: "awaiting_hello",
+        },
+      ],
+    },
+  ]);
+  const report = lines.join("\n");
+  assert.match(report, /TestFlight/i);
+  assert.match(report, /Google Play/i);
+  assert.match(report, /Google Group/i);
+});
+
 test("session control can terminate a managed session", async (t) => {
   const relay = createRelayServer({
     host: "127.0.0.1",
@@ -687,5 +720,12 @@ test("session control falls back to the saved QR PNG when an older host lacks th
       notifyParticipants: true,
     }).join("\n"),
     /notified|推送/u,
+  );
+  assert.match(
+    buildManagedSessionQrLegacyLines({
+      result,
+      notifyParticipants: true,
+    }).join("\n"),
+    /TestFlight|Google Play|Google Group/u,
   );
 });

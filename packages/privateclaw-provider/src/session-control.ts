@@ -5,7 +5,10 @@ import { type AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { resolvePrivateClawMediaDir } from "./invite-qr-files.js";
-import { formatBilingualInline } from "./text.js";
+import {
+  appendPrivateClawAppInstallFooterLines,
+  formatBilingualInline,
+} from "./text.js";
 import type {
   PrivateClawInviteBundle,
   PrivateClawManagedSession,
@@ -318,12 +321,12 @@ export function buildManagedSessionsReportLines(
     })),
   );
   if (sessions.length === 0) {
-    return [
+    return appendPrivateClawAppInstallFooterLines([
       formatBilingualInline(
         "当前没有活动中的 PrivateClaw 会话。",
         "No active PrivateClaw sessions.",
       ),
-    ];
+    ]);
   }
 
   const lines = [
@@ -346,7 +349,7 @@ export function buildManagedSessionsReportLines(
     }
   }
 
-  return lines;
+  return appendPrivateClawAppInstallFooterLines(lines);
 }
 
 export class PrivateClawSessionControlServer {
@@ -649,9 +652,9 @@ export function buildManagedSessionQrLegacyLines(params: {
         "如需直接打开这张已保存的二维码图片，可重试并追加 --open。",
         "Re-run with --open to open the saved QR image directly.",
       ),
-    );
+      );
   }
-  return lines;
+  return appendPrivateClawAppInstallFooterLines(lines);
 }
 
 async function waitForPidExit(params: {

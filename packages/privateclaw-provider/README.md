@@ -78,7 +78,7 @@ After `openclaw plugins install`, `openclaw plugins enable`, or any `openclaw co
 If `openclaw` is already installed on the current machine, the quickest standalone bootstrap flow is now:
 
 ```bash
-npx @privateclaw/privateclaw
+npx -y @privateclaw/privateclaw@latest
 ```
 
 That `npx` setup wizard checks local OpenClaw, installs or updates the plugin, enables it, restarts the gateway, and then immediately starts pairing. It prompts for single vs group chat and for one of these session-duration presets: `30m`, `2h`, `4h`, `8h`, `24h`, `1w`, `1mo`, `1y`, or `permanent` (`100 years`).
@@ -86,7 +86,7 @@ That `npx` setup wizard checks local OpenClaw, installs or updates the plugin, e
 You can also preselect those choices:
 
 ```bash
-npx @privateclaw/privateclaw setup --group --duration 24h --open
+npx -y @privateclaw/privateclaw@latest setup --group --duration 24h --open
 ```
 
 For local development from this repository, use a linked checkout and point it at your local relay:
@@ -189,7 +189,7 @@ PRIVATECLAW_RELAY_BASE_URL=ws://127.0.0.1:8787 npm run demo --workspace @private
 
 ## Provider CLI reference
 
-The standalone npm binary exposes `privateclaw-provider <subcommand>` and also powers `npx @privateclaw/privateclaw`.
+The standalone npm binary exposes `privateclaw-provider <subcommand>` and also powers `npx -y @privateclaw/privateclaw@latest`.
 
 Once the plugin is installed and enabled, OpenClaw also exposes the shared session-management commands as `openclaw privateclaw <subcommand>`.
 
@@ -199,7 +199,7 @@ Public subcommands:
 
 | Subcommand | Example | Purpose | Notes |
 | --- | --- | --- | --- |
-| `setup` | `npx @privateclaw/privateclaw` | Install/update/enable the local OpenClaw plugin and immediately start pairing. | Standalone only. `privateclaw-provider` with no subcommand also defaults to this wizard. Use `--group` or `--single` to preselect chat mode, `--duration <preset>` for `30m`, `2h`, `4h`, `8h`, `24h`, `1w`, `1mo`, `1y`, or `permanent` (`100 years`), and `--ttl-ms <ms>` for a custom duration. |
+| `setup` | `npx -y @privateclaw/privateclaw@latest` | Install/update/enable the local OpenClaw plugin and immediately start pairing. | Standalone only. `privateclaw-provider` with no subcommand also defaults to this wizard. Use `--group` or `--single` to preselect chat mode, `--duration <preset>` for `30m`, `2h`, `4h`, `8h`, `24h`, `1w`, `1mo`, `1y`, or `permanent` (`100 years`), and `--ttl-ms <ms>` for a custom duration. |
 | `pair` | `privateclaw-provider pair` | Create a local PrivateClaw session and render the pairing QR in the terminal. | The OpenClaw alias is `openclaw privateclaw pair`, and both support `--relay <url>` for one-off relay overrides. |
 | `sessions` | `privateclaw-provider sessions` | List active locally managed sessions. | The output includes the total count plus each session's `type`, `participants`, `state`, `expires`, `host`, and optional `label`. |
 | `sessions follow <sessionId>` | `privateclaw-provider sessions follow <sessionId>` | Follow the OpenClaw session log for one managed session. | This tails the session JSONL written by OpenClaw so you can watch the agent-side run in real time. |
@@ -225,8 +225,8 @@ Typical examples:
 
 ```bash
 # Standalone npm binary / npx
-npx @privateclaw/privateclaw
-npx @privateclaw/privateclaw setup --group --duration permanent --open
+npx -y @privateclaw/privateclaw@latest
+npx -y @privateclaw/privateclaw@latest setup --group --duration permanent --open
 privateclaw-provider
 privateclaw-provider pair --group --foreground
 privateclaw-provider pair --foreground --verbose

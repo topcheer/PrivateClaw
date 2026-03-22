@@ -9,6 +9,51 @@ export function formatBilingualInline(
   return `${chinese} / ${english}`;
 }
 
+export const PRIVATECLAW_IOS_PUBLIC_BETA_URL =
+  "https://testflight.apple.com/join/XvgJ9c33";
+export const PRIVATECLAW_ANDROID_CLOSED_TESTING_PLAY_URL =
+  "https://play.google.com/store/apps/details?id=gg.ai.privateclaw";
+export const PRIVATECLAW_ANDROID_CLOSED_TESTING_GROUP_URL =
+  "https://groups.google.com/g/gg-studio-ai-products";
+
+export const PRIVATECLAW_APP_INSTALL_FOOTER_LINES = [
+  formatBilingualInline(
+    `iOS 公开测试（TestFlight）：${PRIVATECLAW_IOS_PUBLIC_BETA_URL}`,
+    `iOS public beta (TestFlight): ${PRIVATECLAW_IOS_PUBLIC_BETA_URL}`,
+  ),
+  formatBilingualInline(
+    `Android 封闭测试（Google Play）：${PRIVATECLAW_ANDROID_CLOSED_TESTING_PLAY_URL}`,
+    `Android closed testing (Google Play): ${PRIVATECLAW_ANDROID_CLOSED_TESTING_PLAY_URL}`,
+  ),
+  formatBilingualInline(
+    `Android 需先加入 Google Group：${PRIVATECLAW_ANDROID_CLOSED_TESTING_GROUP_URL}`,
+    `Join the Google Group first for Android closed testing: ${PRIVATECLAW_ANDROID_CLOSED_TESTING_GROUP_URL}`,
+  ),
+];
+
+export function appendPrivateClawAppInstallFooter(text: string): string {
+  const trimmed = text.trimEnd();
+  if (trimmed === "") {
+    return PRIVATECLAW_APP_INSTALL_FOOTER_LINES.join("\n");
+  }
+  return `${trimmed}\n\n${PRIVATECLAW_APP_INSTALL_FOOTER_LINES.join("\n")}`;
+}
+
+export function appendPrivateClawAppInstallFooterLines(
+  lines: ReadonlyArray<string>,
+): string[] {
+  return [...lines, "", ...PRIVATECLAW_APP_INSTALL_FOOTER_LINES];
+}
+
+export function writePrivateClawAppInstallFooter(
+  writeLine: (line: string) => void,
+): void {
+  writeLine("");
+  for (const line of PRIVATECLAW_APP_INSTALL_FOOTER_LINES) {
+    writeLine(line);
+  }
+}
+
 export function buildInviteAnnouncementText(params: {
   sessionId: string;
   expiresAt: string;
@@ -191,9 +236,11 @@ export function buildPrivateClawBackgroundHandoffFailureMessage(
 }
 
 export function buildPrivateClawCommandErrorMessage(details: string): string {
-  return formatBilingualInline(
-    `创建 PrivateClaw 会话失败：${details}`,
-    `Failed to create a PrivateClaw session: ${details}`,
+  return appendPrivateClawAppInstallFooter(
+    formatBilingualInline(
+      `创建 PrivateClaw 会话失败：${details}`,
+      `Failed to create a PrivateClaw session: ${details}`,
+    ),
   );
 }
 

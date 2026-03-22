@@ -45,6 +45,7 @@ import {
   runPrivateClawSetup,
 } from "./setup.js";
 import {
+  appendPrivateClawAppInstallFooter,
   buildPrivateClawBackgroundDaemonReminder,
   formatBilingualInline,
   PRIVATECLAW_CLI_DURATION_OPTION_DESCRIPTION,
@@ -57,6 +58,7 @@ import {
   PRIVATECLAW_CLI_SESSIONS_QR_DESCRIPTION,
   PRIVATECLAW_CLI_SINGLE_OPTION_DESCRIPTION,
   PRIVATECLAW_CLI_VERBOSE_OPTION_DESCRIPTION,
+  writePrivateClawAppInstallFooter,
 } from "./text.js";
 import type {
   PrivateClawProviderHandoffState,
@@ -340,6 +342,13 @@ kick <sessionId> <appId>`);
   console.log(`sessions kill: ${PRIVATECLAW_CLI_SESSIONS_KILL_DESCRIPTION}`);
   console.log(`sessions killall: ${PRIVATECLAW_CLI_SESSIONS_KILLALL_DESCRIPTION}`);
   console.log(`killall: ${PRIVATECLAW_CLI_SESSIONS_KILLALL_DESCRIPTION}`);
+  writePrivateClawAppInstallFooter((line) => console.log(line));
+}
+
+function formatCliErrorWithFooter(error: unknown): string {
+  return appendPrivateClawAppInstallFooter(
+    error instanceof Error ? error.message : String(error),
+  );
 }
 
 async function runSetupCommand(args: string[]): Promise<void> {
@@ -603,6 +612,7 @@ async function runPairCommand(args: string[]): Promise<void> {
       bundle.invite.sessionId,
     ),
   );
+  writePrivateClawAppInstallFooter((line) => console.log(line));
 }
 
 async function runSessionsCommand(args: string[]): Promise<void> {
@@ -709,6 +719,7 @@ async function runSessionsKillCommand(args: string[]): Promise<void> {
           `Session ${result.session.sessionId} has been terminated.`,
         ),
   );
+  writePrivateClawAppInstallFooter((line) => console.log(line));
 }
 
 async function runSessionsKillallCommand(args: string[]): Promise<void> {
@@ -745,6 +756,7 @@ async function runSessionsKillallCommand(args: string[]): Promise<void> {
         "There are no background daemon sessions to terminate.",
       ),
     );
+    writePrivateClawAppInstallFooter((line) => console.log(line));
     return;
   }
 
@@ -787,6 +799,7 @@ async function runSessionsKillallCommand(args: string[]): Promise<void> {
     }
     process.exitCode = 1;
   }
+  writePrivateClawAppInstallFooter((line) => console.log(line));
 }
 
 async function runSessionsQrCommand(args: string[]): Promise<void> {
@@ -833,12 +846,14 @@ async function runSessionsQrCommand(args: string[]): Promise<void> {
     }
     return;
   }
+  const writeLine = (line: string) => {
+    console.log(line);
+  };
   await renderInviteBundleOutput(result.bundle, {
     qrMediaDir: resolvePrivateClawMediaDir(),
     ...(parsed.values.open ? { openInBrowser: true } : {}),
-    writeLine: (line: string) => {
-      console.log(line);
-    },
+    includeFooter: false,
+    writeLine,
   });
   if (parsed.values.notify) {
     console.log(
@@ -848,6 +863,7 @@ async function runSessionsQrCommand(args: string[]): Promise<void> {
       ),
     );
   }
+  writePrivateClawAppInstallFooter(writeLine);
 }
 
 async function runKickCommand(args: string[]): Promise<void> {
@@ -894,6 +910,7 @@ async function runKickCommand(args: string[]): Promise<void> {
       `Removed ${result.participant.displayName} (${result.participant.appId}) from session ${result.session.sessionId}.`,
     ),
   );
+  writePrivateClawAppInstallFooter((line) => console.log(line));
 }
 
 const argv = process.argv.slice(2);
@@ -921,6 +938,6 @@ try {
     throw new Error(`Unsupported privateclaw-provider command: ${command}`);
   }
 } catch (error) {
-  console.error(error instanceof Error ? error.message : String(error));
+  console.error(formatCliErrorWithFooter(error));
   process.exitCode = 1;
 }

@@ -14,6 +14,7 @@ import {
   PRIVATECLAW_SESSION_ENDED_MESSAGE,
   PRIVATECLAW_WAITING_FOR_APP_MESSAGE,
   PRIVATECLAW_WAITING_FOR_APP_WITH_BACKGROUND_MESSAGE,
+  writePrivateClawAppInstallFooter,
 } from "./text.js";
 import type { PrivateClawInviteBundle } from "./types.js";
 
@@ -129,8 +130,10 @@ export async function renderInviteBundleOutput(
     qrMediaDir?: string;
     openInBrowser?: boolean;
     writeLine?: (line: string) => void;
+    includeFooter?: boolean;
   },
 ): Promise<PrivateClawInviteBundle> {
+  const writeLine = params?.writeLine ?? ((line) => console.log(line));
   const mediaDir = params?.qrMediaDir ?? resolvePrivateClawMediaDir();
   const qrPng = await writeInviteQrPng(bundle, mediaDir);
   const renderedBundle: PrivateClawInviteBundle = {
@@ -138,7 +141,7 @@ export async function renderInviteBundleOutput(
     qrPngPath: qrPng.pngPath,
   };
 
-  printPairInviteBundle(renderedBundle, params?.writeLine ?? ((line) => console.log(line)));
+  printPairInviteBundle(renderedBundle, writeLine);
 
   if (params?.openInBrowser) {
     const preview = await writeInviteQrPreviewHtml(
@@ -147,6 +150,9 @@ export async function renderInviteBundleOutput(
       qrPng.pngPath,
     );
     await openInBrowserPreview(preview.previewFileUrl);
+  }
+  if (params?.includeFooter !== false) {
+    writePrivateClawAppInstallFooter(writeLine);
   }
 
   return renderedBundle;
@@ -175,15 +181,18 @@ export async function runPairSession({
     const bundle = await renderInviteBundleOutput(inviteBundle, {
       ...(qrMediaDir ? { qrMediaDir } : {}),
       ...(openInBrowser ? { openInBrowser: true } : {}),
+      includeFooter: false,
       writeLine,
     });
 
     if (printOnly) {
+      writePrivateClawAppInstallFooter(writeLine);
       await provider.dispose();
       return bundle;
     }
 
     if (!foreground) {
+      writePrivateClawAppInstallFooter(writeLine);
       return bundle;
     }
 
@@ -192,6 +201,7 @@ export async function runPairSession({
         ? PRIVATECLAW_WAITING_FOR_APP_WITH_BACKGROUND_MESSAGE
         : PRIVATECLAW_WAITING_FOR_APP_MESSAGE,
     );
+    writePrivateClawAppInstallFooter(writeLine);
     for (;;) {
       const outcome = await Promise.race<
         | { kind: "signal"; signal: NodeJS.Signals }

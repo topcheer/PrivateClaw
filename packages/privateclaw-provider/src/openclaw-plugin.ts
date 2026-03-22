@@ -50,6 +50,7 @@ import {
   type PrivateClawControlHostKind,
 } from "./session-control.js";
 import {
+  appendPrivateClawAppInstallFooter,
   buildPrivateClawBackgroundDaemonReminder,
   buildPrivateClawCommandErrorMessage,
   formatBilingualInline,
@@ -73,6 +74,7 @@ import {
   PRIVATECLAW_COMMAND_DESCRIPTION,
   PRIVATECLAW_INVITE_URI_LABEL,
   PRIVATECLAW_PLUGIN_DESCRIPTION,
+  writePrivateClawAppInstallFooter,
 } from "./text.js";
 import type {
   PrivateClawAgentBridge,
@@ -180,12 +182,12 @@ function buildCommandReplyText(params: {
 }): string {
   const baseText =
     `${params.announcementText}\n\n${PRIVATECLAW_INVITE_URI_LABEL}:\n${params.inviteUri}`;
-  if (!channelRequiresInlineImageReply(params.channel)) {
-    return baseText;
-  }
+  const text = !channelRequiresInlineImageReply(params.channel)
+    ? baseText
+    : `${baseText}\n\n<qqimg>${params.qrImagePath}</qqimg>`;
 
   // QQ command replies expand images from inline <qqimg> tags instead of mediaUrl payloads.
-  return `${baseText}\n\n<qqimg>${params.qrImagePath}</qqimg>`;
+  return appendPrivateClawAppInstallFooter(text);
 }
 
 function readNumber(value: unknown): number | undefined {
@@ -932,6 +934,9 @@ class PrivateClawPluginRuntime {
         bundle.invite.sessionId,
       ),
     );
+    writePrivateClawAppInstallFooter(
+      params?.writeLine ?? ((line: string) => console.log(line)),
+    );
     return bundle;
   }
 
@@ -1072,6 +1077,7 @@ class PrivateClawPluginRuntime {
     const bundle = await renderInviteBundleOutput(result.bundle, {
       qrMediaDir: this.getMediaDir(),
       ...(params?.openInBrowser ? { openInBrowser: true } : {}),
+      includeFooter: false,
       ...(params?.writeLine ? { writeLine: params.writeLine } : {}),
     });
     return {
@@ -1097,6 +1103,10 @@ class PrivateClawPluginRuntime {
 
 function formatCommandError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function formatCommandErrorWithFooter(error: unknown): string {
+  return appendPrivateClawAppInstallFooter(formatCommandError(error));
 }
 
 function createPluginDefinition(
@@ -1237,7 +1247,7 @@ function createPluginDefinition(
                   },
                 });
               } catch (error) {
-                console.error(formatCommandError(error));
+                console.error(formatCommandErrorWithFooter(error));
                 process.exitCode = 1;
               }
             });
@@ -1250,6 +1260,9 @@ function createPluginDefinition(
             .option("--notify", PRIVATECLAW_CLI_NOTIFY_OPTION_DESCRIPTION)
             .action(async (sessionIdRaw: unknown, rawOptions: unknown) => {
               try {
+                const writeLine = (line: string) => {
+                  console.log(line);
+                };
                 const sessionId = readString(sessionIdRaw);
                 if (!sessionId) {
                   throw new Error(
@@ -1263,9 +1276,7 @@ function createPluginDefinition(
                 const result = await runtime.printManagedSessionQr(sessionId, {
                   ...(options.notify ? { notifyParticipants: true } : {}),
                   ...(options.open ? { openInBrowser: true } : {}),
-                  writeLine: (line: string) => {
-                    console.log(line);
-                  },
+                  writeLine,
                 });
                 if (options.notify && !isManagedSessionQrLegacyResult(result)) {
                   console.log(
@@ -1277,8 +1288,11 @@ function createPluginDefinition(
                 } else if (options.notify && isManagedSessionQrLegacyResult(result)) {
                   process.exitCode = 1;
                 }
+                if (!isManagedSessionQrLegacyResult(result)) {
+                  writePrivateClawAppInstallFooter(writeLine);
+                }
               } catch (error) {
-                console.error(formatCommandError(error));
+                console.error(formatCommandErrorWithFooter(error));
                 process.exitCode = 1;
               }
             });
@@ -1310,8 +1324,9 @@ function createPluginDefinition(
                         `Session ${result.session.sessionId} has been terminated.`,
                       ),
                 );
+                writePrivateClawAppInstallFooter((line) => console.log(line));
               } catch (error) {
-                console.error(formatCommandError(error));
+                console.error(formatCommandErrorWithFooter(error));
                 process.exitCode = 1;
               }
             });
@@ -1329,6 +1344,7 @@ function createPluginDefinition(
                       "There are no background daemon sessions to terminate.",
                     ),
                   );
+                  writePrivateClawAppInstallFooter((line) => console.log(line));
                   return;
                 }
                 if (result.closed.length > 0) {
@@ -1369,8 +1385,9 @@ function createPluginDefinition(
                   }
                   process.exitCode = 1;
                 }
+                writePrivateClawAppInstallFooter((line) => console.log(line));
               } catch (error) {
-                console.error(formatCommandError(error));
+                console.error(formatCommandErrorWithFooter(error));
                 process.exitCode = 1;
               }
             });
@@ -1398,6 +1415,7 @@ function createPluginDefinition(
                   `Removed ${result.participant.displayName} (${result.participant.appId}) from session ${result.session.sessionId}.`,
                 ),
               );
+              writePrivateClawAppInstallFooter((line) => console.log(line));
             });
         },
         { commands: ["privateclaw"] },

@@ -146,7 +146,7 @@ After `openclaw plugins install`, `openclaw plugins enable`, or any `openclaw co
 If `openclaw` is already installed on the current machine, the fastest local bootstrap path is now the standalone setup wizard:
 
 ```bash
-npx @privateclaw/privateclaw
+npx -y @privateclaw/privateclaw@latest
 ```
 
 That standalone `npx` flow checks local OpenClaw, installs or updates the plugin, enables it, restarts the gateway, and then immediately starts pairing. It prompts for single vs group mode and for one of these session-duration presets: `30m`, `2h`, `4h`, `8h`, `24h`, `1w`, `1mo`, `1y`, or `permanent` (`100 years`).
@@ -154,7 +154,7 @@ That standalone `npx` flow checks local OpenClaw, installs or updates the plugin
 For repeatable non-interactive runs, you can preselect the same choices:
 
 ```bash
-npx @privateclaw/privateclaw setup --group --duration 24h --open
+npx -y @privateclaw/privateclaw@latest setup --group --duration 24h --open
 ```
 
 If you want group sessions to feel more like a live chat with a proactive bot participant, you can also enable:
@@ -214,7 +214,7 @@ For cross-channel safety, keep the invite URI in the announcement text even when
 
 #### Path B: local pairing directly from the OpenClaw CLI
 
-If you want to start a session without another chat app, the easiest path is now `npx @privateclaw/privateclaw` on a machine that already has OpenClaw installed locally. That standalone wizard bootstraps the local plugin install and then starts pairing for you.
+If you want to start a session without another chat app, the easiest path is now `npx -y @privateclaw/privateclaw@latest` on a machine that already has OpenClaw installed locally. That standalone wizard bootstraps the local plugin install and then starts pairing for you.
 
 Once the plugin is installed and enabled, use the provider CLI that it adds to OpenClaw for the shared session-management commands below. The same shared commands also exist on the standalone npm binary as `privateclaw-provider <subcommand>`:
 
@@ -244,8 +244,8 @@ Once the plugin is installed and enabled, use the provider CLI that it adds to O
 For example, to start a local group session and keep it in the foreground until you hand it off or stop it:
 
 ```bash
-npx @privateclaw/privateclaw
-npx @privateclaw/privateclaw setup --group --duration permanent --open
+npx -y @privateclaw/privateclaw@latest
+npx -y @privateclaw/privateclaw@latest setup --group --duration permanent --open
 openclaw privateclaw pair --group --foreground
 openclaw privateclaw pair --foreground --verbose
 openclaw privateclaw pair --relay https://your-relay.example.com

@@ -1,3 +1,4 @@
+export * from "./admin-metrics-store.js";
 export * from "./config.js";
 export * from "./provider-setup.js";
 export * from "./relay-server.js";

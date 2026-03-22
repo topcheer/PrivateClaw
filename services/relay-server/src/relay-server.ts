@@ -13,6 +13,12 @@ import type {
   RelayToProviderMessage,
 } from "@privateclaw/protocol";
 import { WebSocket, WebSocketServer } from "ws";
+import { handleRelayAdminRequest } from "./admin-api.js";
+import {
+  createRelayAdminMetricsStore,
+  type RelayAdminLocalSnapshot,
+  type RelayAdminMetricsStore,
+} from "./admin-metrics-store.js";
 import type { RelayServerConfig } from "./config.js";
 import {
   createEncryptedFrameCache,
@@ -38,7 +44,10 @@ import {
   type RelaySessionRecord,
   type RelaySessionStore,
 } from "./session-store.js";
-import { serveRelayWebRequest } from "./relay-web.js";
+import {
+  resolveRelayAdminWebRootDir,
+  serveRelayWebRequest,
+} from "./relay-web.js";
 
 const HEARTBEAT_INTERVAL_MS = 15_000;
 const PUSH_WAKE_COOLDOWN_MS = 5_000;
@@ -135,6 +144,17 @@ class FixedWindowRateLimiter {
 
   private now(): number {
     return this.params.now?.() ?? Date.now();
+  }
+
+  private async recordAdminMetric(
+    action: () => Promise<void>,
+    label: string,
+  ): Promise<void> {
+    try {
+      await action();
+    } catch (error) {
+      console.error(`[privateclaw-relay] failed to record ${label}`, error);
+    }
   }
 
   allow(key: string): boolean {
@@ -270,6 +290,7 @@ interface SessionHubParams {
   sessionStore: RelaySessionStore;
   pushRegistrationStore: RelayPushRegistrationStore;
   pushNotifier: RelayPushNotifier;
+  adminMetricsStore: RelayAdminMetricsStore;
   now?: () => number;
 }
 
@@ -296,6 +317,17 @@ class SessionHub {
 
   private now(): number {
     return this.params.now?.() ?? Date.now();
+  }
+
+  private async recordAdminMetric(
+    action: () => Promise<void>,
+    label: string,
+  ): Promise<void> {
+    try {
+      await action();
+    } catch (error) {
+      console.error(`[privateclaw-relay] failed to record ${label}`, error);
+    }
   }
 
   private wakeKey(sessionId: string, appId: string): string {
@@ -382,6 +414,7 @@ class SessionHub {
   private async forgetLocalAppBinding(
     appSocket: WebSocket,
     binding: AppSessionBinding,
+    reason?: string,
   ): Promise<boolean> {
     const appSockets = this.sessionApps.get(binding.sessionId);
     if (!appSockets || appSockets.get(binding.appId) !== appSocket) {
@@ -397,6 +430,18 @@ class SessionHub {
     if (this.cluster) {
       await this.cluster.unsubscribeApp(binding.sessionId, binding.appId);
       await this.cluster.releaseApp(binding);
+    }
+    if (reason) {
+      await this.recordAdminMetric(
+        () =>
+          this.params.adminMetricsStore.recordAppDetached(
+            binding.sessionId,
+            binding.appId,
+            this.now(),
+            reason,
+          ),
+        "app detach metrics",
+      );
     }
     return true;
   }
@@ -460,6 +505,10 @@ class SessionHub {
     };
     await this.params.sessionStore.saveSession(session);
     await this.rememberLocalProviderSession(providerId, session.sessionId);
+    await this.recordAdminMetric(
+      () => this.params.adminMetricsStore.recordSessionCreated(session, this.now()),
+      "session creation metrics",
+    );
     return session;
   }
 
@@ -538,6 +587,10 @@ class SessionHub {
     await this.params.pushRegistrationStore.touchSession(
       sessionId,
       renewedSession.expiresAt,
+    );
+    await this.recordAdminMetric(
+      () => this.params.adminMetricsStore.recordSessionRenewed(renewedSession, this.now()),
+      "session renewal metrics",
     );
     return renewedSession;
   }
@@ -731,6 +784,15 @@ class SessionHub {
     }
 
     await this.rememberLocalAppBinding(binding, appSocket);
+    await this.recordAdminMetric(
+      () =>
+        this.params.adminMetricsStore.recordAppAttached(
+          session,
+          normalizedAppId,
+          this.now(),
+        ),
+      "app attach metrics",
+    );
     return session;
   }
 
@@ -880,7 +942,7 @@ class SessionHub {
       if (!binding || binding.appId !== appId) {
         continue;
       }
-      await this.forgetLocalAppBinding(appSocket, binding);
+      await this.forgetLocalAppBinding(appSocket, binding, reason);
       sendJson(appSocket, {
         type: "relay:session_closed",
         sessionId,
@@ -911,6 +973,10 @@ class SessionHub {
     await this.params.sessionStore.deleteSession(sessionId);
     await this.params.pushRegistrationStore.clearSession(sessionId);
     this.clearWakeState(sessionId);
+    await this.recordAdminMetric(
+      () => this.params.adminMetricsStore.recordSessionClosed(sessionId, reason, this.now()),
+      "session close metrics",
+    );
     if (!this.hasLocalSession(sessionId) && !this.cluster) {
       await this.params.frameCache.clear(sessionId);
       return;
@@ -982,7 +1048,7 @@ class SessionHub {
     if (!binding) {
       return;
     }
-    await this.forgetLocalAppBinding(appSocket, binding);
+    await this.forgetLocalAppBinding(appSocket, binding, "app_disconnected");
   }
 
   async closeLocalApp(
@@ -998,7 +1064,7 @@ class SessionHub {
     if (!binding) {
       return;
     }
-    await this.forgetLocalAppBinding(appSocket, binding);
+    await this.forgetLocalAppBinding(appSocket, binding, reason);
     sendJson(appSocket, {
       type: "relay:session_closed",
       sessionId,
@@ -1067,6 +1133,40 @@ class SessionHub {
     });
   }
 
+  getAdminLocalSnapshot(): RelayAdminLocalSnapshot {
+    const providerIds = [...this.providerSockets.entries()]
+      .filter(([, socket]) => socket.readyState === WebSocket.OPEN)
+      .map(([providerId]) => providerId)
+      .sort();
+    const participantBindings: RelayAdminLocalSnapshot["participantBindings"] = [];
+    const sessionIds = new Set<string>(this.sessionProviders.keys());
+    for (const [appSocket, binding] of this.appSessions.entries()) {
+      const currentSocket = this.sessionApps.get(binding.sessionId)?.get(binding.appId);
+      if (currentSocket !== appSocket || appSocket.readyState !== WebSocket.OPEN) {
+        continue;
+      }
+      participantBindings.push({
+        sessionId: binding.sessionId,
+        appId: binding.appId,
+      });
+      sessionIds.add(binding.sessionId);
+    }
+    participantBindings.sort(
+      (left, right) =>
+        left.sessionId.localeCompare(right.sessionId) ||
+        left.appId.localeCompare(right.appId),
+    );
+    return {
+      activeProviders: providerIds.length,
+      activeApps: participantBindings.length,
+      localSessions: sessionIds.size,
+      providerIds,
+      sessionIds: [...sessionIds].sort(),
+      participantBindings,
+      memoryUsage: process.memoryUsage(),
+    };
+  }
+
   async closeAll(reason: string): Promise<void> {
     const sessionIds = new Set<string>([
       ...this.sessionProviders.keys(),
@@ -1090,6 +1190,7 @@ export interface RelayServerDependencies {
   sessionStore?: RelaySessionStore;
   pushRegistrationStore?: RelayPushRegistrationStore;
   pushNotifier?: RelayPushNotifier;
+  adminMetricsStore?: RelayAdminMetricsStore;
   cluster?: RelayClusterClient;
   clusterFactory?: (callbacks: RelayClusterCallbacks) => RelayClusterClient;
   now?: () => number;
@@ -1136,6 +1237,16 @@ export function createRelayServer(
       fcmClientEmail: config.fcmClientEmail,
       fcmPrivateKey: config.fcmPrivateKey,
     });
+  const ownsAdminMetricsStore = !deps.adminMetricsStore;
+  const adminMetricsStore =
+    deps.adminMetricsStore ??
+    createRelayAdminMetricsStore({
+      ...(config.redisUrl ? { redisUrl: config.redisUrl } : {}),
+    });
+  const relayStartedAt = Date.now();
+  const adminWebRootDir =
+    config.adminToken &&
+    (config.adminWebRootDir ?? resolveRelayAdminWebRootDir());
 
   const sessionHub = new SessionHub({
     defaultTtlMs: config.sessionTtlMs,
@@ -1143,6 +1254,7 @@ export function createRelayServer(
     sessionStore,
     pushRegistrationStore,
     pushNotifier,
+    adminMetricsStore,
     ...(deps.now ? { now: deps.now } : {}),
   });
   const appMessageRateLimiter = new FixedWindowRateLimiter({
@@ -1196,6 +1308,30 @@ export function createRelayServer(
   let startedUrl = "";
   let started = false;
 
+  async function recordAdminMetric(
+    action: () => Promise<void>,
+    label: string,
+  ): Promise<void> {
+    try {
+      await action();
+    } catch (error) {
+      console.error(`[privateclaw-relay] failed to record ${label}`, error);
+    }
+  }
+
+  async function recordInstanceHeartbeat(): Promise<void> {
+    await recordAdminMetric(
+      () =>
+        adminMetricsStore.recordInstanceHeartbeat({
+          instanceId: clusterNodeId,
+          startedAt: relayStartedAt,
+          recordedAt: deps.now?.() ?? Date.now(),
+          snapshot: sessionHub.getAdminLocalSnapshot(),
+        }),
+      "relay instance heartbeat",
+    );
+  }
+
   async function handleHttpRequest(
     request: IncomingMessage,
     response: ServerResponse,
@@ -1216,6 +1352,31 @@ export function createRelayServer(
           JSON.stringify({ ok: true, sessions, instanceId: clusterNodeId }),
         );
         return;
+      }
+
+      const handledAdminApi = await handleRelayAdminRequest({
+        request,
+        response,
+        url,
+        metricsStore: adminMetricsStore,
+        ...(config.adminToken ? { adminToken: config.adminToken } : {}),
+        ...(deps.now ? { now: deps.now } : {}),
+      });
+      if (handledAdminApi) {
+        return;
+      }
+
+      if (adminWebRootDir && url.pathname.startsWith("/admin")) {
+        const handledAdminWeb = await serveRelayWebRequest({
+          request,
+          response,
+          url,
+          webRootDir: adminWebRootDir,
+          mountPath: "/admin",
+        });
+        if (handledAdminWeb) {
+          return;
+        }
       }
 
       if (config.webRootDir) {
@@ -1272,6 +1433,7 @@ export function createRelayServer(
     void sessionHub.refreshClusterPresence().catch((error) => {
       console.error("[privateclaw-relay] failed to refresh relay presence", error);
     });
+    void recordInstanceHeartbeat();
   }, HEARTBEAT_INTERVAL_MS);
 
   function terminateSockets(server: WebSocketServer): void {
@@ -1291,6 +1453,7 @@ export function createRelayServer(
     raw: string,
   ): Promise<void> {
     let requestId: string | undefined;
+    let requestType = "unknown";
 
     try {
       assertMessageSizeWithinLimit(raw, maxMessageBytes, "Provider");
@@ -1301,6 +1464,7 @@ export function createRelayServer(
           "Provider message is missing a type field.",
         );
       }
+      requestType = message.type;
       if (
         "requestId" in message &&
         typeof message.requestId === "string" &&
@@ -1362,6 +1526,16 @@ export function createRelayServer(
             sessionId: session.sessionId,
             expiresAt: new Date(session.expiresAt).toISOString(),
           });
+          await recordInstanceHeartbeat();
+          await recordAdminMetric(
+            () =>
+              adminMetricsStore.recordRequest({
+                actor: "provider",
+                type: requestType,
+                ok: true,
+              }),
+            "provider request metrics",
+          );
           return;
         }
         case "provider:renew_session": {
@@ -1401,6 +1575,16 @@ export function createRelayServer(
             sessionId: session.sessionId,
             expiresAt: new Date(session.expiresAt).toISOString(),
           });
+          await recordInstanceHeartbeat();
+          await recordAdminMetric(
+            () =>
+              adminMetricsStore.recordRequest({
+                actor: "provider",
+                type: requestType,
+                ok: true,
+              }),
+            "provider request metrics",
+          );
           return;
         }
         case "provider:frame": {
@@ -1422,11 +1606,26 @@ export function createRelayServer(
               "provider:frame targetAppId must be a string when provided.",
             );
           }
+          const sessionIdValue = message.sessionId;
           await sessionHub.forwardToApp(
             socket,
-            message.sessionId,
+            sessionIdValue,
             message.envelope,
             message.targetAppId,
+          );
+          await recordAdminMetric(
+            async () => {
+              await adminMetricsStore.recordProviderFrame(
+                sessionIdValue,
+                deps.now?.() ?? Date.now(),
+              );
+              await adminMetricsStore.recordRequest({
+                actor: "provider",
+                type: requestType,
+                ok: true,
+              });
+            },
+            "provider frame metrics",
           );
           return;
         }
@@ -1443,6 +1642,16 @@ export function createRelayServer(
             typeof message.reason === "string"
               ? message.reason
               : "provider_closed",
+          );
+          await recordInstanceHeartbeat();
+          await recordAdminMetric(
+            () =>
+              adminMetricsStore.recordRequest({
+                actor: "provider",
+                type: requestType,
+                ok: true,
+              }),
+            "provider request metrics",
           );
           return;
         }
@@ -1465,6 +1674,16 @@ export function createRelayServer(
               ? message.reason
               : "provider_closed_app",
           );
+          await recordInstanceHeartbeat();
+          await recordAdminMetric(
+            () =>
+              adminMetricsStore.recordRequest({
+                actor: "provider",
+                type: requestType,
+                ok: true,
+              }),
+            "provider request metrics",
+          );
           return;
         }
         default:
@@ -1475,6 +1694,19 @@ export function createRelayServer(
       }
     } catch (error) {
       const relayError = toRelayProtocolError(error);
+      await recordAdminMetric(
+        () =>
+          adminMetricsStore.recordRequest({
+            actor: "provider",
+            type:
+              requestType === "unknown" && relayError.code === "invalid_json"
+                ? "invalid_json"
+                : requestType,
+            ok: false,
+            errorCode: relayError.code,
+          }),
+        "provider error metrics",
+      );
       sendJson(socket, {
         type: "relay:error",
         code: relayError.code,
@@ -1490,6 +1722,7 @@ export function createRelayServer(
     appId: string,
     raw: string,
   ): Promise<void> {
+    let requestType = "unknown";
     try {
       assertMessageSizeWithinLimit(raw, maxMessageBytes, "App");
       if (!appMessageRateLimiter.allow(`${sessionId}:${appId}`)) {
@@ -1505,6 +1738,7 @@ export function createRelayServer(
           "App message is missing a type field.",
         );
       }
+      requestType = message.type;
 
       switch (message.type) {
         case "app:frame":
@@ -1515,6 +1749,21 @@ export function createRelayServer(
             );
           }
           await sessionHub.forwardToProvider(sessionId, message.envelope);
+          await recordAdminMetric(
+            async () => {
+              await adminMetricsStore.recordAppFrame(
+                sessionId,
+                appId,
+                deps.now?.() ?? Date.now(),
+              );
+              await adminMetricsStore.recordRequest({
+                actor: "app",
+                type: requestType,
+                ok: true,
+              });
+            },
+            "app frame metrics",
+          );
           return;
         case "app:register_push":
           if (typeof message.token !== "string") {
@@ -1524,9 +1773,27 @@ export function createRelayServer(
             );
           }
           await sessionHub.registerAppPushToken(sessionId, appId, message.token);
+          await recordAdminMetric(
+            () =>
+              adminMetricsStore.recordRequest({
+                actor: "app",
+                type: requestType,
+                ok: true,
+              }),
+            "app request metrics",
+          );
           return;
         case "app:unregister_push":
           await sessionHub.unregisterAppPushToken(sessionId, appId);
+          await recordAdminMetric(
+            () =>
+              adminMetricsStore.recordRequest({
+                actor: "app",
+                type: requestType,
+                ok: true,
+              }),
+            "app request metrics",
+          );
           return;
         default:
           throw new RelayProtocolError(
@@ -1536,6 +1803,19 @@ export function createRelayServer(
       }
     } catch (error) {
       const relayError = toRelayProtocolError(error);
+      await recordAdminMetric(
+        () =>
+          adminMetricsStore.recordRequest({
+            actor: "app",
+            type:
+              requestType === "unknown" && relayError.code === "invalid_json"
+                ? "invalid_json"
+                : requestType,
+            ok: false,
+            errorCode: relayError.code,
+          }),
+        "app error metrics",
+      );
       sendJson(socket, {
         type: "relay:error",
         code: relayError.code,
@@ -1558,6 +1838,7 @@ export function createRelayServer(
     void (async () => {
       try {
         await sessionHub.attachProvider(providerId, socket);
+        await recordInstanceHeartbeat();
       } catch (error) {
         const relayError = toRelayProtocolError(error);
         sendJson(socket, {
@@ -1584,12 +1865,17 @@ export function createRelayServer(
       });
 
       socket.on("close", () => {
-        void sessionHub.detachProvider(socket).catch((error) => {
-          console.error(
-            "[privateclaw-relay] failed to detach provider socket",
-            error,
-          );
-        });
+        void (async () => {
+          try {
+            await sessionHub.detachProvider(socket);
+          } catch (error) {
+            console.error(
+              "[privateclaw-relay] failed to detach provider socket",
+              error,
+            );
+          }
+          await recordInstanceHeartbeat();
+        })();
       });
     })();
   });
@@ -1619,6 +1905,7 @@ export function createRelayServer(
       let session: RelaySessionRecord;
       try {
         session = await sessionHub.attachApp(sessionId, appId, socket);
+        await recordInstanceHeartbeat();
       } catch (error) {
         const relayError = toRelayProtocolError(error);
         sendJson(socket, {
@@ -1650,12 +1937,17 @@ export function createRelayServer(
       });
 
       socket.on("close", () => {
-        void sessionHub.detachApp(socket).catch((error) => {
-          console.error(
-            "[privateclaw-relay] failed to detach app socket",
-            error,
-          );
-        });
+        void (async () => {
+          try {
+            await sessionHub.detachApp(socket);
+          } catch (error) {
+            console.error(
+              "[privateclaw-relay] failed to detach app socket",
+              error,
+            );
+          }
+          await recordInstanceHeartbeat();
+        })();
       });
     })();
   });
@@ -1700,6 +1992,9 @@ export function createRelayServer(
     if (ownsFrameCache) {
       closes.push(frameCache.close());
     }
+    if (ownsAdminMetricsStore) {
+      closes.push(adminMetricsStore.close());
+    }
     await Promise.all(closes);
   }
 
@@ -1731,6 +2026,7 @@ export function createRelayServer(
       startedPort = (address as AddressInfo).port;
       startedUrl = `http://${config.host}:${startedPort}`;
       started = true;
+      await recordInstanceHeartbeat();
       return { port: startedPort, url: startedUrl };
     },
     async stop(): Promise<void> {
@@ -1761,6 +2057,10 @@ export function createRelayServer(
           resolve();
         });
       });
+      await recordAdminMetric(
+        () => adminMetricsStore.unregisterInstance(clusterNodeId),
+        "relay instance shutdown",
+      );
       await closeOwnedResources();
       started = false;
       startedUrl = "";

@@ -358,12 +358,18 @@ If you use your own relay instead of `https://relay.privateclaw.us`, point OpenC
 docker compose up --build relay
 ```
 
+To enable the built-in relay admin UI/API in Docker Compose, pass a fixed bearer token:
+
+```bash
+PRIVATECLAW_ADMIN_TOKEN=replace-with-a-long-random-token docker compose up --build relay
+```
+
 To enable relay-side wake push locally, copy `services/relay-server/.env.example` to the ignored `services/relay-server/.env` and fill in your own FCM credentials first. Public clones can run the relay without that file, but wake notifications stay disabled until they provide their own config.
 
 With the optional Redis profile:
 
 ```bash
-PRIVATECLAW_REDIS_URL=redis://redis:6379 docker compose --profile redis up --build
+PRIVATECLAW_ADMIN_TOKEN=replace-with-a-long-random-token PRIVATECLAW_REDIS_URL=redis://redis:6379 docker compose --profile redis up --build
 ```
 
 When `PRIVATECLAW_REDIS_URL` / `REDIS_URL` is set, the relay persists session metadata in Redis, keeps buffered encrypted frames there, and lets multiple relay instances share sessions behind a load balancer. Without Redis, relay restarts still drop the in-memory session registry.

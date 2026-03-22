@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { decryptPayload, encryptPayload, generateSessionKey } from "@privateclaw/protocol";
 import WebSocket from "ws";
+import { InMemoryRelayAdminMetricsStore } from "./admin-metrics-store.js";
 import {
   createInMemoryRelayClusterClient,
   createInMemoryRelayClusterSharedState,
@@ -94,6 +95,12 @@ function waitForCondition(
   });
 }
 
+function adminAuthHeaders(token: string): HeadersInit {
+  return {
+    authorization: `Bearer ${token}`,
+  };
+}
+
 class TestPushNotifier implements RelayPushNotifier {
   readonly enabled = true;
   readonly sent: Array<{ sessionId: string; appId: string; token: string }> = [];
@@ -166,6 +173,35 @@ test("relay exposes health endpoints for container platforms", async (t) => {
   assert.equal(railwayHealth.sessions, 0);
 });
 
+test("relay removes its admin instance heartbeat on stop", async (t) => {
+  const adminMetricsStore = new InMemoryRelayAdminMetricsStore();
+  const relay = createRelayServer(
+    {
+      host: "127.0.0.1",
+      port: 0,
+      sessionTtlMs: 60_000,
+      frameCacheSize: 8,
+    },
+    { adminMetricsStore },
+  );
+  let stopped = false;
+  t.after(async () => {
+    if (!stopped) {
+      await relay.stop();
+    }
+  });
+
+  await relay.start();
+  const instancesBeforeStop = await adminMetricsStore.listInstances();
+  assert.equal(instancesBeforeStop.length, 1);
+
+  await relay.stop();
+  stopped = true;
+
+  const instancesAfterStop = await adminMetricsStore.listInstances();
+  assert.equal(instancesAfterStop.length, 0);
+});
+
 test("relay optionally serves the bundled website without breaking websocket endpoints", async (t) => {
   const webRootDir = await mkdtemp(path.join(tmpdir(), "privateclaw-relay-web-"));
   t.after(async () => {
@@ -233,6 +269,211 @@ test("relay optionally serves the bundled website without breaking websocket end
   assert.equal(ready.type, "relay:provider_ready");
   providerSocket.close();
   await waitForClose(providerSocket);
+});
+
+test("relay serves the admin UI and protects admin APIs with a bearer token", async (t) => {
+  const relay = createRelayServer({
+    host: "127.0.0.1",
+    port: 0,
+    sessionTtlMs: 60_000,
+    frameCacheSize: 8,
+    adminToken: "secret-token",
+  });
+  const { port } = await relay.start();
+  t.after(async () => {
+    await relay.stop();
+  });
+
+  const [adminPageResponse, unauthorizedOverviewResponse, authorizedOverviewResponse] =
+    await Promise.all([
+      fetch(`http://127.0.0.1:${port}/admin/`),
+      fetch(`http://127.0.0.1:${port}/api/admin/overview`),
+      fetch(`http://127.0.0.1:${port}/api/admin/overview`, {
+        headers: adminAuthHeaders("secret-token"),
+      }),
+    ]);
+
+  assert.equal(adminPageResponse.status, 200);
+  assert.match(
+    adminPageResponse.headers.get("content-type") ?? "",
+    /^text\/html\b/,
+  );
+  assert.match(await adminPageResponse.text(), /PrivateClaw Relay Admin/);
+
+  assert.equal(unauthorizedOverviewResponse.status, 401);
+  assert.equal(authorizedOverviewResponse.status, 200);
+  const overview = (await authorizedOverviewResponse.json()) as {
+    totals?: {
+      sessions?: unknown;
+      activeSessions?: unknown;
+    };
+  };
+  assert.equal(overview.totals?.sessions, 0);
+  assert.equal(overview.totals?.activeSessions, 0);
+});
+
+test("relay admin API reports session history, participants, and relay stats", async (t) => {
+  const relay = createRelayServer({
+    host: "127.0.0.1",
+    port: 0,
+    sessionTtlMs: 60_000,
+    frameCacheSize: 8,
+    adminToken: "secret-token",
+  });
+  const { port } = await relay.start();
+  t.after(async () => {
+    await relay.stop();
+  });
+
+  const providerSocket = new WebSocket(
+    `ws://127.0.0.1:${port}/ws/provider?providerId=provider-admin`,
+  );
+  const providerReadyPromise = nextMessage(providerSocket);
+  await waitForOpen(providerSocket);
+  const providerReady = await providerReadyPromise;
+  assert.equal(providerReady.type, "relay:provider_ready");
+
+  providerSocket.send(
+    JSON.stringify({
+      type: "provider:create_session",
+      requestId: "admin-create",
+      ttlMs: 60_000,
+    }),
+  );
+  const created = await nextMessage(providerSocket);
+  assert.equal(created.type, "relay:session_created");
+  assert.equal(typeof created.sessionId, "string");
+  const sessionId = created.sessionId as string;
+
+  const appSocket = new WebSocket(
+    `ws://127.0.0.1:${port}/ws/app?sessionId=${encodeURIComponent(sessionId)}&appId=app-admin`,
+  );
+  const attachedPromise = nextMessage(appSocket);
+  await waitForOpen(appSocket);
+  const attached = await attachedPromise;
+  assert.equal(attached.type, "relay:attached");
+
+  const sessionKey = generateSessionKey();
+  const appEnvelope = encryptPayload({
+    sessionId,
+    sessionKey,
+    payload: { type: "text", text: "hello from app" },
+  });
+  const providerEnvelope = encryptPayload({
+    sessionId,
+    sessionKey,
+    payload: { type: "text", text: "hello from provider" },
+  });
+
+  appSocket.send(JSON.stringify({ type: "app:frame", envelope: appEnvelope }));
+  const providerForward = await nextMessage(providerSocket);
+  assert.equal(providerForward.type, "relay:frame");
+
+  providerSocket.send(
+    JSON.stringify({
+      type: "provider:frame",
+      sessionId,
+      envelope: providerEnvelope,
+    }),
+  );
+  const appForward = await nextMessage(appSocket);
+  assert.equal(appForward.type, "relay:frame");
+
+  const [overviewResponse, sessionsResponse, detailResponse, instancesResponse] =
+    await Promise.all([
+      fetch(`http://127.0.0.1:${port}/api/admin/overview`, {
+        headers: adminAuthHeaders("secret-token"),
+      }),
+      fetch(`http://127.0.0.1:${port}/api/admin/sessions?status=active`, {
+        headers: adminAuthHeaders("secret-token"),
+      }),
+      fetch(
+        `http://127.0.0.1:${port}/api/admin/sessions/${encodeURIComponent(sessionId)}`,
+        {
+          headers: adminAuthHeaders("secret-token"),
+        },
+      ),
+      fetch(`http://127.0.0.1:${port}/api/admin/instances`, {
+        headers: adminAuthHeaders("secret-token"),
+      }),
+    ]);
+
+  assert.equal(overviewResponse.status, 200);
+  assert.equal(sessionsResponse.status, 200);
+  assert.equal(detailResponse.status, 200);
+  assert.equal(instancesResponse.status, 200);
+
+  const overview = (await overviewResponse.json()) as {
+    totals?: {
+      sessions?: unknown;
+      activeSessions?: unknown;
+      activeParticipants?: unknown;
+      instances?: unknown;
+    };
+    requestStats?: {
+      appFrames?: unknown;
+      providerFrames?: unknown;
+      appRequests?: unknown;
+      providerRequests?: unknown;
+    };
+  };
+  assert.equal(overview.totals?.sessions, 1);
+  assert.equal(overview.totals?.activeSessions, 1);
+  assert.equal(overview.totals?.activeParticipants, 1);
+  assert.equal(overview.totals?.instances, 1);
+  assert.equal(overview.requestStats?.appFrames, 1);
+  assert.equal(overview.requestStats?.providerFrames, 1);
+  assert.equal(overview.requestStats?.appRequests, 1);
+  assert.equal(overview.requestStats?.providerRequests, 2);
+
+  const sessionsPayload = (await sessionsResponse.json()) as {
+    total?: unknown;
+    sessions?: Array<{
+      sessionId?: unknown;
+      activeParticipantCount?: unknown;
+      providerOnline?: unknown;
+    }>;
+  };
+  assert.equal(sessionsPayload.total, 1);
+  assert.equal(sessionsPayload.sessions?.[0]?.sessionId, sessionId);
+  assert.equal(sessionsPayload.sessions?.[0]?.activeParticipantCount, 1);
+  assert.equal(sessionsPayload.sessions?.[0]?.providerOnline, true);
+
+  const detail = (await detailResponse.json()) as {
+    session?: {
+      sessionId?: unknown;
+      appMessageCount?: unknown;
+      providerMessageCount?: unknown;
+    };
+    participants?: Array<{
+      appId?: unknown;
+      messageCount?: unknown;
+      isOnline?: unknown;
+    }>;
+  };
+  assert.equal(detail.session?.sessionId, sessionId);
+  assert.equal(detail.session?.appMessageCount, 1);
+  assert.equal(detail.session?.providerMessageCount, 1);
+  assert.equal(detail.participants?.[0]?.appId, "app-admin");
+  assert.equal(detail.participants?.[0]?.messageCount, 1);
+  assert.equal(detail.participants?.[0]?.isOnline, true);
+
+  const instances = (await instancesResponse.json()) as {
+    instances?: Array<{
+      instanceId?: unknown;
+      activeProviders?: unknown;
+      activeApps?: unknown;
+      localSessions?: unknown;
+    }>;
+  };
+  assert.equal(instances.instances?.length, 1);
+  assert.equal(instances.instances?.[0]?.activeProviders, 1);
+  assert.equal(instances.instances?.[0]?.activeApps, 1);
+  assert.equal(instances.instances?.[0]?.localSessions, 1);
+
+  appSocket.close();
+  providerSocket.close();
+  await Promise.all([waitForClose(appSocket), waitForClose(providerSocket)]);
 });
 
 test("relay server creates a session and forwards encrypted frames", async (t) => {

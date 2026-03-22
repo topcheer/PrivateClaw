@@ -7,8 +7,10 @@ export interface RelayServerConfig {
   appMessagesPerMinute?: number;
   providerMessagesPerMinute?: number;
   webRootDir?: string;
+  adminWebRootDir?: string;
   instanceId?: string;
   redisUrl?: string;
+  adminToken?: string;
   fcmServiceAccountJson?: string;
   fcmProjectId?: string;
   fcmClientEmail?: string;
@@ -68,6 +70,7 @@ export function loadRelayConfig(env: NodeJS.ProcessEnv = process.env): RelayServ
     env.PRIVATECLAW_RELAY_INSTANCE_ID?.trim() ||
     env.RAILWAY_REPLICA_ID?.trim();
   const redisUrl = env.PRIVATECLAW_REDIS_URL?.trim() || env.REDIS_URL?.trim();
+  const adminToken = env.PRIVATECLAW_ADMIN_TOKEN?.trim();
   const fcmServiceAccountJson =
     env.PRIVATECLAW_FCM_SERVICE_ACCOUNT_JSON?.trim();
   const fcmProjectId = env.PRIVATECLAW_FCM_PROJECT_ID?.trim();
@@ -84,6 +87,7 @@ export function loadRelayConfig(env: NodeJS.ProcessEnv = process.env): RelayServ
     providerMessagesPerMinute,
     ...(instanceId ? { instanceId } : {}),
     ...(redisUrl ? { redisUrl } : {}),
+    ...(adminToken ? { adminToken } : {}),
     ...(fcmServiceAccountJson ? { fcmServiceAccountJson } : {}),
     ...(fcmProjectId ? { fcmProjectId } : {}),
     ...(fcmClientEmail ? { fcmClientEmail } : {}),

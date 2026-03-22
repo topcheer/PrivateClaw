@@ -9,6 +9,10 @@ const RELAY_WEB_ROOT_CANDIDATES = [
   fileURLToPath(new URL("../dist/web/", import.meta.url)),
   fileURLToPath(new URL("../../../apps/privateclaw_site/", import.meta.url)),
 ];
+const RELAY_ADMIN_WEB_ROOT_CANDIDATES = [
+  fileURLToPath(new URL("./admin-web/", import.meta.url)),
+  fileURLToPath(new URL("../dist/admin-web/", import.meta.url)),
+];
 
 const CONTENT_TYPES = new Map<string, string>([
   [".css", "text/css; charset=utf-8"],
@@ -40,6 +44,7 @@ export interface ServeRelayWebRequestOptions {
   response: ServerResponse;
   url: URL;
   webRootDir: string;
+  mountPath?: string;
 }
 
 function hasUsableRelayWebIndex(candidate: string): boolean {
@@ -53,15 +58,30 @@ function hasUsableRelayWebIndex(candidate: string): boolean {
   }
 }
 
-export function resolveRelayWebRootDir(): string {
-  for (const candidate of RELAY_WEB_ROOT_CANDIDATES) {
+function resolveStaticWebRootDir(
+  candidates: readonly string[],
+  errorMessage: string,
+): string {
+  for (const candidate of candidates) {
     if (hasUsableRelayWebIndex(candidate)) {
       return candidate;
     }
   }
 
-  throw new Error(
+  throw new Error(errorMessage);
+}
+
+export function resolveRelayWebRootDir(): string {
+  return resolveStaticWebRootDir(
+    RELAY_WEB_ROOT_CANDIDATES,
     "Unable to locate the bundled PrivateClaw website assets for `--web`. Rebuild `@privateclaw/privateclaw-relay` or reinstall the package and try again.",
+  );
+}
+
+export function resolveRelayAdminWebRootDir(): string {
+  return resolveStaticWebRootDir(
+    RELAY_ADMIN_WEB_ROOT_CANDIDATES,
+    "Unable to locate the bundled relay admin assets. Rebuild `@privateclaw/privateclaw-relay` or reinstall the package and try again.",
   );
 }
 
@@ -72,6 +92,26 @@ function isPathInsideRoot(rootDir: string, candidatePath: string): boolean {
     resolvedCandidate === resolvedRoot ||
     resolvedCandidate.startsWith(`${resolvedRoot}${path.sep}`)
   );
+}
+
+function stripMountPath(
+  pathname: string,
+  mountPath: string,
+): string | undefined {
+  if (mountPath === "/" || mountPath === "") {
+    return pathname;
+  }
+  const normalizedMountPath =
+    mountPath.endsWith("/") && mountPath !== "/"
+      ? mountPath.slice(0, -1)
+      : mountPath;
+  if (pathname === normalizedMountPath || pathname === `${normalizedMountPath}/`) {
+    return "/";
+  }
+  if (!pathname.startsWith(`${normalizedMountPath}/`)) {
+    return undefined;
+  }
+  return pathname.slice(normalizedMountPath.length) || "/";
 }
 
 function normalizeRelayWebPathname(pathname: string): string[] | undefined {
@@ -111,8 +151,14 @@ function isRedirectMatch(match: RelayWebMatch): match is RelayWebRedirectMatch {
 async function resolveRelayWebMatch(
   webRootDir: string,
   url: URL,
+  mountPath: string,
 ): Promise<RelayWebMatch | undefined> {
-  const segments = normalizeRelayWebPathname(url.pathname);
+  const mountedPathname = stripMountPath(url.pathname, mountPath);
+  if (!mountedPathname) {
+    return undefined;
+  }
+
+  const segments = normalizeRelayWebPathname(mountedPathname);
   if (!segments) {
     return undefined;
   }
@@ -174,7 +220,11 @@ export async function serveRelayWebRequest(
     return false;
   }
 
-  const match = await resolveRelayWebMatch(params.webRootDir, params.url);
+  const match = await resolveRelayWebMatch(
+    params.webRootDir,
+    params.url,
+    params.mountPath ?? "/",
+  );
   if (!match) {
     return false;
   }

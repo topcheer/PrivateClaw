@@ -44,6 +44,25 @@ privateclaw-relay --host 0.0.0.0 --port 8787
 privateclaw-relay --redis-url redis://127.0.0.1:6379
 ```
 
+Enable the built-in relay admin UI/API with a fixed bearer token:
+
+```bash
+export PRIVATECLAW_ADMIN_TOKEN=replace-with-a-long-random-token
+privateclaw-relay --redis-url redis://127.0.0.1:6379
+```
+
+When `PRIVATECLAW_ADMIN_TOKEN` is configured, the relay serves a simple admin dashboard at `/admin/` and protects the JSON APIs under `/api/admin/*` with `Authorization: Bearer <token>`.
+
+The admin dashboard shows:
+
+- current active sessions and participants
+- session history and per-session details
+- participant online time and message counts
+- relay request/error statistics
+- live relay instance heartbeats
+
+For multi-instance deployments, point every relay instance at the same Redis so the admin view can aggregate shared session history and instance status.
+
 Expose the local relay to the internet through Tailscale Funnel:
 
 ```bash
@@ -94,6 +113,7 @@ The relay still reads its runtime config from the process environment:
 - `PRIVATECLAW_RELAY_INSTANCE_ID`
 - `PRIVATECLAW_REDIS_URL`
 - `REDIS_URL`
+- `PRIVATECLAW_ADMIN_TOKEN`
 - `PRIVATECLAW_FCM_SERVICE_ACCOUNT_JSON`
 - `PRIVATECLAW_FCM_PROJECT_ID`
 - `PRIVATECLAW_FCM_CLIENT_EMAIL`

@@ -308,12 +308,16 @@ async function commandExists(
   }
 }
 
+function isPrivateClawPairHelpOutput(output: string): boolean {
+  return /Usage:\s*openclaw privateclaw pair\b/iu.test(output);
+}
+
 async function detectPrivateClawCommandAvailability(
   runCommand: OneShotCommandRunner,
 ): Promise<boolean> {
   try {
-    await runCommand("openclaw", ["privateclaw", "pair", "--help"]);
-    return true;
+    const result = await runCommand("openclaw", ["privateclaw", "pair", "--help"]);
+    return isPrivateClawPairHelpOutput(result.combined);
   } catch {
     return false;
   }

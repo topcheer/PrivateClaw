@@ -69,6 +69,40 @@ test("detectLocalOpenClawStatus does not trust commands-list mentions when the p
   });
 });
 
+test("detectLocalOpenClawStatus does not trust generic root help output for unknown commands", async () => {
+  const status = await detectLocalOpenClawStatus(async (_command, args) => {
+    if (args.length === 1 && args[0] === "--version") {
+      return {
+        stdout: "OpenClaw 2026.3.13\n",
+        stderr: "",
+        combined: "OpenClaw 2026.3.13\n",
+      };
+    }
+    if (
+      args[0] === "privateclaw" &&
+      args[1] === "pair" &&
+      args[2] === "--help"
+    ) {
+      return {
+        stdout: "Usage: openclaw [options] [command]\nCommands:\n  help  Display help for command\n",
+        stderr: "",
+        combined:
+          "Usage: openclaw [options] [command]\nCommands:\n  help  Display help for command\n",
+      };
+    }
+    if (args[0] === "plugins" && args[1] === "info" && args[2] === "privateclaw") {
+      throw new Error("Plugin not found");
+    }
+    throw new Error(`Unexpected command args: ${args.join(" ")}`);
+  });
+
+  assert.deepEqual(status, {
+    openClawAvailable: true,
+    privateClawCommandAvailable: false,
+    privateClawPluginPresent: false,
+  });
+});
+
 test("detectLocalOpenClawStatus marks the plugin as present when OpenClaw can inspect it", async () => {
   const status = await detectLocalOpenClawStatus(async (_command, args) => {
     if (args.length === 1 && args[0] === "--version") {

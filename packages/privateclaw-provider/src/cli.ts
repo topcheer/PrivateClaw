@@ -41,14 +41,21 @@ import {
   resolvePrivateClawStateDir,
 } from "./session-control.js";
 import {
+  parsePrivateClawSessionDurationPreset,
+  runPrivateClawSetup,
+} from "./setup.js";
+import {
   buildPrivateClawBackgroundDaemonReminder,
   formatBilingualInline,
+  PRIVATECLAW_CLI_DURATION_OPTION_DESCRIPTION,
   PRIVATECLAW_CLI_NOTIFY_OPTION_DESCRIPTION,
   PRIVATECLAW_CLI_RELAY_OPTION_DESCRIPTION,
+  PRIVATECLAW_CLI_SETUP_DESCRIPTION,
   PRIVATECLAW_CLI_SESSIONS_FOLLOW_DESCRIPTION,
   PRIVATECLAW_CLI_SESSIONS_KILL_DESCRIPTION,
   PRIVATECLAW_CLI_SESSIONS_KILLALL_DESCRIPTION,
   PRIVATECLAW_CLI_SESSIONS_QR_DESCRIPTION,
+  PRIVATECLAW_CLI_SINGLE_OPTION_DESCRIPTION,
   PRIVATECLAW_CLI_VERBOSE_OPTION_DESCRIPTION,
 } from "./text.js";
 import type {
@@ -311,8 +318,9 @@ async function readHandoffState(
 }
 
 function printHelp(): void {
-  console.log(`privateclaw-provider <pair|sessions|kick|killall>
+  console.log(`privateclaw-provider <setup|pair|sessions|kick|killall>
 
+setup [--group|--single] [--duration <preset>] [--ttl-ms <ms>] [--label <label>] [--relay <url>] [--open] [--foreground] [--verbose]
 pair [--ttl-ms <ms>] [--label <label>] [--relay <url>] [--group] [--print-only] [--open] [--foreground] [--verbose]
 sessions
 sessions follow <sessionId>
@@ -321,7 +329,10 @@ sessions kill <sessionId>
 sessions killall
 killall
 kick <sessionId> <appId>`);
+  console.log(`\nsetup: ${PRIVATECLAW_CLI_SETUP_DESCRIPTION}`);
   console.log(`\n--relay <url>: ${PRIVATECLAW_CLI_RELAY_OPTION_DESCRIPTION}`);
+  console.log(`--duration <preset>: ${PRIVATECLAW_CLI_DURATION_OPTION_DESCRIPTION}`);
+  console.log(`--single: ${PRIVATECLAW_CLI_SINGLE_OPTION_DESCRIPTION}`);
   console.log(`--verbose: ${PRIVATECLAW_CLI_VERBOSE_OPTION_DESCRIPTION}`);
   console.log(`--notify: ${PRIVATECLAW_CLI_NOTIFY_OPTION_DESCRIPTION}`);
   console.log(`sessions follow: ${PRIVATECLAW_CLI_SESSIONS_FOLLOW_DESCRIPTION}`);
@@ -329,6 +340,79 @@ kick <sessionId> <appId>`);
   console.log(`sessions kill: ${PRIVATECLAW_CLI_SESSIONS_KILL_DESCRIPTION}`);
   console.log(`sessions killall: ${PRIVATECLAW_CLI_SESSIONS_KILLALL_DESCRIPTION}`);
   console.log(`killall: ${PRIVATECLAW_CLI_SESSIONS_KILLALL_DESCRIPTION}`);
+}
+
+async function runSetupCommand(args: string[]): Promise<void> {
+  const parsed = parseArgs({
+    args,
+    allowPositionals: true,
+    options: {
+      group: { type: "boolean", default: false },
+      single: { type: "boolean", default: false },
+      duration: { type: "string" },
+      "ttl-ms": { type: "string" },
+      label: { type: "string" },
+      relay: { type: "string", short: "r" },
+      open: { type: "boolean", default: parseBooleanFlag(process.env.PRIVATECLAW_OPEN_QR) },
+      foreground: { type: "boolean", default: false },
+      verbose: { type: "boolean", default: parseBooleanFlag(process.env.PRIVATECLAW_VERBOSE) },
+      help: { type: "boolean", short: "h" },
+    },
+  });
+
+  if (parsed.values.help) {
+    printHelp();
+    return;
+  }
+  if (parsed.positionals.length > 0) {
+    throw new Error(
+      formatBilingualInline(
+        "`setup` 不接受额外参数。",
+        "`setup` does not accept extra arguments.",
+      ),
+    );
+  }
+  if (parsed.values.group && parsed.values.single) {
+    throw new Error(
+      formatBilingualInline(
+        "`setup` 不能同时使用 `--group` 和 `--single`。",
+        "`setup` cannot use both `--group` and `--single` at the same time.",
+      ),
+    );
+  }
+  if (parsed.values.duration && parsed.values["ttl-ms"]) {
+    throw new Error(
+      formatBilingualInline(
+        "`setup` 不能同时使用 `--duration` 和 `--ttl-ms`。",
+        "`setup` cannot use both `--duration` and `--ttl-ms` at the same time.",
+      ),
+    );
+  }
+
+  const durationPreset = parsed.values.duration?.trim();
+  if (durationPreset) {
+    parsePrivateClawSessionDurationPreset(durationPreset);
+  }
+  const ttlMs = parsePositiveIntegerFlag(parsed.values["ttl-ms"], "--ttl-ms");
+  const groupMode =
+    parsed.values.group === true
+      ? true
+      : parsed.values.single === true
+        ? false
+        : undefined;
+
+  await runPrivateClawSetup({
+    ...(typeof groupMode === "boolean" ? { groupMode } : {}),
+    ...(typeof ttlMs === "number" ? { ttlMs } : {}),
+    ...(durationPreset ? { durationPreset } : {}),
+    ...(parsed.values.relay?.trim()
+      ? { relayBaseUrl: parsed.values.relay.trim() }
+      : {}),
+    ...(parsed.values.label?.trim() ? { label: parsed.values.label.trim() } : {}),
+    ...(parsed.values.open ? { openInBrowser: true } : {}),
+    ...(parsed.values.foreground ? { foreground: true } : {}),
+    ...(parsed.values.verbose ? { verbose: true } : {}),
+  });
 }
 
 async function runPairCommand(args: string[]): Promise<void> {
@@ -814,12 +898,16 @@ async function runKickCommand(args: string[]): Promise<void> {
 
 const argv = process.argv.slice(2);
 const [command, ...rest] =
-  argv.length === 0 || argv[0]!.startsWith("-")
-    ? ["pair", ...argv]
+  argv.length === 0
+    ? ["setup", ...argv]
+    : argv[0]!.startsWith("-")
+      ? ["pair", ...argv]
     : argv;
 
 try {
-  if (command === "pair") {
+  if (command === "setup") {
+    await runSetupCommand(rest);
+  } else if (command === "pair") {
     await runPairCommand(rest);
   } else if (command === "sessions") {
     await runSessionsCommand(rest);

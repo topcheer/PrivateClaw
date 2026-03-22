@@ -47,6 +47,11 @@ export const PRIVATECLAW_CLI_PAIR_DESCRIPTION = formatBilingualInline(
   "Start a local PrivateClaw session and render the pairing QR code in the terminal.",
 );
 
+export const PRIVATECLAW_CLI_SETUP_DESCRIPTION = formatBilingualInline(
+  "安装/启用本地 OpenClaw 的 PrivateClaw 插件，并立刻开始配对。",
+  "Install/enable the local OpenClaw PrivateClaw plugin and start pairing immediately.",
+);
+
 export const PRIVATECLAW_CLI_SESSIONS_DESCRIPTION = formatBilingualInline(
   "列出当前活动中的 PrivateClaw 会话及参与者。",
   "List the active PrivateClaw sessions and their participants.",
@@ -96,6 +101,17 @@ export const PRIVATECLAW_CLI_GROUP_OPTION_DESCRIPTION = formatBilingualInline(
   "允许多个 PrivateClaw 客户端加入同一个会话。",
   "Allow multiple PrivateClaw app clients to join the same session.",
 );
+
+export const PRIVATECLAW_CLI_SINGLE_OPTION_DESCRIPTION = formatBilingualInline(
+  "强制创建单独会话，而不是群聊。",
+  "Force a single chat instead of a group chat.",
+);
+
+export const PRIVATECLAW_CLI_DURATION_OPTION_DESCRIPTION =
+  formatBilingualInline(
+    "会话时长预设：30m, 2h, 4h, 8h, 24h, 1w, 1mo, 1y, permanent。",
+    "Session duration preset: 30m, 2h, 4h, 8h, 24h, 1w, 1mo, 1y, permanent.",
+  );
 
 export const PRIVATECLAW_CLI_PRINT_ONLY_OPTION_DESCRIPTION =
   formatBilingualInline(

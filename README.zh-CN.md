@@ -122,6 +122,20 @@ openclaw plugins enable privateclaw
 
 执行完 `openclaw plugins install`、`openclaw plugins enable`，或者任何 `openclaw config set plugins.entries.privateclaw.config...` 改动后，在测试前都要重启正在运行的 OpenClaw gateway / service，让它重新加载插件和配置。实际操作上，就是重启正在跑的 `openclaw start` 进程，或者你用来托管 gateway 的 service。
 
+如果当前机器已经装好了 `openclaw`，现在最快的本地引导方式是直接运行独立 setup 向导：
+
+```bash
+npx @privateclaw/privateclaw
+```
+
+这个 `npx` 独立流程会检查本机 OpenClaw、自动安装或更新插件、启用插件、重启 gateway，然后立刻开始配对。过程中会提示你选择单聊还是群聊，以及这些会话时长预设之一：`30m`、`2h`、`4h`、`8h`、`24h`、`1w`、`1mo`、`1y`、`permanent`（实际表示 `100 年`）。
+
+如果你想把这些选择提前写死，也可以这样运行：
+
+```bash
+npx @privateclaw/privateclaw setup --group --duration 24h --open
+```
+
 如果你想让群聊会话更像“有一个会主动搭话的机器人参与者”，也可以额外打开：
 
 ```bash
@@ -170,7 +184,9 @@ openclaw channels add --channel telegram --token <token>
 
 #### 方式 B：直接用 OpenClaw CLI 本地起配对会话
 
-如果你不想借助另一个聊天工具，可以直接使用插件提供给 OpenClaw 的 provider CLI。相同的公开子命令也可以通过独立 npm 二进制 `privateclaw-provider <subcommand>` 使用；下面先用 OpenClaw 里的别名来举例：
+如果你不想借助另一个聊天工具，现在最省事的路径是直接在已经装好 OpenClaw 的机器上运行 `npx @privateclaw/privateclaw`。这个独立向导会先把本地插件安装/启用好，再替你开始配对。
+
+当插件已经安装并启用后，下面这些共享的会话管理命令会出现在 `openclaw privateclaw` 里；独立 npm 二进制 `privateclaw-provider <subcommand>` 也提供同一组共享命令：
 
 | 命令 | 用途 | 说明 |
 | --- | --- | --- |
@@ -198,6 +214,8 @@ openclaw channels add --channel telegram --token <token>
 例如，想直接从 CLI 启动一个群聊会话，并先留在前台：
 
 ```bash
+npx @privateclaw/privateclaw
+npx @privateclaw/privateclaw setup --group --duration permanent --open
 openclaw privateclaw pair --group --foreground
 openclaw privateclaw pair --foreground --verbose
 openclaw privateclaw pair --relay https://your-relay.example.com

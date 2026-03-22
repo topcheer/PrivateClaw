@@ -602,11 +602,37 @@ img {
   box-shadow: 0 18px 42px rgba(0, 0, 0, 0.2);
 }
 
+.setup-card-featured {
+  grid-column: span 2;
+  padding: 22px;
+}
+
+.setup-card-recommended {
+  border-color: rgba(62, 217, 255, 0.32);
+  background:
+    linear-gradient(160deg, rgba(143, 125, 255, 0.18), rgba(62, 217, 255, 0.1)),
+    rgba(5, 9, 20, 0.62);
+}
+
+.setup-card-fallback {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02)),
+    rgba(5, 9, 20, 0.46);
+}
+
 .setup-step-label {
   color: var(--accent-2);
   font-size: 0.82rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.setup-card-recommended .setup-step-label {
+  color: #91f5ff;
+}
+
+.setup-card-fallback .setup-step-label {
+  color: rgba(200, 221, 255, 0.72);
 }
 
 .setup-card p {
@@ -1492,6 +1518,10 @@ details.thinking-trace-card > summary::-webkit-details-marker {
 
   .community-card {
     flex-direction: column;
+  }
+
+  .setup-card-featured {
+    grid-column: auto;
   }
 }
 

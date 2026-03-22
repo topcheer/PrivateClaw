@@ -1,4 +1,4 @@
-import { applyTranslations, bindLocaleSelect, getValue, onLocaleChange, t } from "./i18n.js?v=20260316-3";
+import { applyTranslations, bindLocaleSelect, getValue, onLocaleChange, t } from "./i18n.js?v=20260322-1";
 
 const localeSelect = document.getElementById("locale-select");
 const webEntry = document.getElementById("web-entry");
@@ -95,6 +95,12 @@ function renderSetupSteps() {
   for (const item of steps) {
     const card = document.createElement("article");
     card.className = "setup-card";
+    if (item.featured) {
+      card.classList.add("setup-card-featured");
+    }
+    if (typeof item.variant === "string" && item.variant.trim() !== "") {
+      card.classList.add(`setup-card-${item.variant.trim().toLowerCase()}`);
+    }
 
     const stepLabel = document.createElement("div");
     stepLabel.className = "setup-step-label";

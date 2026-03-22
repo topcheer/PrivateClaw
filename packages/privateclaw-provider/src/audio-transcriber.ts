@@ -168,6 +168,31 @@ function coerceText(value: string | Buffer | null | undefined): string {
   return "";
 }
 
+function looksLikeJsonPayload(value: string): boolean {
+  const trimmed = value.trimStart();
+  return trimmed.startsWith("{") || trimmed.startsWith("[") || trimmed.startsWith('"');
+}
+
+function looksLikeHtmlPayload(value: string): boolean {
+  const trimmed = value.trimStart().toLowerCase();
+  return trimmed.startsWith("<!doctype html") || trimmed.startsWith("<html") || trimmed.startsWith("<body");
+}
+
+function looksLikeWhisperHelpText(value: string): boolean {
+  const trimmed = value.trim();
+  if (trimmed === "") {
+    return false;
+  }
+  return (
+    /(?:^|\n)\s*usage:\s*(?:(?:python(?:\d+(?:\.\d+)*)?(?:\s+-m)?)\s+)?(?:openai-)?whisper\b/iu.test(
+      trimmed,
+    ) ||
+    (/--model\b/iu.test(trimmed) &&
+      /--output_(?:dir|format)\b/iu.test(trimmed) &&
+      /--(?:language|task)\b/iu.test(trimmed))
+  );
+}
+
 function truncateLogDetail(value: string, maxLength = 300): string {
   return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
 }
@@ -218,23 +243,73 @@ function execFileText(
   });
 }
 
-function parseWhisperTranscriptJson(payload: string): string | null {
-  const parsed = JSON.parse(payload) as {
-    text?: unknown;
-    segments?: Array<{ text?: unknown }>;
-  };
-  const directText = readString(parsed.text);
-  if (directText) {
-    return directText;
-  }
-  const segmentText = Array.isArray(parsed.segments)
-    ? parsed.segments.flatMap((segment) => {
-        const value = readString(segment?.text);
-        return value ? [value] : [];
-      })
-    : [];
-  const combined = segmentText.join("").trim();
+function combineTranscriptFragments(fragments: ReadonlyArray<string>): string | null {
+  const combined = fragments.join("").trim();
   return combined === "" ? null : combined;
+}
+
+function extractTranscriptText(value: unknown, depth = 0): string | null {
+  if (depth > 6 || value == null) {
+    return null;
+  }
+  if (typeof value === "string") {
+    return readString(value) ?? null;
+  }
+  if (Array.isArray(value)) {
+    const fragments = value.flatMap((entry) => {
+      const transcript = extractTranscriptText(entry, depth + 1);
+      return transcript ? [transcript] : [];
+    });
+    return combineTranscriptFragments(fragments);
+  }
+  if (typeof value !== "object") {
+    return null;
+  }
+  const parsed = value as Record<string, unknown>;
+  for (const key of ["text", "transcript", "output_text"] as const) {
+    const directText = readString(parsed[key]);
+    if (directText) {
+      return directText;
+    }
+  }
+  for (const key of ["segments", "content", "results", "alternatives"] as const) {
+    const transcript = extractTranscriptText(parsed[key], depth + 1);
+    if (transcript) {
+      return transcript;
+    }
+  }
+  for (const key of ["result", "data", "response", "output", "message"] as const) {
+    const transcript = extractTranscriptText(parsed[key], depth + 1);
+    if (transcript) {
+      return transcript;
+    }
+  }
+  return null;
+}
+
+function parseTranscriptJsonPayload(payload: string): string | null {
+  return extractTranscriptText(JSON.parse(payload) as unknown);
+}
+
+function parseTranscriptionResponsePayload(params: {
+  payload: string;
+  contentType?: string | null;
+}): string | null {
+  const trimmedPayload = params.payload.trim();
+  if (trimmedPayload === "") {
+    return null;
+  }
+  const normalizedContentType = params.contentType?.toLowerCase() ?? "";
+  if (
+    normalizedContentType.includes("json") ||
+    looksLikeJsonPayload(trimmedPayload)
+  ) {
+    return parseTranscriptJsonPayload(trimmedPayload);
+  }
+  if (looksLikeHtmlPayload(trimmedPayload)) {
+    return null;
+  }
+  return trimmedPayload;
 }
 
 function buildWhisperOutputFilePath(outputDir: string, fileName: string): string {
@@ -311,6 +386,7 @@ export function resolvePrivateClawWhisperCliConfig(params?: {
   spawnSyncImpl?: typeof spawnSync;
 }): PrivateClawWhisperCliConfig | undefined {
   const env = params?.env ?? process.env;
+  const probeEnv = params?.env ? { ...process.env, ...params.env } : env;
   const command =
     readString(params?.command) ??
     readString(env.PRIVATECLAW_WHISPER_BIN) ??
@@ -319,14 +395,15 @@ export function resolvePrivateClawWhisperCliConfig(params?: {
   const probe = spawnSyncImpl(command, ["--help"], {
     encoding: "utf8",
     stdio: "pipe",
-    timeout: 10_000,
-    env,
+    timeout: 30_000,
+    env: probeEnv,
+    windowsHide: true,
   });
-  if (probe.error) {
+  if (probe.error || probe.signal) {
     return undefined;
   }
   const helpText = `${coerceText(probe.stdout)}\n${coerceText(probe.stderr)}`;
-  if ((probe.status ?? 1) !== 0 || !/usage:\s*whisper\b/iu.test(helpText)) {
+  if (!looksLikeWhisperHelpText(helpText)) {
     return undefined;
   }
   const model =
@@ -386,8 +463,24 @@ async function transcribeSingleAttachment(params: {
     );
   }
 
-  const result = (await response.json()) as { text?: string };
-  const transcript = result.text?.trim() || null;
+  const responsePayload = await response.text();
+  let transcript: string | null;
+  try {
+    transcript = parseTranscriptionResponsePayload({
+      payload: responsePayload,
+      contentType: response.headers.get("content-type"),
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `STT returned an unreadable transcript payload for ${fileName}: ${truncateLogDetail(detail)}`,
+    );
+  }
+  if (!transcript) {
+    throw new Error(
+      `STT returned HTTP ${response.status} without transcript text for ${fileName}: ${truncateLogDetail(responsePayload)}`,
+    );
+  }
   params.onLog?.(
     `[stt] transcribe_complete session=${params.request.sessionId} request=${params.request.requestId} file=${JSON.stringify(fileName)} transcriptChars=${transcript?.length ?? 0}`,
   );
@@ -444,7 +537,7 @@ async function transcribeSingleAttachmentWithWhisperCli(params: {
       maxBuffer: 64 * 1024 * 1024,
     });
     const transcriptPayload = await readFile(outputPath, "utf8");
-    const transcript = parseWhisperTranscriptJson(transcriptPayload);
+    const transcript = parseTranscriptJsonPayload(transcriptPayload);
     params.onLog?.(
       `[stt] whisper_transcribe_complete session=${params.request.sessionId} request=${params.request.requestId} file=${JSON.stringify(fileName)} transcriptChars=${transcript?.length ?? 0}`,
     );

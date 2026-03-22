@@ -8,6 +8,7 @@ import {
   buildPreferredAudioTranscriber,
   createOpenAICompatibleAudioTranscriber,
   resolvePrivateClawSttConfig,
+  resolvePrivateClawWhisperCliConfig,
 } from "./audio-transcriber.js";
 
 test("resolvePrivateClawSttConfig reads the default OpenClaw audio model config", () => {
@@ -71,6 +72,49 @@ test("resolvePrivateClawSttConfig accepts inline audio-model headers", () => {
       "X-PrivateClaw-Test": "enabled",
     },
   });
+});
+
+test("resolvePrivateClawWhisperCliConfig accepts recognizable help text even when the CLI exits non-zero", () => {
+  const resolved = resolvePrivateClawWhisperCliConfig({
+    env: {
+      PRIVATECLAW_WHISPER_MODEL: "large-v3",
+    },
+    spawnSyncImpl: (() =>
+      ({
+        pid: 123,
+        output: [null, "", "usage: whisper [options]\n  --model MODEL\n  --output_dir OUTPUT_DIR\n  --task TASK\n"],
+        stdout: "",
+        stderr:
+          "usage: whisper [options]\n  --model MODEL\n  --output_dir OUTPUT_DIR\n  --task TASK\n",
+        status: 2,
+        signal: null,
+      }) as ReturnType<typeof import("node:child_process").spawnSync>),
+  });
+
+  assert.deepEqual(resolved, {
+    command: "whisper",
+    model: "large-v3",
+  });
+});
+
+test("resolvePrivateClawWhisperCliConfig rejects timed-out help probes", () => {
+  const timeoutError = Object.assign(new Error("whisper probe timed out"), {
+    code: "ETIMEDOUT",
+  });
+  const resolved = resolvePrivateClawWhisperCliConfig({
+    spawnSyncImpl: (() =>
+      ({
+        pid: 123,
+        output: [null, "usage: whisper\n", ""],
+        stdout: "usage: whisper\n",
+        stderr: "",
+        status: null,
+        signal: "SIGTERM",
+        error: timeoutError,
+      }) as ReturnType<typeof import("node:child_process").spawnSync>),
+  });
+
+  assert.equal(resolved, undefined);
 });
 
 test("OpenAI-compatible audio transcriber posts audio attachments to /audio/transcriptions", async (t) => {
@@ -153,6 +197,114 @@ test("OpenAI-compatible audio transcriber posts audio attachments to /audio/tran
   assert.match(requests[0]?.body ?? "", /name="model"\r\n\r\nwhisper-1/u);
   assert.match(requests[0]?.body ?? "", /filename="voice-a\.m4a"/u);
   assert.match(requests[1]?.body ?? "", /filename="voice-b\.mp3"/u);
+});
+
+test("OpenAI-compatible audio transcriber accepts nested JSON and plain-text transcripts", async (t) => {
+  let requestCount = 0;
+  const server = createServer((request, response) => {
+    void (async () => {
+      requestCount += 1;
+      response.statusCode = 200;
+      if (requestCount === 1) {
+        response.setHeader("content-type", "application/json; charset=utf-8");
+        response.end(
+          JSON.stringify({
+            output: [
+              {
+                content: [{ type: "output_text", text: "nested transcript" }],
+              },
+            ],
+          }),
+        );
+        return;
+      }
+      response.setHeader("content-type", "text/plain; charset=utf-8");
+      response.end("plain transcript");
+    })().catch((error) => {
+      response.statusCode = 500;
+      response.end(String(error));
+    });
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("Expected an AddressInfo from the nested-transcript test server.");
+  }
+  t.after(() => {
+    server.close();
+  });
+
+  const transcriber = createOpenAICompatibleAudioTranscriber({
+    baseUrl: `http://127.0.0.1:${address.port}`,
+    model: "whisper-1",
+  });
+  const transcript = await transcriber.transcribeAudioAttachments({
+    sessionId: "privateclaw-session",
+    requestId: "voice-request-nested",
+    attachments: [
+      {
+        id: "voice-1",
+        name: "voice-a.m4a",
+        mimeType: "audio/mp4",
+        sizeBytes: 4,
+        dataBase64: Buffer.from("AAAA").toString("base64"),
+      },
+      {
+        id: "voice-2",
+        name: "voice-b.mp3",
+        mimeType: "audio/mpeg",
+        sizeBytes: 4,
+        dataBase64: Buffer.from("BBBB").toString("base64"),
+      },
+    ],
+  });
+
+  assert.equal(transcript, "nested transcript\n\nplain transcript");
+});
+
+test("OpenAI-compatible audio transcriber surfaces missing transcript text in HTTP 200 responses", async (t) => {
+  const server = createServer((request, response) => {
+    void (async () => {
+      response.statusCode = 200;
+      response.setHeader("content-type", "application/json; charset=utf-8");
+      response.end(JSON.stringify({ ok: true }));
+    })().catch((error) => {
+      response.statusCode = 500;
+      response.end(String(error));
+    });
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("Expected an AddressInfo from the missing-transcript test server.");
+  }
+  t.after(() => {
+    server.close();
+  });
+
+  const transcriber = createOpenAICompatibleAudioTranscriber({
+    baseUrl: `http://127.0.0.1:${address.port}`,
+    model: "whisper-1",
+  });
+
+  await assert.rejects(
+    transcriber.transcribeAudioAttachments({
+      sessionId: "privateclaw-session",
+      requestId: "voice-request-missing-transcript",
+      attachments: [
+        {
+          id: "voice-1",
+          name: "voice-a.m4a",
+          mimeType: "audio/mp4",
+          sizeBytes: 4,
+          dataBase64: Buffer.from("AAAA").toString("base64"),
+        },
+      ],
+    }),
+    /without transcript text/u,
+  );
 });
 
 test("buildPreferredAudioTranscriber prefers whisper CLI over configured direct STT", async (t) => {

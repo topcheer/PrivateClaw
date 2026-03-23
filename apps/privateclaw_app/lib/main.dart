@@ -15,6 +15,7 @@ import 'package:photo_manager/photo_manager.dart';
 import 'l10n/app_localizations.dart';
 import 'models/chat_attachment.dart';
 import 'models/chat_message.dart';
+import 'models/chat_message_timeline.dart';
 import 'models/privateclaw_identity.dart';
 import 'models/privateclaw_invite.dart';
 import 'models/privateclaw_participant.dart';
@@ -915,75 +916,13 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
   }
 
   void _upsertMessage(ChatMessage message) {
-    if (message.isPending && message.replyTo != null) {
-      final int repliedMessageIndex = _messages.indexWhere(
-        (ChatMessage item) =>
-            item.id == message.replyTo && item.sender == ChatSender.user,
-      );
-      if (repliedMessageIndex >= 0) {
-        _messages[repliedMessageIndex] = _messages[repliedMessageIndex]
-            .copyWith(isPending: true);
-        _messages.removeWhere(
-          (ChatMessage item) =>
-              item.sender == ChatSender.assistant &&
-              item.isPending &&
-              item.replyTo == message.replyTo,
-        );
-        return;
-      }
-    }
-
-    final int existingMessageIndex = _messages.indexWhere(
-      (ChatMessage item) => item.id == message.id,
+    final List<ChatMessage> updatedMessages = upsertChatTimelineMessage(
+      messages: _messages,
+      message: message,
     );
-    if (existingMessageIndex >= 0) {
-      if (message.isThinkingTrace &&
-          !message.isThinkingActive &&
-          !message.hasThinkingEntries) {
-        _messages.removeAt(existingMessageIndex);
-        return;
-      }
-      final ChatMessage existing = _messages[existingMessageIndex];
-      _messages[existingMessageIndex] = message.copyWith(
-        isPending:
-            existing.sender == ChatSender.user &&
-                existing.id == message.id &&
-                existing.isPending
-            ? true
-            : message.isPending,
-      );
-      return;
-    }
-
-    if (message.isThinkingTrace &&
-        !message.isThinkingActive &&
-        !message.hasThinkingEntries) {
-      return;
-    }
-
-    if (message.isPending) {
-      _messages.add(message);
-      return;
-    }
-
-    if (message.replyTo != null && !message.isThinkingTrace) {
-      final int repliedMessageIndex = _messages.indexWhere(
-        (ChatMessage item) =>
-            item.id == message.replyTo && item.sender == ChatSender.user,
-      );
-      if (repliedMessageIndex >= 0 &&
-          _messages[repliedMessageIndex].isPending) {
-        _messages[repliedMessageIndex] = _messages[repliedMessageIndex]
-            .copyWith(isPending: false);
-      }
-      _messages.removeWhere(
-        (ChatMessage item) =>
-            item.sender == ChatSender.assistant &&
-            item.isPending &&
-            item.replyTo == message.replyTo,
-      );
-    }
-    _messages.add(message);
+    _messages
+      ..clear()
+      ..addAll(updatedMessages);
   }
 
   void _scheduleScrollToBottom() {

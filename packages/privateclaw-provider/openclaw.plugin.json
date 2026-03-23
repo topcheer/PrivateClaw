@@ -2,7 +2,7 @@
   "id": "privateclaw",
   "name": "PrivateClaw",
   "description": "Ephemeral end-to-end encrypted private session plugin for OpenClaw.",
-  "version": "0.1.32",
+  "version": "0.1.33",
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
@@ -70,7 +70,8 @@
       },
       "openclawAgentChannel": {
         "type": "string",
-        "description": "Optional OpenClaw channel id forwarded to `openclaw agent`."
+        "description": "Optional OpenClaw channel id forwarded to `openclaw agent`.",
+        "default": "privateclaw"
       },
       "openclawAgentLocal": {
         "type": "boolean",

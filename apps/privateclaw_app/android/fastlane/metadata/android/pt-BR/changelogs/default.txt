@@ -1,2 +1,2 @@
-Melhoramos a leitura de links de convite e o tratamento de erros de sessão.
-Agora os anexos abrem com mais confiabilidade: imagens em tela cheia e outros arquivos por compartilhamento ou em outros apps.
+Respostas com foto e arquivo juntos estão mais confiáveis, e a abertura de anexos foi melhorada.
+Pareamento, leitura de convites e avisos de sessão agora estão mais suaves.

@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { decodeInviteString, encryptPayload } from "@privateclaw/protocol";
+import { decodeInviteString, decryptPayload, encryptPayload } from "@privateclaw/protocol";
 import WebSocket from "ws";
 import { createRelayServer } from "../../../services/relay-server/src/relay-server.js";
 import { EchoBridge } from "./bridges/echo-bridge.js";
@@ -12,21 +12,70 @@ import { privateClawConfigSchema } from "./compat/openclaw.js";
 import { DEFAULT_SESSION_TTL_MS } from "./provider.js";
 import { DEFAULT_RELAY_BASE_URL } from "./relay-defaults.js";
 import type {
+  OpenClawChannelPluginCompat,
   OpenClawPluginCliRegistrarCompat,
   OpenClawPluginApiCompat,
   OpenClawPluginCommandDefinitionCompat,
   OpenClawPluginServiceCompat,
+  OpenClawPluginRuntimeCompat,
 } from "./compat/openclaw.js";
 import { createOpenClawCompatiblePlugin } from "./openclaw-plugin.js";
+import { listManagedSessionsFromStateDir } from "./session-control.js";
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
-function createMockApi(): {
+function waitForOpen(socket: WebSocket): Promise<void> {
+  return new Promise((resolve, reject) => {
+    socket.once("open", () => resolve());
+    socket.once("error", reject);
+  });
+}
+
+function nextMessage(socket: WebSocket): Promise<Record<string, unknown>> {
+  return new Promise((resolve, reject) => {
+    socket.once("message", (data) => {
+      resolve(JSON.parse(data.toString()) as Record<string, unknown>);
+    });
+    socket.once("error", reject);
+  });
+}
+
+function nextMessages(
+  socket: WebSocket,
+  count: number,
+): Promise<Record<string, unknown>[]> {
+  return new Promise((resolve, reject) => {
+    const messages: Record<string, unknown>[] = [];
+    const handleMessage = (data: WebSocket.RawData) => {
+      messages.push(JSON.parse(data.toString()) as Record<string, unknown>);
+      if (messages.length === count) {
+        cleanup();
+        resolve(messages);
+      }
+    };
+    const handleError = (error: Error) => {
+      cleanup();
+      reject(error);
+    };
+    const cleanup = () => {
+      socket.off("message", handleMessage);
+      socket.off("error", handleError);
+    };
+    socket.on("message", handleMessage);
+    socket.on("error", handleError);
+  });
+}
+
+function createMockApi(
+  runtime: OpenClawPluginRuntimeCompat | unknown = {},
+): {
   api: OpenClawPluginApiCompat;
+  getChannel(): OpenClawChannelPluginCompat;
   getCli(): { registrar: OpenClawPluginCliRegistrarCompat; commands: string[] };
   getCommand(): OpenClawPluginCommandDefinitionCompat;
   getService(): OpenClawPluginServiceCompat;
 } {
+  let channel: OpenClawChannelPluginCompat | undefined;
   let command: OpenClawPluginCommandDefinitionCompat | undefined;
   let cli:
     | {
@@ -43,8 +92,11 @@ function createMockApi(): {
 
   return {
     api: {
-      runtime: {},
+      runtime,
       logger,
+      registerChannel(params) {
+        channel = params.plugin as OpenClawChannelPluginCompat;
+      },
       registerCommand(registeredCommand) {
         command = registeredCommand;
       },
@@ -61,6 +113,10 @@ function createMockApi(): {
     getCli() {
       assert.ok(cli, "plugin should register the local privateclaw CLI");
       return cli;
+    },
+    getChannel() {
+      assert.ok(channel, "plugin should register the privateclaw channel plugin");
+      return channel;
     },
     getCommand() {
       assert.ok(command, "plugin should register the /privateclaw command");
@@ -110,9 +166,342 @@ test("privateclaw schema advertises the public relay default", () => {
     privateClawConfigSchema.properties.relayBaseUrl.default,
     DEFAULT_RELAY_BASE_URL,
   );
+  assert.equal(
+    privateClawConfigSchema.properties.openclawAgentChannel.default,
+    "privateclaw",
+  );
   assert.equal(privateClawConfigSchema.properties.botMode.type, "boolean");
   assert.equal(privateClawConfigSchema.properties.botModeSilentJoinDelayMs.minimum, 0);
   assert.equal(privateClawConfigSchema.properties.botModeIdleDelayMs.minimum, 0);
+});
+
+test("plugin registers the privateclaw channel plugin", () => {
+  const plugin = createOpenClawCompatiblePlugin({
+    providerWsUrl: "ws://127.0.0.1:8787/ws/provider",
+    appWsUrl: "ws://127.0.0.1:8787/ws/app",
+    bridge: new EchoBridge("OpenClaw bridge"),
+  });
+  const { api, getChannel } = createMockApi();
+  plugin.register(api);
+  const channel = getChannel();
+  assert.equal(channel.id, "privateclaw");
+  assert.equal(channel.meta.id, "privateclaw");
+  assert.equal(channel.outbound?.deliveryMode, "direct");
+  assert.deepEqual(channel.capabilities.chatTypes, ["direct", "group"]);
+});
+
+test("plugin service startup eagerly starts the plugin-service control host", async (t) => {
+  const stateDir = await mkdtemp(path.join(os.tmpdir(), "privateclaw-plugin-service-"));
+  t.after(async () => {
+    await rm(stateDir, { recursive: true, force: true });
+  });
+
+  const plugin = createOpenClawCompatiblePlugin({
+    providerWsUrl: "ws://127.0.0.1:8787/ws/provider",
+    appWsUrl: "ws://127.0.0.1:8787/ws/app",
+    bridge: new EchoBridge("OpenClaw bridge"),
+  });
+  const { api, getService } = createMockApi();
+  plugin.register(api);
+
+  const service = getService();
+  await service.start({
+    config: {},
+    stateDir,
+    logger: api.logger,
+  });
+  t.after(async () => {
+    await service.stop?.({
+      config: {},
+      stateDir,
+      logger: api.logger,
+    });
+  });
+
+  const listings = await listManagedSessionsFromStateDir(stateDir);
+  assert.equal(listings.length, 1);
+  assert.equal(listings[0]?.host.kind, "plugin-service");
+  assert.deepEqual(listings[0]?.sessions, []);
+});
+
+test("plugin routes paired app text through OpenClaw runtime helpers with the real session-store signatures", async (t) => {
+  const relay = createRelayServer({
+    host: "127.0.0.1",
+    port: 0,
+    sessionTtlMs: 60_000,
+    frameCacheSize: 8,
+  });
+  const { port } = await relay.start();
+
+  const stateDir = await mkdtemp(path.join(os.tmpdir(), "privateclaw-plugin-state-"));
+  t.after(async () => {
+    await rm(stateDir, { recursive: true, force: true });
+    await relay.stop();
+  });
+
+  const resolvedStorePaths: Array<{
+    store?: string;
+    opts?: { agentId?: string };
+  }> = [];
+  const recordedSessions: Array<Record<string, unknown>> = [];
+  const fakeRuntime = {
+    channel: {
+      reply: {
+        finalizeInboundContext: <T extends Record<string, unknown>>(ctx: T) =>
+          ({
+            ...ctx,
+            CommandAuthorized: true,
+          }) as T & { CommandAuthorized: true },
+        dispatchReplyWithBufferedBlockDispatcher: async ({
+          ctx,
+          dispatcherOptions,
+        }: {
+          ctx: Record<string, unknown>;
+          dispatcherOptions: {
+            deliver(
+              payload: {
+                text?: string;
+                replyToId?: string | null;
+              },
+              info: { kind: "tool" | "block" | "final" },
+            ): Promise<void>;
+          };
+        }) => {
+          const commandBody = String(ctx.CommandBody ?? "");
+          await dispatcherOptions.deliver(
+            {
+              text: `Runtime reply: ${commandBody}`,
+            },
+            { kind: "final" },
+          );
+          return {};
+        },
+      },
+      routing: {
+        resolveAgentRoute: ({ ctx }: { ctx: Record<string, unknown> }) => ({
+          agentId: "runtime-agent",
+          sessionKey: `runtime-${String(ctx.To ?? "session")}`,
+          mainSessionKey: `runtime-${String(ctx.To ?? "session")}`,
+          lastRoutePolicy: "current" as const,
+        }),
+      },
+      session: {
+        resolveStorePath: (store?: string, opts?: { agentId?: string }) => {
+          resolvedStorePaths.push({ store, opts });
+          return path.join(stateDir, "memory", `${opts?.agentId ?? "agent"}.sqlite`);
+        },
+        recordInboundSession: async (params: Record<string, unknown>) => {
+          recordedSessions.push(params);
+        },
+      },
+    },
+  } satisfies OpenClawPluginRuntimeCompat;
+
+  const plugin = createOpenClawCompatiblePlugin({
+    providerWsUrl: `ws://127.0.0.1:${port}/ws/provider`,
+    appWsUrl: `ws://127.0.0.1:${port}/ws/app`,
+    bridge: {
+      async handleUserMessage() {
+        throw new Error("bridge should not be used when runtime routing is available");
+      },
+    },
+    welcomeMessage: "Welcome to PrivateClaw",
+  });
+  const { api, getCommand, getService } = createMockApi(fakeRuntime);
+  plugin.register(api);
+
+  const config = {
+    session: {
+      store: "~/privateclaw-runtime-{agentId}.sqlite",
+    },
+  };
+  const service = getService();
+  await service.start({
+    config,
+    stateDir,
+    logger: api.logger,
+  });
+  t.after(async () => {
+    await service.stop?.({
+      config,
+      stateDir,
+      logger: api.logger,
+    });
+  });
+
+  const command = getCommand();
+  const reply = await command.handler({
+    channel: "telegram",
+    senderId: "tester",
+    isAuthorizedSender: true,
+    commandBody: "/privateclaw",
+    config,
+  });
+  const inviteUri = reply.text?.match(/privateclaw:\/\/connect\?payload=\S+/)?.[0];
+  assert.ok(inviteUri, "reply text should include a PrivateClaw invite URI");
+  const invite = decodeInviteString(inviteUri);
+
+  const appUrl = new URL(invite.appWsUrl);
+  appUrl.searchParams.set("appId", "runtime-router-app");
+  const appSocket = new WebSocket(appUrl.toString());
+  t.after(() => {
+    appSocket.terminate();
+  });
+  const attached = nextMessage(appSocket);
+  await waitForOpen(appSocket);
+  assert.equal((await attached).type, "relay:attached");
+  const initialFrames = nextMessages(appSocket, 2);
+  appSocket.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "client_hello",
+          appId: "runtime-router-app",
+          displayName: "Runtime Router",
+          appVersion: "plugin-test",
+          deviceLabel: "Runtime Router Device",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+  await initialFrames;
+
+  appSocket.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "user_message",
+          appId: "runtime-router-app",
+          text: "hello runtime",
+          clientMessageId: "runtime-msg-1",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+
+  const replyFrame = await nextMessage(appSocket);
+  const replyPayload = decryptPayload({
+    sessionId: invite.sessionId,
+    sessionKey: invite.sessionKey,
+    envelope: replyFrame.envelope as Parameters<typeof decryptPayload>[0]["envelope"],
+  });
+  assert.equal(replyPayload.kind, "assistant_message");
+  assert.equal(replyPayload.text, "Runtime reply: hello runtime");
+  assert.equal(replyPayload.replyTo, "runtime-msg-1");
+  assert.equal(resolvedStorePaths[0]?.store, "~/privateclaw-runtime-{agentId}.sqlite");
+  assert.equal(resolvedStorePaths[0]?.opts?.agentId, "runtime-agent");
+  assert.equal(recordedSessions[0]?.storePath, path.join(stateDir, "memory", "runtime-agent.sqlite"));
+  assert.equal(recordedSessions[0]?.createIfMissing, true);
+  assert.deepEqual(recordedSessions[0]?.updateLastRoute, {
+    sessionKey: `runtime-${invite.sessionId}`,
+    channel: "privateclaw",
+    to: invite.sessionId,
+    accountId: "default",
+  });
+});
+
+test("privateclaw channel outbound delivers replies into managed sessions", async (t) => {
+  const relay = createRelayServer({
+    host: "127.0.0.1",
+    port: 0,
+    sessionTtlMs: 60_000,
+    frameCacheSize: 8,
+  });
+  const { port } = await relay.start();
+
+  const stateDir = await mkdtemp(path.join(os.tmpdir(), "privateclaw-plugin-state-"));
+  t.after(async () => {
+    await rm(stateDir, { recursive: true, force: true });
+    await relay.stop();
+  });
+
+  const plugin = createOpenClawCompatiblePlugin({
+    providerWsUrl: `ws://127.0.0.1:${port}/ws/provider`,
+    appWsUrl: `ws://127.0.0.1:${port}/ws/app`,
+    bridge: new EchoBridge("OpenClaw bridge"),
+    welcomeMessage: "Welcome to PrivateClaw",
+  });
+  const { api, getChannel, getCommand, getService } = createMockApi();
+  plugin.register(api);
+
+  const service = getService();
+  await service.start({
+    config: {},
+    stateDir,
+    logger: api.logger,
+  });
+  t.after(async () => {
+    await service.stop?.({
+      config: {},
+      stateDir,
+      logger: api.logger,
+    });
+  });
+
+  const command = getCommand();
+  const reply = await command.handler({
+    channel: "telegram",
+    senderId: "tester",
+    isAuthorizedSender: true,
+    commandBody: "/privateclaw",
+    config: {},
+  });
+  const inviteUri = reply.text?.match(/privateclaw:\/\/connect\?payload=\S+/)?.[0];
+  assert.ok(inviteUri, "reply text should include a PrivateClaw invite URI");
+  const invite = decodeInviteString(inviteUri);
+
+  const appUrl = new URL(invite.appWsUrl);
+  appUrl.searchParams.set("appId", "plugin-test-app");
+  const appSocket = new WebSocket(appUrl.toString());
+  const attached = nextMessage(appSocket);
+  await waitForOpen(appSocket);
+  assert.equal((await attached).type, "relay:attached");
+  const initialFrames = nextMessages(appSocket, 2);
+  appSocket.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "client_hello",
+          appId: "plugin-test-app",
+          displayName: "Plugin Tester",
+          appVersion: "plugin-test",
+          deviceLabel: "Plugin Tester Device",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+  await initialFrames;
+
+  const channel = getChannel();
+  await channel.outbound?.sendText?.({
+    cfg: {},
+    to: invite.sessionId,
+    text: "scheduled hello from channel",
+    replyToId: "user-msg-1",
+  });
+
+  const outboundFrame = await nextMessage(appSocket);
+  const outboundPayload = decryptPayload({
+    sessionId: invite.sessionId,
+    sessionKey: invite.sessionKey,
+    envelope: outboundFrame.envelope as Parameters<typeof decryptPayload>[0]["envelope"],
+  });
+  assert.equal(outboundPayload.kind, "assistant_message");
+  assert.equal(outboundPayload.text, "scheduled hello from channel");
+  assert.equal(outboundPayload.replyTo, "user-msg-1");
+  appSocket.close();
 });
 
 test("privateclaw command writes QR media into the OpenClaw state media directory", async (t) => {

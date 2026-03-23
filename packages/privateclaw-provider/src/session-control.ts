@@ -12,6 +12,8 @@ import {
 import type {
   PrivateClawInviteBundle,
   PrivateClawManagedSession,
+  PrivateClawOpenClawOutboundMessage,
+  PrivateClawRoutedAppMessage,
 } from "./types.js";
 
 export type PrivateClawControlHostKind =
@@ -77,6 +79,15 @@ interface PrivateClawSessionQrResult {
   bundle: PrivateClawInviteBundle;
 }
 
+interface PrivateClawSessionOutboundResult {
+  sessionId: string;
+}
+
+interface PrivateClawAppDispatchResult {
+  sessionId: string;
+  handled: true;
+}
+
 interface PrivateClawSessionControlProvider {
   listManagedSessions(): PrivateClawManagedSession[];
   getSessionQrBundle(
@@ -95,6 +106,13 @@ interface PrivateClawSessionControlProvider {
     appId: string;
     displayName: string;
   }>;
+  deliverOpenClawOutboundMessage?(
+    sessionId: string,
+    payload: PrivateClawOpenClawOutboundMessage,
+  ): Promise<void>;
+  routeAppMessageToOpenClaw?(
+    message: PrivateClawRoutedAppMessage,
+  ): Promise<void>;
 }
 
 function writeJson(
@@ -154,6 +172,110 @@ function isDescriptor(
     typeof descriptor.token === "string" &&
     typeof descriptor.startedAt === "string"
   );
+}
+
+function readNonEmptyString(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed === "" ? undefined : trimmed;
+}
+
+function normalizeManagedSessionLookupId(sessionId: string): string {
+  const trimmed = sessionId.trim();
+  const separatorIndex = trimmed.indexOf(":");
+  if (separatorIndex <= 0) {
+    return trimmed;
+  }
+  const prefix = trimmed.slice(0, separatorIndex).toLowerCase();
+  if (prefix !== "group" && prefix !== "direct") {
+    return trimmed;
+  }
+  const bareSessionId = trimmed.slice(separatorIndex + 1).trim();
+  return bareSessionId === "" ? trimmed : bareSessionId;
+}
+
+function normalizeRoutedAppMessage(value: unknown): PrivateClawRoutedAppMessage {
+  if (!value || typeof value !== "object") {
+    throw new Error("Expected a routed app message object.");
+  }
+  const candidate = value as Record<string, unknown>;
+  const sessionId = readNonEmptyString(candidate.sessionId);
+  if (!sessionId) {
+    throw new Error("Routed app message requires a sessionId.");
+  }
+  if (typeof candidate.groupMode !== "boolean") {
+    throw new Error("Routed app message requires a boolean groupMode.");
+  }
+  const payload =
+    candidate.payload && typeof candidate.payload === "object"
+      ? (candidate.payload as Record<string, unknown>)
+      : undefined;
+  if (!payload || payload.kind !== "user_message") {
+    throw new Error("Routed app message payload must be a user_message.");
+  }
+  if (!readNonEmptyString(payload.text)) {
+    throw new Error("Routed app message payload requires text.");
+  }
+  if (!readNonEmptyString(payload.clientMessageId)) {
+    throw new Error("Routed app message payload requires clientMessageId.");
+  }
+  if (!readNonEmptyString(payload.sentAt)) {
+    throw new Error("Routed app message payload requires sentAt.");
+  }
+  const participantCandidate =
+    candidate.participant && typeof candidate.participant === "object"
+      ? (candidate.participant as Record<string, unknown>)
+      : undefined;
+  const participant =
+    participantCandidate &&
+    readNonEmptyString(participantCandidate.appId) &&
+    readNonEmptyString(participantCandidate.displayName)
+      ? (() => {
+          const deviceLabel = readNonEmptyString(participantCandidate.deviceLabel);
+          return {
+            appId: readNonEmptyString(participantCandidate.appId)!,
+            displayName: readNonEmptyString(participantCandidate.displayName)!,
+            ...(deviceLabel ? { deviceLabel } : {}),
+          };
+        })()
+      : undefined;
+  const sessionLabel = readNonEmptyString(candidate.sessionLabel);
+  return {
+    sessionId,
+    ...(sessionLabel ? { sessionLabel } : {}),
+    groupMode: candidate.groupMode,
+    ...(participant ? { participant } : {}),
+    payload: candidate.payload as PrivateClawRoutedAppMessage["payload"],
+  };
+}
+
+function normalizeOpenClawOutboundMessage(
+  value: unknown,
+): PrivateClawOpenClawOutboundMessage {
+  if (!value || typeof value !== "object") {
+    throw new Error("Expected an outbound payload object.");
+  }
+  const candidate = value as Record<string, unknown>;
+  const text = readNonEmptyString(candidate.text);
+  const mediaUrl = readNonEmptyString(candidate.mediaUrl);
+  const mediaUrls = Array.isArray(candidate.mediaUrls)
+    ? candidate.mediaUrls
+        .map((item) => readNonEmptyString(item))
+        .filter((item): item is string => item != null)
+    : undefined;
+  const replyToId =
+    candidate.replyToId === null ? null : readNonEmptyString(candidate.replyToId);
+  if (!text && !mediaUrl && (!mediaUrls || mediaUrls.length === 0)) {
+    throw new Error("Outbound payload must include text, mediaUrl, or mediaUrls.");
+  }
+  return {
+    ...(text ? { text } : {}),
+    ...(mediaUrl ? { mediaUrl } : {}),
+    ...(mediaUrls && mediaUrls.length > 0 ? { mediaUrls } : {}),
+    ...(replyToId !== undefined ? { replyToId } : {}),
+  };
 }
 
 async function listDescriptorPaths(controlDir: string): Promise<string[]> {
@@ -472,6 +594,43 @@ export class PrivateClawSessionControlServer {
           } satisfies PrivateClawSessionCloseResult);
           return;
         }
+        if (
+          request.method === "POST" &&
+          url.pathname.startsWith("/sessions/") &&
+          url.pathname.endsWith("/outbound")
+        ) {
+          if (!this.options.provider.deliverOpenClawOutboundMessage) {
+            writeJson(response, 404, { error: "not_found" });
+            return;
+          }
+          const sessionId = decodeURIComponent(
+            url.pathname.slice("/sessions/".length, -"/outbound".length),
+          );
+          const payload = normalizeOpenClawOutboundMessage(
+            await readJsonBody(request),
+          );
+          await this.options.provider.deliverOpenClawOutboundMessage(
+            sessionId,
+            payload,
+          );
+          writeJson(response, 200, {
+            sessionId,
+          } satisfies PrivateClawSessionOutboundResult);
+          return;
+        }
+        if (request.method === "POST" && url.pathname === "/openclaw/dispatch-app-message") {
+          if (!this.options.provider.routeAppMessageToOpenClaw) {
+            writeJson(response, 404, { error: "not_found" });
+            return;
+          }
+          const message = normalizeRoutedAppMessage(await readJsonBody(request));
+          await this.options.provider.routeAppMessageToOpenClaw(message);
+          writeJson(response, 200, {
+            sessionId: message.sessionId,
+            handled: true,
+          } satisfies PrivateClawAppDispatchResult);
+          return;
+        }
 
         writeJson(response, 404, { error: "not_found" });
       } catch (error) {
@@ -572,12 +731,13 @@ async function resolveManagedSessionDescriptor(params: {
   descriptor: PrivateClawSessionControlDescriptor;
   descriptorPath: string;
 }> {
+  const normalizedSessionId = normalizeManagedSessionLookupId(params.sessionId);
   const listings = await listManagedSessionsFromStateDir(params.stateDir);
   const descriptors = await loadDescriptors(params.stateDir);
 
   for (const listing of listings) {
     const session = listing.sessions.find(
-      (candidate) => candidate.sessionId === params.sessionId,
+      (candidate) => candidate.sessionId === normalizedSessionId,
     );
     if (!session) {
       continue;
@@ -603,13 +763,39 @@ async function resolveManagedSessionDescriptor(params: {
   );
 }
 
+async function resolvePluginServiceDescriptor(params: {
+  stateDir: string;
+}): Promise<{
+  descriptor: PrivateClawSessionControlDescriptor;
+  descriptorPath: string;
+}> {
+  const descriptors = await loadDescriptors(params.stateDir);
+  const pluginDescriptors = descriptors
+    .filter((candidate) => candidate.descriptor.kind === "plugin-service")
+    .sort((left, right) =>
+      right.descriptor.startedAt.localeCompare(left.descriptor.startedAt),
+    );
+  for (const candidate of pluginDescriptors) {
+    try {
+      await requestDescriptorJson<{ ok: true }>(candidate.descriptor, "/healthz");
+      return candidate;
+    } catch {
+      await rm(candidate.descriptorPath, { force: true });
+    }
+  }
+  throw new Error(
+    `Could not find an active PrivateClaw plugin-service host in ${resolvePrivateClawStateDir(params.stateDir)}.`,
+  );
+}
+
 async function resolveLegacySessionQrPngPath(params: {
   stateDir: string;
   sessionId: string;
 }): Promise<string | undefined> {
+  const normalizedSessionId = normalizeManagedSessionLookupId(params.sessionId);
   const pngPath = path.join(
     resolvePrivateClawMediaDir(resolvePrivateClawStateDir(params.stateDir)),
-    `privateclaw-${params.sessionId}.png`,
+    `privateclaw-${normalizedSessionId}.png`,
   );
   try {
     await access(pngPath);
@@ -701,7 +887,7 @@ export async function kickManagedParticipantFromStateDir(params: {
   });
   const result = await requestDescriptorJson<PrivateClawKickResult>(
     resolved.descriptor,
-    `/sessions/${encodeURIComponent(params.sessionId)}/kick`,
+    `/sessions/${encodeURIComponent(resolved.session.sessionId)}/kick`,
     {
       method: "POST",
       body: {
@@ -714,6 +900,67 @@ export async function kickManagedParticipantFromStateDir(params: {
     host: resolved.listing.host,
     session: resolved.session,
     participant: result.participant,
+  };
+}
+
+export async function dispatchRoutedAppMessageToPluginServiceFromStateDir(params: {
+  stateDir: string;
+  message: PrivateClawRoutedAppMessage;
+}): Promise<void> {
+  const resolved = await resolvePluginServiceDescriptor({
+    stateDir: params.stateDir,
+  });
+  try {
+    await requestDescriptorJson<PrivateClawAppDispatchResult>(
+      resolved.descriptor,
+      "/openclaw/dispatch-app-message",
+      {
+        method: "POST",
+        body: params.message,
+      },
+    );
+  } catch (error) {
+    if (error instanceof PrivateClawControlRequestError && error.status === 404) {
+      throw new Error(
+        "The active PrivateClaw plugin-service host is too old to accept routed app messages.",
+      );
+    }
+    throw error;
+  }
+}
+
+export async function deliverManagedSessionOutboundFromStateDir(params: {
+  stateDir: string;
+  sessionId: string;
+  payload: PrivateClawOpenClawOutboundMessage;
+}): Promise<{
+  host: PrivateClawDiscoveredSessionHost;
+  session: PrivateClawManagedSession;
+}> {
+  const resolved = await resolveManagedSessionDescriptor({
+    stateDir: params.stateDir,
+    sessionId: params.sessionId,
+  });
+  try {
+    await requestDescriptorJson<PrivateClawSessionOutboundResult>(
+      resolved.descriptor,
+      `/sessions/${encodeURIComponent(resolved.session.sessionId)}/outbound`,
+      {
+        method: "POST",
+        body: params.payload,
+      },
+    );
+  } catch (error) {
+    if (error instanceof PrivateClawControlRequestError && error.status === 404) {
+      throw new Error(
+        `The PrivateClaw host for session ${params.sessionId} is too old to accept OpenClaw channel replies.`,
+      );
+    }
+    throw error;
+  }
+  return {
+    host: resolved.listing.host,
+    session: resolved.session,
   };
 }
 
@@ -733,7 +980,7 @@ export async function closeManagedSessionFromStateDir(params: {
   try {
     await requestDescriptorJson<PrivateClawSessionCloseResult>(
       resolved.descriptor,
-      `/sessions/${encodeURIComponent(params.sessionId)}/close`,
+      `/sessions/${encodeURIComponent(resolved.session.sessionId)}/close`,
       {
         method: "POST",
         body: {
@@ -843,7 +1090,7 @@ export async function getManagedSessionQrBundleFromStateDir(params: {
   try {
     const result = await requestDescriptorJson<PrivateClawSessionQrResult>(
       resolved.descriptor,
-      `/sessions/${encodeURIComponent(params.sessionId)}/qr`,
+      `/sessions/${encodeURIComponent(resolved.session.sessionId)}/qr`,
       {
         method: "POST",
         body: {

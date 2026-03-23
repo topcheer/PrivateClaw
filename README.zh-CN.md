@@ -186,7 +186,7 @@ openclaw channels add --channel telegram --token <token>
 
 如果你不想借助另一个聊天工具，现在最省事的路径是直接在已经装好 OpenClaw 的机器上运行 `npx -y @privateclaw/privateclaw@latest`。这个独立向导会先把本地插件安装/启用好，再替你开始配对。
 
-当插件已经安装并启用后，下面这些共享的会话管理命令会出现在 `openclaw privateclaw` 里；独立 npm 二进制 `privateclaw-provider <subcommand>` 也提供同一组共享命令：
+当插件已经安装并启用后，先重启正在运行的 OpenClaw gateway / service，让它重新加载扩展。重启完成后，gateway 现在会主动拉起内部的 PrivateClaw `plugin-service`，因此 `openclaw privateclaw pair` 不再依赖“先去别的聊天渠道里跑一次 `/privateclaw` 预热插件”。随后，下面这些共享的会话管理命令会出现在 `openclaw privateclaw` 里；独立 npm 二进制 `privateclaw-provider <subcommand>` 也提供同一组共享命令：
 
 | 命令 | 用途 | 说明 |
 | --- | --- | --- |

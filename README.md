@@ -216,7 +216,7 @@ For cross-channel safety, keep the invite URI in the announcement text even when
 
 If you want to start a session without another chat app, the easiest path is now `npx -y @privateclaw/privateclaw@latest` on a machine that already has OpenClaw installed locally. That standalone wizard bootstraps the local plugin install and then starts pairing for you.
 
-Once the plugin is installed and enabled, use the provider CLI that it adds to OpenClaw for the shared session-management commands below. The same shared commands also exist on the standalone npm binary as `privateclaw-provider <subcommand>`:
+Once the plugin is installed and enabled, restart the running OpenClaw gateway/service so it reloads the extension. After that restart, the gateway now brings up the internal PrivateClaw `plugin-service` eagerly, so `openclaw privateclaw pair` no longer depends on first warming the plugin through `/privateclaw` on another chat surface. Then use the provider CLI that it adds to OpenClaw for the shared session-management commands below. The same shared commands also exist on the standalone npm binary as `privateclaw-provider <subcommand>`:
 
 | Command | Purpose | Notes |
 | --- | --- | --- |

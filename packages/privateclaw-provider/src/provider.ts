@@ -1,4 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   decodeInviteString,
   decryptPayload,
@@ -18,6 +21,10 @@ import {
   BOT_MODE_IDLE_TOPICS,
   pickBotModeIdleTopic,
 } from "./bot-mode-topics.js";
+import {
+  extractInlineQqMediaAttachments,
+  inferMimeTypeFromFileName,
+} from "./bridges/openclaw-agent-bridge.js";
 import {
   PRIVATECLAW_QR_ERROR_CORRECTION_LEVEL,
   PRIVATECLAW_QR_IMAGE_MARGIN,
@@ -43,6 +50,7 @@ import type {
   PrivateClawInviteBundle,
   PrivateClawProviderHandoffState,
   PrivateClawManagedSession,
+  PrivateClawOpenClawOutboundMessage,
   PrivateClawProviderOptions,
   PrivateClawProviderSessionHandoff,
   ProviderParticipantState,
@@ -426,6 +434,26 @@ function formatBridgeHistoryTurn(
 function normalizeBridgeSlashCommandText(text: string): string | undefined {
   const trimmed = text.trim();
   return trimmed.startsWith("/") ? trimmed : undefined;
+}
+
+function canRouteAppMessageViaOpenClaw(
+  payload: UserMessagePayload,
+  preparedMessage: PreparedUserMessage,
+): boolean {
+  if ((payload.attachments?.length ?? 0) > 0) {
+    return false;
+  }
+  if (payload.text.trim() === "") {
+    return false;
+  }
+  const directBridgeSlashCommand = normalizeBridgeSlashCommandText(payload.text);
+  if (
+    preparedMessage.bridgeText &&
+    preparedMessage.bridgeText !== directBridgeSlashCommand
+  ) {
+    return false;
+  }
+  return true;
 }
 
 function cloneThinkingEntries(
@@ -918,6 +946,10 @@ export class PrivateClawProvider {
     return [...this.sessions.values()].map(toManagedSessionSnapshot);
   }
 
+  hasManagedSession(sessionId: string): boolean {
+    return this.sessions.has(sessionId);
+  }
+
   async getSessionQrBundle(
     sessionId: string,
     params?: { notifyParticipants?: boolean },
@@ -946,6 +978,71 @@ export class PrivateClawProvider {
     await this.relayClient.closeSession(sessionId, reason);
     this.deleteSession(sessionId);
     return snapshot;
+  }
+
+  private async buildOpenClawOutboundAttachments(
+    payload: PrivateClawOpenClawOutboundMessage,
+  ): Promise<PrivateClawAttachment[]> {
+    const mediaCandidates = [
+      ...(readNonEmptyString(payload.mediaUrl)
+        ? [readNonEmptyString(payload.mediaUrl)!]
+        : []),
+      ...((payload.mediaUrls ?? [])
+        .map((candidate) => readNonEmptyString(candidate))
+        .filter((candidate): candidate is string => candidate != null)),
+    ];
+    const attachments: PrivateClawAttachment[] = [];
+    for (const mediaCandidate of mediaCandidates) {
+      const isRemoteUri =
+        /^[a-z][a-z0-9+.-]*:\/\//iu.test(mediaCandidate) &&
+        !mediaCandidate.startsWith("file://");
+      if (isRemoteUri) {
+        const parsedUrl = new URL(mediaCandidate);
+        const fileName = path.basename(parsedUrl.pathname) || "attachment";
+        attachments.push({
+          id: buildMessageId("attachment"),
+          name: fileName,
+          mimeType:
+            inferMimeTypeFromFileName(fileName) ?? "application/octet-stream",
+          sizeBytes: 0,
+          uri: mediaCandidate,
+        });
+        continue;
+      }
+      const filePath = mediaCandidate.startsWith("file://")
+        ? fileURLToPath(mediaCandidate)
+        : mediaCandidate;
+      const fileName = path.basename(filePath) || "attachment";
+      const fileBytes = await readFile(filePath);
+      attachments.push({
+        id: buildMessageId("attachment"),
+        name: fileName,
+        mimeType:
+          inferMimeTypeFromFileName(fileName) ?? "application/octet-stream",
+        sizeBytes: fileBytes.length,
+        dataBase64: fileBytes.toString("base64"),
+      });
+    }
+    return attachments;
+  }
+
+  async deliverOpenClawOutboundMessage(
+    sessionId: string,
+    payload: PrivateClawOpenClawOutboundMessage,
+  ): Promise<void> {
+    this.requireSession(sessionId);
+    const attachments = await this.buildOpenClawOutboundAttachments(payload);
+    const text = readNonEmptyString(payload.text) ?? "";
+    if (text === "" && attachments.length === 0) {
+      return;
+    }
+    await this.sendAssistantMessage(sessionId, {
+      text,
+      ...(typeof payload.replyToId === "string" && payload.replyToId.trim() !== ""
+        ? { replyTo: payload.replyToId }
+        : {}),
+      ...(attachments.length > 0 ? { attachments } : {}),
+    });
   }
 
   exportHandoffState(): PrivateClawProviderHandoffState {
@@ -1228,6 +1325,32 @@ export class PrivateClawProvider {
         ? { attachments: preparedMessage.attachments }
         : {}),
     });
+
+    if (
+      this.options.appMessageRouter &&
+      canRouteAppMessageViaOpenClaw(payload, preparedMessage)
+    ) {
+      const handled = await this.options.appMessageRouter({
+        sessionId,
+        ...(session.label ? { sessionLabel: session.label } : {}),
+        groupMode: session.groupMode,
+        ...(participant
+          ? {
+              participant: {
+                appId: participant.appId,
+                displayName: participant.displayName,
+                ...(participant.deviceLabel
+                  ? { deviceLabel: participant.deviceLabel }
+                  : {}),
+              },
+            }
+          : {}),
+        payload,
+      });
+      if (handled) {
+        return;
+      }
+    }
 
     const bridgeMessage =
       preparedMessage.bridgeText ??
@@ -1827,24 +1950,30 @@ export class PrivateClawProvider {
     const sentAt = params.sentAt ?? nowIso();
     const messageId = params.messageId ?? buildMessageId("assistant");
     const session = this.requireSession(sessionId);
+    const qqMediaResult = extractInlineQqMediaAttachments(params.text);
+    const attachments = [
+      ...(params.attachments ?? []),
+      ...qqMediaResult.attachments,
+    ];
+    const normalizedText = qqMediaResult.text;
     if (params.storeHistory !== false) {
       session.history.push({
         messageId,
         role: "assistant",
-        text: params.text,
+        text: normalizedText,
         sentAt,
         ...(params.replyTo ? { replyTo: params.replyTo } : {}),
-        ...(params.attachments ? { attachments: params.attachments } : {}),
+        ...(attachments.length > 0 ? { attachments } : {}),
       });
     }
     await this.sendPayload(sessionId, {
       kind: "assistant_message",
       messageId,
-      text: params.text,
+      text: normalizedText,
       sentAt,
       ...(params.replyTo ? { replyTo: params.replyTo } : {}),
       ...(params.pending ? { pending: true } : {}),
-      ...(params.attachments ? { attachments: params.attachments } : {}),
+      ...(attachments.length > 0 ? { attachments } : {}),
     }, params.targetAppId);
   }
 

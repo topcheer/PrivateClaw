@@ -31,6 +31,18 @@ export interface PairSessionOptions {
   handoffToBackground?: () => Promise<string | void>;
 }
 
+type ActiveSessionSource = Pick<PrivateClawProvider, "listActiveSessions">;
+
+export type PairSessionForegroundOutcome =
+  | { kind: "signal"; signal: NodeJS.Signals }
+  | { kind: "session-ended" }
+  | { kind: "stdin-eof" };
+
+export interface PairSessionWaiter<TOutcome> {
+  promise: Promise<TOutcome>;
+  cancel(): void;
+}
+
 export function parsePositiveIntegerFlag(
   value: string | undefined,
   label: string,
@@ -52,63 +64,155 @@ export function parsePositiveIntegerFlag(
   return parsed;
 }
 
-async function waitForShutdownSignal(): Promise<NodeJS.Signals> {
-  return new Promise((resolve) => {
-    const handleSigint = () => {
-      cleanup();
-      resolve("SIGINT");
-    };
-    const handleSigterm = () => {
-      cleanup();
-      resolve("SIGTERM");
-    };
-    const cleanup = () => {
-      process.off("SIGINT", handleSigint);
-      process.off("SIGTERM", handleSigterm);
-    };
-
-    process.once("SIGINT", handleSigint);
-    process.once("SIGTERM", handleSigterm);
-  });
+function createNeverResolvingPromise<T>(): Promise<T> {
+  return new Promise<T>(() => undefined);
 }
 
-async function waitForStdinEof(): Promise<void> {
-  if (!process.stdin.isTTY || process.stdin.destroyed) {
-    return new Promise<void>(() => undefined);
+export function createShutdownSignalWaiter(
+  signalSource: Pick<NodeJS.Process, "once" | "off"> = process,
+): PairSessionWaiter<{ kind: "signal"; signal: NodeJS.Signals }> {
+  let cancelled = false;
+  let handleSigint: (() => void) | undefined;
+  let handleSigterm: (() => void) | undefined;
+  const cleanup = () => {
+    if (cancelled) {
+      return;
+    }
+    cancelled = true;
+    if (handleSigint) {
+      signalSource.off("SIGINT", handleSigint);
+    }
+    if (handleSigterm) {
+      signalSource.off("SIGTERM", handleSigterm);
+    }
+  };
+  const promise = new Promise<{ kind: "signal"; signal: NodeJS.Signals }>((resolve) => {
+    handleSigint = () => {
+      cleanup();
+      resolve({ kind: "signal", signal: "SIGINT" });
+    };
+    handleSigterm = () => {
+      cleanup();
+      resolve({ kind: "signal", signal: "SIGTERM" });
+    };
+
+    signalSource.once("SIGINT", handleSigint);
+    signalSource.once("SIGTERM", handleSigterm);
+  });
+  return {
+    promise,
+    cancel: cleanup,
+  };
+}
+
+export function createStdinEofWaiter(
+  input: Pick<
+    NodeJS.ReadStream,
+    "isTTY" | "destroyed" | "isPaused" | "pause" | "resume" | "once" | "off"
+  > = process.stdin,
+): PairSessionWaiter<{ kind: "stdin-eof" }> {
+  if (!input.isTTY || input.destroyed) {
+    return {
+      promise: createNeverResolvingPromise(),
+      cancel: () => undefined,
+    };
   }
 
-  return new Promise((resolve) => {
-    const wasPaused = process.stdin.isPaused();
-    const handleEnd = () => {
+  let cancelled = false;
+  const wasPaused = input.isPaused();
+  let handleEnd: (() => void) | undefined;
+  let handleClose: (() => void) | undefined;
+  const cleanup = () => {
+    if (cancelled) {
+      return;
+    }
+    cancelled = true;
+    if (handleEnd) {
+      input.off("end", handleEnd);
+    }
+    if (handleClose) {
+      input.off("close", handleClose);
+    }
+    if (wasPaused && !input.destroyed) {
+      input.pause();
+    }
+  };
+  const promise = new Promise<{ kind: "stdin-eof" }>((resolve) => {
+    handleEnd = () => {
       cleanup();
-      resolve();
+      resolve({ kind: "stdin-eof" });
     };
-    const handleClose = () => {
+    handleClose = () => {
       cleanup();
-      resolve();
-    };
-    const cleanup = () => {
-      process.stdin.off("end", handleEnd);
-      process.stdin.off("close", handleClose);
-      if (wasPaused && !process.stdin.destroyed) {
-        process.stdin.pause();
-      }
+      resolve({ kind: "stdin-eof" });
     };
 
-    process.stdin.once("end", handleEnd);
-    process.stdin.once("close", handleClose);
+    input.once("end", handleEnd);
+    input.once("close", handleClose);
     if (wasPaused) {
-      process.stdin.resume();
+      input.resume();
     }
   });
+  return {
+    promise,
+    cancel: cleanup,
+  };
 }
 
-async function waitForSessionsToDrain(
-  provider: PrivateClawProvider,
+export function createSessionsDrainWaiter(
+  provider: ActiveSessionSource,
   pollMs = 250,
-): Promise<void> {
-  while (provider.listActiveSessions().length > 0) {
-    await new Promise((resolve) => setTimeout(resolve, pollMs));
+): PairSessionWaiter<{ kind: "session-ended" }> {
+  let timer: NodeJS.Timeout | undefined;
+  let cancelled = false;
+  const promise = new Promise<{ kind: "session-ended" }>((resolve) => {
+    const poll = () => {
+      if (cancelled) {
+        return;
+      }
+      if (provider.listActiveSessions().length === 0) {
+        cancelled = true;
+        resolve({ kind: "session-ended" });
+        return;
+      }
+      timer = setTimeout(poll, pollMs);
+    };
+    poll();
+  });
+  return {
+    promise,
+    cancel: () => {
+      cancelled = true;
+      if (timer) {
+        clearTimeout(timer);
+        timer = undefined;
+      }
+    },
+  };
+}
+
+export async function waitForForegroundPairOutcome(params: {
+  provider: ActiveSessionSource;
+  handoffToBackground?: () => Promise<string | void>;
+  pollMs?: number;
+  createSignalWaiter?: typeof createShutdownSignalWaiter;
+  createDrainWaiter?: typeof createSessionsDrainWaiter;
+  createInputWaiter?: typeof createStdinEofWaiter;
+}): Promise<PairSessionForegroundOutcome> {
+  const createSignalWaiter = params.createSignalWaiter ?? createShutdownSignalWaiter;
+  const createDrainWaiter = params.createDrainWaiter ?? createSessionsDrainWaiter;
+  const createInputWaiter = params.createInputWaiter ?? createStdinEofWaiter;
+  const waiters: PairSessionWaiter<PairSessionForegroundOutcome>[] = [
+    createSignalWaiter(),
+    createDrainWaiter(params.provider, params.pollMs),
+    ...(params.handoffToBackground ? [createInputWaiter()] : []),
+  ];
+  try {
+    return await Promise.race(waiters.map((waiter) => waiter.promise));
+  } finally {
+    for (const waiter of waiters) {
+      waiter.cancel();
+    }
   }
 }
 
@@ -203,17 +307,10 @@ export async function runPairSession({
     );
     writePrivateClawAppInstallFooter(writeLine);
     for (;;) {
-      const outcome = await Promise.race<
-        | { kind: "signal"; signal: NodeJS.Signals }
-        | { kind: "session-ended" }
-        | { kind: "stdin-eof" }
-      >([
-        waitForShutdownSignal().then((signal) => ({ kind: "signal", signal })),
-        waitForSessionsToDrain(provider).then(() => ({ kind: "session-ended" })),
-        ...(handoffToBackground
-          ? [waitForStdinEof().then(() => ({ kind: "stdin-eof" as const }))]
-          : []),
-      ]);
+      const outcome = await waitForForegroundPairOutcome({
+        provider,
+        ...(handoffToBackground ? { handoffToBackground } : {}),
+      });
       if (outcome.kind === "stdin-eof") {
         try {
           const message = await handoffToBackground?.();

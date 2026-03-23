@@ -1,4 +1,5 @@
 node_modules/
+social-local/
 packages/*/dist/
 services/*/dist/
 .dart_tool/

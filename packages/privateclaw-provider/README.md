@@ -46,9 +46,13 @@ sequenceDiagram
 
 ## Install
 
+If `openclaw` is already installed on the current machine, the quickest standalone bootstrap flow is now:
+
 ```bash
-npm install @privateclaw/privateclaw @privateclaw/protocol
+npx -y @privateclaw/privateclaw@latest
 ```
+
+That `npx` setup wizard checks local OpenClaw, installs or updates the plugin, enables it, restarts the gateway, and then immediately starts pairing. It prompts for single vs group chat and for one of these session-duration presets: `30m`, `2h`, `4h`, `8h`, `24h`, `1w`, `1mo`, `1y`, or `permanent` (`100 years`).
 
 The production default relay for this package is:
 
@@ -75,18 +79,16 @@ openclaw plugins enable privateclaw
 
 After `openclaw plugins install`, `openclaw plugins enable`, or any `openclaw config set plugins.entries.privateclaw.config...` change, restart the running OpenClaw gateway/service before testing so it reloads the extension and config. In practice, that means restarting the running `openclaw start` process or whichever service unit hosts your gateway.
 
-If `openclaw` is already installed on the current machine, the quickest standalone bootstrap flow is now:
-
-```bash
-npx -y @privateclaw/privateclaw@latest
-```
-
-That `npx` setup wizard checks local OpenClaw, installs or updates the plugin, enables it, restarts the gateway, and then immediately starts pairing. It prompts for single vs group chat and for one of these session-duration presets: `30m`, `2h`, `4h`, `8h`, `24h`, `1w`, `1mo`, `1y`, or `permanent` (`100 years`).
-
 You can also preselect those choices:
 
 ```bash
 npx -y @privateclaw/privateclaw@latest setup --group --duration 24h --open
+```
+
+If you are embedding the runtime programmatically instead of installing the OpenClaw plugin, install the packages directly:
+
+```bash
+npm install @privateclaw/privateclaw @privateclaw/protocol
 ```
 
 For local development from this repository, use a linked checkout and point it at your local relay:
@@ -97,9 +99,11 @@ openclaw plugins enable privateclaw
 openclaw config set plugins.entries.privateclaw.config.relayBaseUrl ws://127.0.0.1:8787
 ```
 
-Because local development changes both the installed plugin and relay target, restart the running OpenClaw gateway/service before testing.
+Because local development changes both the installed plugin and relay target, restart the running OpenClaw gateway/service before testing. After that restart, the OpenClaw-hosted `plugin-service` now starts eagerly, so local CLI pairing no longer needs a prior `/privateclaw` warm-up from another chat channel.
 
-PrivateClaw is not configured with `openclaw channels add privateclaw`. If you want `/privateclaw` to be available inside Telegram/Discord/QQ, add one of those normal OpenClaw channels separately with `openclaw channels add --channel ...`.
+Bootstrap pairing still does **not** start with `openclaw channels add privateclaw`. To make `/privateclaw` available inside Telegram/Discord/QQ, add one of those normal OpenClaw channels separately with `openclaw channels add --channel ...`, then start pairing from that existing surface.
+
+Once a PrivateClaw session is paired, app-created plain-text turns and ordinary slash commands are now re-owned by a real internal `privateclaw` OpenClaw channel. That lets reminders and follow-up results created from those app turns route back into the encrypted PrivateClaw session, while local provider-only commands such as `/renew-session`, `/session-qr`, `/mute-bot`, and `/unmute-bot` still stay inside the provider.
 
 ## Relay endpoints
 
@@ -142,6 +146,7 @@ The package now ships a real OpenClaw extension entrypoint:
 - `index.ts` is exposed through `package.json#openclaw.extensions`
 - `openclaw.plugin.json` declares the plugin manifest and config schema
 - the plugin registers a real `/privateclaw` plugin command via `api.registerCommand(...)`
+- the plugin also registers a virtual `privateclaw` OpenClaw channel for paired app-session ownership
 - the command returns both the invite URI and a PNG QR code through `ReplyPayload`
 
 That means the installed extension can surface `/privateclaw`, `/privateclaw group`, and one-off relay overrides such as `/privateclaw relay=https://your-relay.example.com` in native command menus such as Telegram instead of relying on the old local shim.

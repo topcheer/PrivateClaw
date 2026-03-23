@@ -1,2 +1,2 @@
-Peningkatan parsing tautan undangan dan penanganan error sesi.
-Lampiran kini lebih andal untuk dibuka: gambar bisa dilihat layar penuh, dan file lain dapat dibagikan atau dibuka dengan aplikasi lain.
+Balasan yang berisi foto dan file sekaligus kini lebih andal, dan membuka lampiran juga lebih baik.
+Proses pairing, parsing undangan, dan info sesi kini lebih mulus.

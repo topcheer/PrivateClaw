@@ -408,6 +408,160 @@ test("parseOpenClawAgentOutput tolerates malformed closing tags and qqimg markup
   assert.equal(attachment.dataBase64, imageBytes.toString("base64"));
 });
 
+test("parseOpenClawAgentOutput extracts qqfile markup into standard attachments", async (t) => {
+  const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "privateclaw-structured-workspace-"));
+  const mediaDir = await fs.mkdtemp(path.join(os.tmpdir(), "privateclaw-structured-media-"));
+  const filePath = path.join(mediaDir, "report.pdf");
+  const fileBytes = Buffer.from("%PDF-privateclaw-test");
+  await fs.writeFile(filePath, fileBytes);
+  t.after(async () => {
+    await Promise.all([
+      fs.rm(workspaceDir, { recursive: true, force: true }),
+      fs.rm(mediaDir, { recursive: true, force: true }),
+    ]);
+  });
+
+  const result = parseOpenClawAgentOutput(
+    JSON.stringify({
+      status: "ok",
+      result: {
+        payloads: [
+          {
+            text: [
+              "<privateclaw-response>",
+              JSON.stringify({
+                version: 1,
+                messages: [
+                  {
+                    text: `这是你要的文档\n\n<qqfile>${filePath}</qqfile>\n\n请查收。`,
+                  },
+                ],
+                data: {},
+              }),
+              "</privateclaw-response>",
+            ].join("\n"),
+          },
+        ],
+      },
+    }),
+    { workspaceDir },
+  );
+
+  if (typeof result === "string") {
+    assert.fail("Expected an attachment-bearing bridge response.");
+  }
+  const [message] = result.messages;
+  assert(message && typeof message !== "string");
+  assert.equal(message.text, "这是你要的文档\n\n请查收。");
+  const [attachment] = message.attachments ?? [];
+  assert(attachment);
+  assert.match(attachment.id, /^structured-attachment-/u);
+  assert.equal(attachment.name, "report.pdf");
+  assert.equal(attachment.mimeType, "application/pdf");
+  assert.equal(attachment.sizeBytes, fileBytes.byteLength);
+  assert.equal(attachment.dataBase64, fileBytes.toString("base64"));
+});
+
+test("parseOpenClawAgentOutput extracts qqfile markup from plain-text fallbacks", async (t) => {
+  const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "privateclaw-plain-workspace-"));
+  const mediaDir = await fs.mkdtemp(path.join(os.tmpdir(), "privateclaw-plain-media-"));
+  const filePath = path.join(mediaDir, "notes.txt");
+  const fileBytes = Buffer.from("plain-fallback-file");
+  await fs.writeFile(filePath, fileBytes);
+  t.after(async () => {
+    await Promise.all([
+      fs.rm(workspaceDir, { recursive: true, force: true }),
+      fs.rm(mediaDir, { recursive: true, force: true }),
+    ]);
+  });
+
+  const result = parseOpenClawAgentOutput(
+    JSON.stringify({
+      status: "ok",
+      result: {
+        payloads: [
+          {
+            text: `这是 plain fallback\n\n<qqfile>${filePath}</qqfile>\n\n已经附上。`,
+          },
+        ],
+      },
+    }),
+    { workspaceDir },
+  );
+
+  if (typeof result === "string") {
+    assert.fail("Expected an attachment-bearing bridge response.");
+  }
+  const [message] = result.messages;
+  assert(message && typeof message !== "string");
+  assert.equal(message.text, "这是 plain fallback\n\n已经附上。");
+  const [attachment] = message.attachments ?? [];
+  assert(attachment);
+  assert.equal(attachment.name, "notes.txt");
+  assert.equal(attachment.mimeType, "text/plain");
+  assert.equal(attachment.sizeBytes, fileBytes.byteLength);
+  assert.equal(attachment.dataBase64, fileBytes.toString("base64"));
+});
+
+test("parseOpenClawAgentOutput preserves mixed qqimg and qqfile markup in order", async (t) => {
+  const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "privateclaw-mixed-workspace-"));
+  const filePath = path.join(workspaceDir, "manual.txt");
+  const fileBytes = Buffer.from("mixed-inline-file");
+  await fs.writeFile(filePath, fileBytes);
+  t.after(async () => {
+    await fs.rm(workspaceDir, { recursive: true, force: true });
+  });
+
+  const result = parseOpenClawAgentOutput(
+    JSON.stringify({
+      status: "ok",
+      result: {
+        payloads: [
+          {
+            text: [
+              "先看图",
+              "<qqimg>https://example.com/bridge.png</qqimg>",
+              "再收文件",
+              `<qqfile>${filePath}</qqfile>`,
+            ].join("\n\n"),
+          },
+        ],
+      },
+    }),
+    { workspaceDir },
+  );
+
+  if (typeof result === "string") {
+    assert.fail("Expected an attachment-bearing bridge response.");
+  }
+  const [message] = result.messages;
+  assert(message && typeof message !== "string");
+  assert.equal(message.text, "先看图\n\n再收文件");
+  assert.equal(message.attachments?.length, 2);
+  assert.deepEqual(
+    message.attachments?.map((attachment) => ({
+      name: attachment.name,
+      mimeType: attachment.mimeType,
+      uri: attachment.uri,
+      dataBase64: attachment.dataBase64,
+    })),
+    [
+      {
+        name: "bridge.png",
+        mimeType: "image/png",
+        uri: "https://example.com/bridge.png",
+        dataBase64: undefined,
+      },
+      {
+        name: "manual.txt",
+        mimeType: "text/plain",
+        uri: undefined,
+        dataBase64: fileBytes.toString("base64"),
+      },
+    ],
+  );
+});
+
 test("OpenClawAgentBridge invokes openclaw agent with session-aware arguments", async () => {
   let invokedFile = "";
   let invokedArgs: string[] = [];

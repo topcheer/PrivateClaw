@@ -288,11 +288,16 @@ function extractDisplayResult(
 
   const messages =
     payloads.flatMap((payload) =>
-      [payload.text, payload.message, payload.summary].flatMap((candidate) =>
-        typeof candidate === "string" && stripStructuredResponseBlock(candidate) !== ""
-          ? [{ text: stripStructuredResponseBlock(candidate) }]
-          : [],
-      ),
+      [payload.text, payload.message, payload.summary].flatMap((candidate) => {
+        if (typeof candidate !== "string") {
+          return [];
+        }
+        const normalized = normalizePlainBridgeTextMessage(
+          candidate,
+          options?.workspaceDir ? { workspaceDir: options.workspaceDir } : undefined,
+        );
+        return normalized ? [normalized] : [];
+      }),
     ) ?? [];
 
   if (messages.length === 0) {
@@ -1314,9 +1319,12 @@ function extractAssistantDisplayResult(
     return { result: structuredResult, isStructured: true };
   }
 
-  const fallbackText = stripStructuredResponseBlock(rawText);
-  return fallbackText !== ""
-    ? { result: { messages: [{ text: fallbackText }] }, isStructured: false }
+  const fallbackMessage = normalizePlainBridgeTextMessage(
+    rawText,
+    options?.workspaceDir ? { workspaceDir: options.workspaceDir } : undefined,
+  );
+  return fallbackMessage
+    ? { result: { messages: [fallbackMessage] }, isStructured: false }
     : { result: { messages: [] }, isStructured: false };
 }
 
@@ -1357,7 +1365,7 @@ function buildStructuredResponseContractPrompt(): string {
     "- To send images/files, add an attachments array to the message: {\"text\":\"...\",\"attachments\":[{\"name\":\"file.png\",\"mimeType\":\"image/png\",\"filePath\":\"relative/path/in/current/workspace/or/absolute/local/path\"}]}",
     "- Or use dataBase64 for inline binary: {\"name\":\"file.png\",\"mimeType\":\"image/png\",\"dataBase64\":\"...\"}",
     "- Never put attachments at the top level of the response object. Files must live inside messages[].attachments.",
-    "- Never put channel-specific markup such as <qqimg>...</qqimg>, markdown image syntax, or raw local file paths inside messages[].text. Put files only in messages[].attachments.",
+    "- Never put channel-specific markup such as <qqimg>...</qqimg>, <qqvoice>...</qqvoice>, <qqvideo>...</qqvideo>, or <qqfile>...</qqfile>, markdown image syntax, or raw local file paths inside messages[].text. Put files only in messages[].attachments.",
     "- Use data for optional machine-readable extraction results that PrivateClaw may consume in future file-processing flows.",
     "- Do not wrap the JSON in markdown fences.",
   ].join("\n");
@@ -1437,14 +1445,14 @@ function parseStructuredResponseResult(
   const messages: NormalizedBridgeMessage[] = [];
   for (const message of structured.messages ?? []) {
     const text = typeof message.text === "string" ? message.text.trim() : "";
-    const qqimgResult = extractInlineQqimgAttachments(text, options);
+    const qqMediaResult = extractInlineQqMediaAttachments(text, options);
     const attachments = [
       ...resolveStructuredAttachments(message.attachments, options),
-      ...qqimgResult.attachments,
+      ...qqMediaResult.attachments,
     ];
-    if (qqimgResult.text !== "" || attachments.length > 0) {
+    if (qqMediaResult.text !== "" || attachments.length > 0) {
       messages.push({
-        text: qqimgResult.text,
+        text: qqMediaResult.text,
         ...(attachments.length > 0 ? { attachments } : {}),
       });
     }
@@ -1516,7 +1524,31 @@ function extractStructuredResponsePayload(raw: string): string | undefined {
   return undefined;
 }
 
-function extractInlineQqimgAttachments(
+function normalizePlainBridgeTextMessage(
+  rawText: string,
+  options?: {
+    workspaceDir?: string;
+  },
+): NormalizedBridgeMessage | undefined {
+  const strippedText = stripStructuredResponseBlock(rawText);
+  if (strippedText === "") {
+    return undefined;
+  }
+
+  const mediaResult = extractInlineQqMediaAttachments(strippedText, options);
+  if (mediaResult.text === "" && mediaResult.attachments.length === 0) {
+    return undefined;
+  }
+
+  return {
+    text: mediaResult.text,
+    ...(mediaResult.attachments.length > 0
+      ? { attachments: mediaResult.attachments }
+      : {}),
+  };
+}
+
+export function extractInlineQqMediaAttachments(
   text: string,
   options?: {
     workspaceDir?: string;
@@ -1525,17 +1557,28 @@ function extractInlineQqimgAttachments(
   text: string;
   attachments: PrivateClawAttachment[];
 } {
-  if (!text.includes("<qqimg>")) {
+  if (!text.includes("<qq")) {
     return { text, attachments: [] };
   }
 
   const attachments: PrivateClawAttachment[] = [];
-  for (const match of text.matchAll(/<qqimg>([\s\S]*?)<\/qqimg>/giu)) {
-    const rawValue = match[1]?.trim();
-    if (!rawValue) {
+  const mediaTagPattern = /<(qqimg|qqvoice|qqvideo|qqfile)>([\s\S]*?)<\/(?:qqimg|qqvoice|qqvideo|qqfile|img)>/giu;
+  for (const match of text.matchAll(mediaTagPattern)) {
+    const rawTagName = match[1]?.trim().toLowerCase();
+    const rawValue = match[2]?.trim();
+    if (
+      !rawTagName ||
+      !isInlineQqMediaTag(rawTagName) ||
+      !rawValue ||
+      rawValue === ""
+    ) {
       continue;
     }
-    const attachment = resolveInlineQqimgAttachment(rawValue, options);
+    const attachment = resolveInlineQqMediaAttachment(
+      rawValue,
+      rawTagName,
+      options,
+    );
     if (attachment) {
       attachments.push(attachment);
     }
@@ -1543,15 +1586,40 @@ function extractInlineQqimgAttachments(
 
   return {
     text: text
-      .replace(/<qqimg>[\s\S]*?<\/qqimg>/giu, "")
+      .replace(mediaTagPattern, "")
       .replace(/\n{3,}/gu, "\n\n")
       .trim(),
     attachments,
   };
 }
 
-function resolveInlineQqimgAttachment(
+function isInlineQqMediaTag(value: string): value is "qqimg" | "qqvoice" | "qqvideo" | "qqfile" {
+  return value === "qqimg" || value === "qqvoice" || value === "qqvideo" || value === "qqfile";
+}
+
+function inferInlineQqMediaMimeType(
+  fileName: string,
+  tagName: "qqimg" | "qqvoice" | "qqvideo" | "qqfile",
+): string {
+  const inferred = inferMimeTypeFromFileName(fileName);
+  if (inferred) {
+    return inferred;
+  }
+  switch (tagName) {
+    case "qqimg":
+      return "image/*";
+    case "qqvoice":
+      return "audio/*";
+    case "qqvideo":
+      return "video/*";
+    case "qqfile":
+      return GENERIC_BINARY_MIME;
+  }
+}
+
+function resolveInlineQqMediaAttachment(
   rawValue: string,
+  tagName: "qqimg" | "qqvoice" | "qqvideo" | "qqfile",
   options?: {
     workspaceDir?: string;
   },
@@ -1564,10 +1632,11 @@ function resolveInlineQqimgAttachment(
       if (parsedUrl.protocol === "file:") {
         const filePath = fileURLToPath(parsedUrl);
         const fileBytes = readFileSync(filePath);
+        const fileName = path.basename(filePath) || "attachment";
         return {
           id: `structured-attachment-${randomUUID()}`,
-          name: path.basename(filePath) || "attachment",
-          mimeType: inferMimeTypeFromFileName(filePath) ?? GENERIC_BINARY_MIME,
+          name: fileName,
+          mimeType: inferInlineQqMediaMimeType(fileName, tagName),
           sizeBytes: fileBytes.byteLength,
           dataBase64: fileBytes.toString("base64"),
         };
@@ -1576,7 +1645,7 @@ function resolveInlineQqimgAttachment(
       return {
         id: `structured-attachment-${randomUUID()}`,
         name: fileName,
-        mimeType: inferMimeTypeFromFileName(fileName) ?? GENERIC_BINARY_MIME,
+        mimeType: inferInlineQqMediaMimeType(fileName, tagName),
         sizeBytes: 0,
         uri: parsedUrl.toString(),
       };
@@ -1591,10 +1660,11 @@ function resolveInlineQqimgAttachment(
       return undefined;
     }
     const fileBytes = readFileSync(filePath);
+    const fileName = path.basename(filePath) || "attachment";
     return {
       id: `structured-attachment-${randomUUID()}`,
-      name: path.basename(filePath) || "attachment",
-      mimeType: inferMimeTypeFromFileName(filePath) ?? GENERIC_BINARY_MIME,
+      name: fileName,
+      mimeType: inferInlineQqMediaMimeType(fileName, tagName),
       sizeBytes: fileBytes.byteLength,
       dataBase64: fileBytes.toString("base64"),
     };
@@ -1865,7 +1935,7 @@ function resolveAttachmentMimeType(attachment: PrivateClawAttachment): string {
   return inferMimeTypeFromFileName(attachment.name) ?? (explicitMimeType || GENERIC_BINARY_MIME);
 }
 
-function inferMimeTypeFromFileName(fileName: string): string | undefined {
+export function inferMimeTypeFromFileName(fileName: string): string | undefined {
   const extension = getFileExtension(fileName);
   switch (extension) {
     case "png":

@@ -5,6 +5,7 @@ import type {
   PrivateClawSlashCommand,
   PrivateClawThinkingEntry,
   PrivateClawThinkingStatus,
+  UserMessagePayload,
 } from "@privateclaw/protocol";
 
 export interface PrivateClawConversationTurn {
@@ -76,6 +77,27 @@ export interface PrivateClawAgentBridge {
   ): Promise<string>;
 }
 
+export interface PrivateClawAppMessageParticipant {
+  appId: string;
+  displayName: string;
+  deviceLabel?: string;
+}
+
+export interface PrivateClawRoutedAppMessage {
+  sessionId: string;
+  sessionLabel?: string;
+  groupMode: boolean;
+  participant?: PrivateClawAppMessageParticipant;
+  payload: UserMessagePayload;
+}
+
+export interface PrivateClawOpenClawOutboundMessage {
+  text?: string;
+  mediaUrl?: string;
+  mediaUrls?: string[];
+  replyToId?: string | null;
+}
+
 export interface PrivateClawProviderOptions {
   providerWsUrl: string;
   appWsUrl: string;
@@ -89,6 +111,7 @@ export interface PrivateClawProviderOptions {
   botModeSilentJoinDelayMs?: number;
   botModeIdleDelayMs?: number;
   commandsProvider?: () => Promise<PrivateClawSlashCommand[]>;
+  appMessageRouter?: (params: PrivateClawRoutedAppMessage) => Promise<boolean>;
   verboseController?: PrivateClawVerboseController;
   onLog?: (message: string) => void;
 }

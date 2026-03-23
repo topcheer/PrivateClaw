@@ -3069,6 +3069,272 @@ test("group bot mode does not greet the same silent participant twice after reco
   assert.deepEqual(bridge.promptKinds, ["silent_join"]);
 });
 
+test("provider routes app text messages through appMessageRouter before the bridge", async (t) => {
+  const relay = createRelayServer({
+    host: "127.0.0.1",
+    port: 0,
+    sessionTtlMs: 60_000,
+    frameCacheSize: 8,
+  });
+  const { port } = await relay.start();
+  t.after(async () => {
+    await relay.stop();
+  });
+
+  const bridge = new HistoryRecordingBridge();
+  const routedTexts: string[] = [];
+  let provider!: PrivateClawProvider;
+  provider = new PrivateClawProvider({
+    providerWsUrl: `ws://127.0.0.1:${port}/ws/provider`,
+    appWsUrl: `ws://127.0.0.1:${port}/ws/app`,
+    bridge,
+    defaultTtlMs: DEFAULT_SESSION_TTL_MS,
+    appMessageRouter: async (message) => {
+      routedTexts.push(message.payload.text);
+      await provider.sendAssistantMessage(message.sessionId, {
+        text: `Routed reply: ${message.payload.text}`,
+        replyTo: message.payload.clientMessageId,
+      });
+      return true;
+    },
+  });
+  await provider.connect();
+  t.after(async () => {
+    await provider.dispose();
+  });
+
+  const inviteBundle = await provider.createInviteBundle();
+  const invite = decodeInviteString(inviteBundle.inviteUri);
+  const appUrl = new URL(invite.appWsUrl);
+  appUrl.searchParams.set("appId", "router-app");
+  const appSocket = new WebSocket(appUrl.toString());
+  const attached = nextMessage(appSocket);
+  await waitForOpen(appSocket);
+  assert.equal((await attached).type, "relay:attached");
+  const initialFrames = nextMessages(appSocket, 2);
+  appSocket.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "client_hello",
+          appId: "router-app",
+          displayName: "Router App",
+          appVersion: "flutter-test",
+          deviceLabel: "Router Device",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+  await initialFrames;
+
+  appSocket.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "user_message",
+          appId: "router-app",
+          text: "hello routed runtime",
+          clientMessageId: "router-msg-1",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+
+  const assistant = await nextRelayPayload(appSocket, invite);
+  assert.equal(assistant.kind, "assistant_message");
+  assert.equal(assistant.text, "Routed reply: hello routed runtime");
+  assert.equal(assistant.replyTo, "router-msg-1");
+  assert.deepEqual(routedTexts, ["hello routed runtime"]);
+  assert.deepEqual(bridge.conversationMessages, []);
+  appSocket.close();
+  await waitForClose(appSocket);
+});
+
+test("provider sendAssistantMessage normalizes inline qq media tags before delivery", async (t) => {
+  const relay = createRelayServer({
+    host: "127.0.0.1",
+    port: 0,
+    sessionTtlMs: 60_000,
+    frameCacheSize: 8,
+  });
+  const { port } = await relay.start();
+  t.after(async () => {
+    await relay.stop();
+  });
+
+  const provider = new PrivateClawProvider({
+    providerWsUrl: `ws://127.0.0.1:${port}/ws/provider`,
+    appWsUrl: `ws://127.0.0.1:${port}/ws/app`,
+    bridge: new EchoBridge("OpenClaw bridge"),
+    defaultTtlMs: DEFAULT_SESSION_TTL_MS,
+  });
+  await provider.connect();
+  t.after(async () => {
+    await provider.dispose();
+  });
+
+  const inviteBundle = await provider.createInviteBundle();
+  const invite = decodeInviteString(inviteBundle.inviteUri);
+  const appUrl = new URL(invite.appWsUrl);
+  appUrl.searchParams.set("appId", "qq-sanitize-app");
+  const appSocket = new WebSocket(appUrl.toString());
+  const attached = nextMessage(appSocket);
+  await waitForOpen(appSocket);
+  assert.equal((await attached).type, "relay:attached");
+  const initialFrames = nextMessages(appSocket, 2);
+  appSocket.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "client_hello",
+          appId: "qq-sanitize-app",
+          displayName: "QQ sanitize app",
+          appVersion: "flutter-test",
+          deviceLabel: "QQ sanitize device",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+  await initialFrames;
+
+  await provider.sendAssistantMessage(invite.sessionId, {
+    text: [
+      "先看图片",
+      "<qqimg>https://example.com/bridge.png</qqimg>",
+      "再收文件",
+      "<qqfile>https://example.com/manual.txt</qqfile>",
+    ].join("\n"),
+    replyTo: "client-msg-1",
+  });
+
+  const assistant = await nextRelayPayload(appSocket, invite);
+  assert.equal(assistant.kind, "assistant_message");
+  if (assistant.kind !== "assistant_message") {
+    return;
+  }
+  assert.equal(assistant.replyTo, "client-msg-1");
+  assert.equal(assistant.text, "先看图片\n\n再收文件");
+  assert.equal(assistant.attachments?.length, 2);
+  assert.deepEqual(
+    assistant.attachments?.map((attachment) => ({
+      name: attachment.name,
+      mimeType: attachment.mimeType,
+      uri: attachment.uri,
+    })),
+    [
+      {
+        name: "bridge.png",
+        mimeType: "image/png",
+        uri: "https://example.com/bridge.png",
+      },
+      {
+        name: "manual.txt",
+        mimeType: "text/plain",
+        uri: "https://example.com/manual.txt",
+      },
+    ],
+  );
+
+  appSocket.close();
+  await waitForClose(appSocket);
+});
+
+test("provider falls back to the bridge when appMessageRouter declines a message", async (t) => {
+  const relay = createRelayServer({
+    host: "127.0.0.1",
+    port: 0,
+    sessionTtlMs: 60_000,
+    frameCacheSize: 8,
+  });
+  const { port } = await relay.start();
+  t.after(async () => {
+    await relay.stop();
+  });
+
+  const bridge = new HistoryRecordingBridge();
+  const routedTexts: string[] = [];
+  const provider = new PrivateClawProvider({
+    providerWsUrl: `ws://127.0.0.1:${port}/ws/provider`,
+    appWsUrl: `ws://127.0.0.1:${port}/ws/app`,
+    bridge,
+    defaultTtlMs: DEFAULT_SESSION_TTL_MS,
+    appMessageRouter: async (message) => {
+      routedTexts.push(message.payload.text);
+      return false;
+    },
+  });
+  await provider.connect();
+  t.after(async () => {
+    await provider.dispose();
+  });
+
+  const inviteBundle = await provider.createInviteBundle();
+  const invite = decodeInviteString(inviteBundle.inviteUri);
+  const appUrl = new URL(invite.appWsUrl);
+  appUrl.searchParams.set("appId", "fallback-app");
+  const appSocket = new WebSocket(appUrl.toString());
+  const attached = nextMessage(appSocket);
+  await waitForOpen(appSocket);
+  assert.equal((await attached).type, "relay:attached");
+  const initialFrames = nextMessages(appSocket, 2);
+  appSocket.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "client_hello",
+          appId: "fallback-app",
+          displayName: "Fallback App",
+          appVersion: "flutter-test",
+          deviceLabel: "Fallback Device",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+  await initialFrames;
+
+  appSocket.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "user_message",
+          appId: "fallback-app",
+          text: "hello bridge fallback",
+          clientMessageId: "fallback-msg-1",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+
+  const assistant = await nextRelayPayload(appSocket, invite);
+  assert.equal(assistant.kind, "assistant_message");
+  assert.equal(assistant.text, "OpenClaw bridge: hello bridge fallback");
+  assert.equal(assistant.replyTo, "fallback-msg-1");
+  assert.deepEqual(routedTexts, ["hello bridge fallback"]);
+  assert.deepEqual(bridge.conversationMessages, ["hello bridge fallback"]);
+  appSocket.close();
+  await waitForClose(appSocket);
+});
+
 test("provider forwards unknown slash commands verbatim to the bridge even when bot replies are muted", async (t) => {
   const relay = createRelayServer({
     host: "127.0.0.1",

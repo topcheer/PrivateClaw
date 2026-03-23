@@ -1,2 +1,2 @@
-Die Verarbeitung von Einladungslinks und die Anzeige von Sitzungsfehlern wurden verbessert.
-Anhänge lassen sich jetzt zuverlässiger öffnen: Bilder im Vollbild, andere Dateien per Teilen oder in anderen Apps.
+Antworten mit Fotos und Dateien zusammen sind jetzt zuverlässiger, ebenso das Öffnen von Anhängen.
+Pairing, Einladungslink-Erkennung und Sitzungshinweise laufen jetzt reibungsloser.

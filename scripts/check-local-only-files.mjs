@@ -32,6 +32,13 @@ const LOCAL_ONLY_PATHS = new Map([
   ],
 ]);
 
+const LOCAL_ONLY_PREFIXES = [
+  [
+    "social-local/",
+    "social-local/ contains local-only social-media credentials and scripts.",
+  ],
+];
+
 const BLOCKED_EXTENSIONS = new Map([
   [".jks", "Android signing keystores should stay local-only."],
   [".keystore", "Android signing keystores should stay local-only."],
@@ -94,6 +101,12 @@ function classifyPath(filePath) {
   const exactReason = LOCAL_ONLY_PATHS.get(normalizedPath);
   if (exactReason) {
     return exactReason;
+  }
+
+  for (const [prefix, reason] of LOCAL_ONLY_PREFIXES) {
+    if (normalizedPath === prefix.slice(0, -1) || normalizedPath.startsWith(prefix)) {
+      return reason;
+    }
   }
 
   const extensionReason = BLOCKED_EXTENSIONS.get(path.extname(normalizedPath).toLowerCase());

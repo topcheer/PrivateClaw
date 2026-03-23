@@ -22,6 +22,7 @@ import {
   buildManagedSessionsReportLines,
   closeManagedSessionsFromStateDir,
   closeManagedSessionFromStateDir,
+  deliverManagedSessionOutboundFromStateDir,
   followManagedSessionLogFromStateDir,
   getManagedSessionQrBundleFromStateDir,
   isManagedSessionQrLegacyResult,
@@ -341,6 +342,92 @@ test("session control can print and notify a managed session QR", async (t) => {
   appOne.close();
   appTwo.close();
   await Promise.all([waitForClose(appOne), waitForClose(appTwo)]);
+});
+
+test("session control outbound delivery accepts group-prefixed session targets", async (t) => {
+  const relay = createRelayServer({
+    host: "127.0.0.1",
+    port: 0,
+    sessionTtlMs: 60_000,
+    frameCacheSize: 8,
+  });
+  const { port } = await relay.start();
+  t.after(async () => {
+    await relay.stop();
+  });
+
+  const stateDir = await mkdtemp(path.join(os.tmpdir(), "privateclaw-session-control-"));
+  t.after(async () => {
+    await rm(stateDir, { recursive: true, force: true });
+  });
+
+  const provider = new PrivateClawProvider({
+    providerWsUrl: `ws://127.0.0.1:${port}/ws/provider`,
+    appWsUrl: `ws://127.0.0.1:${port}/ws/app`,
+    bridge: new EchoBridge("OpenClaw bridge"),
+    defaultTtlMs: DEFAULT_SESSION_TTL_MS,
+  });
+  await provider.connect();
+  t.after(async () => {
+    await provider.dispose();
+  });
+
+  const controlServer = new PrivateClawSessionControlServer({
+    provider,
+    stateDir,
+    kind: "pair-foreground",
+  });
+  await controlServer.start();
+  t.after(async () => {
+    await controlServer.stop();
+  });
+
+  const inviteBundle = await provider.createInviteBundle({ groupMode: true });
+  const invite = decodeInviteString(inviteBundle.inviteUri);
+
+  const appUrl = new URL(invite.appWsUrl);
+  appUrl.searchParams.set("appId", "group-target-app");
+  const appSocket = new WebSocket(appUrl.toString());
+  const attached = nextMessage(appSocket);
+  await waitForOpen(appSocket);
+  assert.equal((await attached).type, "relay:attached");
+  const initialFrames = nextMessages(appSocket, 2);
+  appSocket.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "client_hello",
+          appId: "group-target-app",
+          displayName: "Group Target Tester",
+          appVersion: "flutter-test",
+          deviceLabel: "Group Target Device",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+  await initialFrames;
+
+  await deliverManagedSessionOutboundFromStateDir({
+    stateDir,
+    sessionId: `group:${invite.sessionId}`,
+    payload: {
+      text: "scheduled hello from group target",
+      replyToId: "scheduled-user-msg-1",
+    },
+  });
+
+  const outboundFrame = await nextMessage(appSocket);
+  const outboundPayload = decryptRelayPayload(outboundFrame, invite);
+  assert.equal(outboundPayload.kind, "assistant_message");
+  assert.equal(outboundPayload.text, "scheduled hello from group target");
+  assert.equal(outboundPayload.replyTo, "scheduled-user-msg-1");
+
+  appSocket.close();
+  await waitForClose(appSocket);
 });
 
 test("session control can follow a managed OpenClaw session log", async (t) => {

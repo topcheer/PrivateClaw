@@ -1,2 +1,2 @@
-Mejoramos el análisis de enlaces de invitación y los mensajes de error de sesión.
-Los archivos adjuntos ahora se abren con más fiabilidad: imágenes a pantalla completa y otros archivos mediante compartir u otras apps.
+Las respuestas que combinan fotos y archivos son más fiables, y la apertura de adjuntos ha mejorado.
+El emparejamiento, el análisis de invitaciones y los avisos de sesión ahora son más fluidos.

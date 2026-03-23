@@ -29,6 +29,7 @@ import { DEFAULT_RELAY_BASE_URL } from "./relay-defaults.js";
 import { resolveRelayEndpoints } from "./relay-endpoints.js";
 import {
   buildManagedSessionQrLegacyLines,
+  dispatchRoutedAppMessageToPluginServiceFromStateDir,
   followManagedSessionLogFromStateDir,
   buildManagedSessionsReportLines,
   closeManagedSessionsFromStateDir,
@@ -151,6 +152,7 @@ function createProvider(params?: {
   provider: PrivateClawProvider;
   stateDir: string;
 } {
+  const stateDir = resolvePrivateClawStateDir();
   const providerWsUrl = process.env.PRIVATECLAW_PROVIDER_WS_URL?.trim();
   const appWsUrl = process.env.PRIVATECLAW_APP_WS_URL?.trim();
   const relayBaseUrl =
@@ -279,12 +281,26 @@ function createProvider(params?: {
           return [];
         }
       },
+      appMessageRouter: async (message) => {
+        try {
+          await dispatchRoutedAppMessageToPluginServiceFromStateDir({
+            stateDir,
+            message,
+          });
+          return true;
+        } catch (error) {
+          console.log(
+            `[privateclaw-provider] [privateclaw] runtime routing unavailable, falling back to bridge for ${message.sessionId}: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          return false;
+        }
+      },
       ...(welcomeMessage ? { welcomeMessage } : {}),
       onLog: (message) => {
         console.log(`[privateclaw-provider] ${message}`);
       },
     }),
-    stateDir: resolvePrivateClawStateDir(),
+    stateDir,
   };
 }
 

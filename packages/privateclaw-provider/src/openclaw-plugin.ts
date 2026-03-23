@@ -26,9 +26,18 @@ import {
 } from "./pair-daemon.js";
 import { WebhookBridge } from "./bridges/webhook-bridge.js";
 import {
+  createPrivateClawChannelPlugin,
+  PRIVATECLAW_OPENCLAW_ACCOUNT_ID,
+  PRIVATECLAW_OPENCLAW_CHANNEL_ID,
+} from "./channel.js";
+import {
+  type OpenClawConfigCompat,
+  type OpenClawChannelPluginCompat,
   type OpenClawExtensionPluginCompat,
+  type OpenClawMsgContextCompat,
   type OpenClawPluginApiCompat,
   type OpenClawPluginCommandContextCompat,
+  type OpenClawPluginRuntimeCompat,
   type ReplyPayloadCompat,
   privateClawConfigSchema,
 } from "./compat/openclaw.js";
@@ -41,6 +50,8 @@ import {
   buildManagedSessionsReportLines,
   closeManagedSessionsFromStateDir,
   closeManagedSessionFromStateDir,
+  deliverManagedSessionOutboundFromStateDir,
+  dispatchRoutedAppMessageToPluginServiceFromStateDir,
   getManagedSessionQrBundleFromStateDir,
   isManagedSessionQrLegacyResult,
   kickManagedParticipantFromStateDir,
@@ -80,7 +91,9 @@ import type {
   PrivateClawAgentBridge,
   PrivateClawInviteBundle,
   PrivateClawManagedSession,
+  PrivateClawOpenClawOutboundMessage,
   PrivateClawProviderOptions,
+  PrivateClawRoutedAppMessage,
   PrivateClawVerboseController,
 } from "./types.js";
 
@@ -151,6 +164,7 @@ interface PrivateClawSessionsQrCliOptions {
 
 const DEFAULT_PROVIDER_LABEL = "PrivateClaw";
 const DEFAULT_BRIDGE_MODE: PrivateClawBridgeMode = "openclaw-agent";
+const DEFAULT_OPENCLAW_AGENT_CHANNEL = "privateclaw";
 const QQ_INLINE_IMAGE_REPLY_CHANNELS = new Set(["qqbot", "qq", "qqguild", "qq-guild"]);
 const ALLOWED_THINKING_LEVELS = new Set<OpenClawThinkingLevel>([
   "off",
@@ -293,7 +307,8 @@ function resolvePluginConfig(
     readString(process.env.PRIVATECLAW_OPENCLAW_AGENT_ID);
   const openclawAgentChannel =
     readString(pluginConfig?.openclawAgentChannel) ??
-    readString(process.env.PRIVATECLAW_OPENCLAW_AGENT_CHANNEL);
+    readString(process.env.PRIVATECLAW_OPENCLAW_AGENT_CHANNEL) ??
+    DEFAULT_OPENCLAW_AGENT_CHANNEL;
   const openclawAgentLocal =
     readBoolean(pluginConfig?.openclawAgentLocal) ??
     readBoolean(process.env.PRIVATECLAW_OPENCLAW_AGENT_LOCAL);
@@ -654,6 +669,84 @@ function buildDaemonEnvFromPluginConfig(
   };
 }
 
+function isOpenClawPluginRuntimeCompatible(
+  runtime: unknown,
+): runtime is OpenClawPluginRuntimeCompat {
+  if (!runtime || typeof runtime !== "object") {
+    return false;
+  }
+  const channel = (runtime as { channel?: Record<string, unknown> }).channel;
+  const reply =
+    channel && typeof channel === "object"
+      ? (channel.reply as Record<string, unknown> | undefined)
+      : undefined;
+  const routing =
+    channel && typeof channel === "object"
+      ? (channel.routing as Record<string, unknown> | undefined)
+      : undefined;
+  const session =
+    channel && typeof channel === "object"
+      ? (channel.session as Record<string, unknown> | undefined)
+      : undefined;
+  return (
+    typeof reply?.dispatchReplyWithBufferedBlockDispatcher === "function" &&
+    typeof reply.finalizeInboundContext === "function" &&
+    typeof routing?.resolveAgentRoute === "function" &&
+    typeof session?.resolveStorePath === "function" &&
+    typeof session.recordInboundSession === "function"
+  );
+}
+
+function buildBasePrivateClawInboundContext(
+  message: PrivateClawRoutedAppMessage,
+): OpenClawMsgContextCompat {
+  const rawText = readString(message.payload.text) ?? "";
+  const senderId =
+    readString(message.participant?.appId) ??
+    readString(message.payload.appId) ??
+    message.sessionId;
+  const senderName =
+    readString(message.participant?.displayName) ??
+    readString(message.payload.displayName) ??
+    "PrivateClaw user";
+  return {
+    Body: rawText,
+    BodyForAgent:
+      message.groupMode && message.participant
+        ? `${message.participant.displayName}: ${rawText}`
+        : rawText,
+    RawBody: rawText,
+    CommandBody: rawText,
+    BodyForCommands: rawText,
+    From: `${PRIVATECLAW_OPENCLAW_CHANNEL_ID}:${senderId}`,
+    To: message.sessionId,
+    AccountId: PRIVATECLAW_OPENCLAW_ACCOUNT_ID,
+    MessageSid: message.payload.clientMessageId,
+    MessageSidFull: message.payload.clientMessageId,
+    Timestamp: Number.isNaN(Date.parse(message.payload.sentAt))
+      ? Date.now()
+      : Date.parse(message.payload.sentAt),
+    ChatType: message.groupMode ? "group" : "direct",
+    ConversationLabel: readString(message.sessionLabel) ?? "PrivateClaw",
+    SenderId: senderId,
+    SenderName: senderName,
+    Provider: PRIVATECLAW_OPENCLAW_CHANNEL_ID,
+    Surface: PRIVATECLAW_OPENCLAW_CHANNEL_ID,
+    CommandAuthorized: true,
+    NativeChannelId: message.sessionId,
+    OriginatingChannel: PRIVATECLAW_OPENCLAW_CHANNEL_ID,
+    OriginatingTo: message.sessionId,
+    ExplicitDeliverRoute: true,
+  };
+}
+
+function readConfiguredSessionStorePath(
+  cfg: OpenClawConfigCompat,
+): string | undefined {
+  const rawStore = (cfg as { session?: { store?: unknown } }).session?.store;
+  return readString(rawStore);
+}
+
 class PrivateClawPluginRuntime {
   private readonly providerEntries = new Map<
     string,
@@ -667,6 +760,8 @@ class PrivateClawPluginRuntime {
   private controlServer: PrivateClawSessionControlServer | undefined;
   private readonly defaultRelayBaseUrl: string;
   private readonly verboseController: PrivateClawVerboseController | undefined;
+  private openClawRuntime: OpenClawPluginRuntimeCompat | undefined;
+  private readonly channelPlugin: OpenClawChannelPluginCompat;
 
   constructor(
     private readonly providerOptions: PrivateClawProviderOptions,
@@ -679,6 +774,11 @@ class PrivateClawPluginRuntime {
       readString(defaultRelayBaseUrl) ??
       inferRelayBaseUrlFromAppWsUrl(providerOptions.appWsUrl);
     this.verboseController = verboseController ?? providerOptions.verboseController;
+    this.channelPlugin = createPrivateClawChannelPlugin({
+      deliverOutboundMessage: async (sessionId, payload) => {
+        await this.deliverOpenClawOutboundMessage(sessionId, payload);
+      },
+    });
   }
 
   private async withVerboseLogging<T>(
@@ -703,6 +803,16 @@ class PrivateClawPluginRuntime {
 
   setRootConfig(config: unknown): void {
     this.rootConfig = config;
+  }
+
+  setOpenClawRuntime(runtime: unknown): void {
+    this.openClawRuntime = isOpenClawPluginRuntimeCompatible(runtime)
+      ? runtime
+      : undefined;
+  }
+
+  getChannelPlugin(): OpenClawChannelPluginCompat {
+    return this.channelPlugin;
   }
 
   private ensureStateDir(): string {
@@ -739,6 +849,8 @@ class PrivateClawPluginRuntime {
           ...this.providerOptions,
           providerWsUrl: relay.providerWsUrl,
           appWsUrl: relay.appWsUrl,
+          appMessageRouter: async (message) =>
+            this.routeOrForwardAppMessage(message),
           ...(audioTranscriber ? { audioTranscriber } : {}),
         },
       };
@@ -754,6 +866,139 @@ class PrivateClawPluginRuntime {
     }
 
     return entry.provider;
+  }
+
+  private findLocalProviderBySession(
+    sessionId: string,
+  ): PrivateClawProvider | undefined {
+    for (const entry of this.providerEntries.values()) {
+      if (entry.provider?.hasManagedSession(sessionId)) {
+        return entry.provider;
+      }
+    }
+    return undefined;
+  }
+
+  private async deliverOpenClawOutboundMessage(
+    sessionId: string,
+    payload: PrivateClawOpenClawOutboundMessage,
+  ): Promise<void> {
+    const provider = this.findLocalProviderBySession(sessionId);
+    if (provider) {
+      await provider.deliverOpenClawOutboundMessage(sessionId, payload);
+      return;
+    }
+    await deliverManagedSessionOutboundFromStateDir({
+      stateDir: this.ensureStateDir(),
+      sessionId,
+      payload,
+    });
+  }
+
+  private async routeAppMessageToOpenClaw(
+    message: PrivateClawRoutedAppMessage,
+  ): Promise<void> {
+    const runtime = this.openClawRuntime?.channel;
+    if (!runtime) {
+      throw new Error(
+        "The active PrivateClaw host does not expose OpenClaw channel runtime helpers.",
+      );
+    }
+    const cfg = (this.rootConfig ?? {}) as OpenClawConfigCompat;
+    const baseCtx = buildBasePrivateClawInboundContext(message);
+    const route = runtime.routing.resolveAgentRoute({
+      cfg,
+      ctx: baseCtx,
+    });
+    const finalizedCtx = runtime.reply.finalizeInboundContext(
+      {
+        ...baseCtx,
+        SessionKey: route.sessionKey,
+        ...(route.mainSessionKey !== route.sessionKey
+          ? { ParentSessionKey: route.mainSessionKey }
+          : {}),
+      },
+      {
+        forceBodyForAgent: true,
+        forceBodyForCommands: true,
+        forceChatType: true,
+        forceConversationLabel: true,
+      },
+    );
+    const storePath = runtime.session.resolveStorePath(
+      readConfiguredSessionStorePath(cfg),
+      {
+        agentId: route.agentId,
+      },
+    );
+    await runtime.session.recordInboundSession({
+      storePath,
+      sessionKey: route.sessionKey,
+      ctx: finalizedCtx,
+      createIfMissing: true,
+      updateLastRoute: {
+        sessionKey:
+          route.lastRoutePolicy === "main"
+            ? route.mainSessionKey
+            : route.sessionKey,
+        channel: PRIVATECLAW_OPENCLAW_CHANNEL_ID,
+        to: message.sessionId,
+        accountId: PRIVATECLAW_OPENCLAW_ACCOUNT_ID,
+      },
+      onRecordError: (error) => {
+        this.providerOptions.onLog?.(
+          `[privateclaw] runtime_session_record_error session=${message.sessionId} message=${formatCommandError(error)}`,
+        );
+      },
+    });
+    await runtime.reply.dispatchReplyWithBufferedBlockDispatcher({
+      ctx: finalizedCtx,
+      cfg,
+      dispatcherOptions: {
+        deliver: async (payload) => {
+          const replyToId =
+            typeof payload.replyToId === "string" && payload.replyToId.trim() !== ""
+              ? payload.replyToId
+              : message.payload.clientMessageId;
+          await this.deliverOpenClawOutboundMessage(message.sessionId, {
+            ...(payload.text?.trim() ? { text: payload.text.trim() } : {}),
+            ...(payload.mediaUrl?.trim()
+              ? { mediaUrl: payload.mediaUrl.trim() }
+              : {}),
+            ...(payload.mediaUrls?.length
+              ? { mediaUrls: payload.mediaUrls }
+              : {}),
+            replyToId,
+          });
+        },
+        onError: (error, info) => {
+          this.providerOptions.onLog?.(
+            `[privateclaw] runtime_dispatch_error kind=${info.kind} message=${formatCommandError(error)}`,
+          );
+        },
+      },
+    });
+  }
+
+  private async routeOrForwardAppMessage(
+    message: PrivateClawRoutedAppMessage,
+  ): Promise<boolean> {
+    if (this.openClawRuntime?.channel) {
+      await this.routeAppMessageToOpenClaw(message);
+      return true;
+    }
+    try {
+      await dispatchRoutedAppMessageToPluginServiceFromStateDir({
+        stateDir: this.ensureStateDir(),
+        message,
+      });
+      return true;
+    } catch (error) {
+      this.providerOptions.onLog?.(
+        `[privateclaw] runtime routing unavailable, falling back to bridge for ${message.sessionId}: ${formatCommandError(error)}`,
+      );
+      return false;
+    }
   }
 
   private listLocalManagedSessions(): PrivateClawManagedSession[] {
@@ -838,6 +1083,10 @@ class PrivateClawPluginRuntime {
           this.closeLocalManagedSession(sessionId, reason),
         kickGroupParticipant: (sessionId, appId, reason) =>
           this.kickLocalManagedParticipant(sessionId, appId, reason),
+        deliverOpenClawOutboundMessage: (sessionId, payload) =>
+          this.deliverOpenClawOutboundMessage(sessionId, payload),
+        routeAppMessageToOpenClaw: (message) =>
+          this.routeAppMessageToOpenClaw(message),
       },
       stateDir: this.ensureStateDir(),
       kind,
@@ -848,13 +1097,17 @@ class PrivateClawPluginRuntime {
     await this.controlServer.start();
   }
 
+  async ensurePluginServiceControl(): Promise<void> {
+    await this.ensureControlServer("plugin-service");
+  }
+
   async createInviteBundle(params?: {
     ttlMs?: number;
     label?: string;
     groupMode?: boolean;
     relayBaseUrl?: string;
   }): Promise<PrivateClawInviteBundle> {
-    await this.ensureControlServer("plugin-service");
+    await this.ensurePluginServiceControl();
     return this.getProvider(params?.relayBaseUrl).createInviteBundle(
       {
         ...(typeof params?.ttlMs === "number"
@@ -1119,16 +1372,22 @@ function createPluginDefinition(
     configSchema: privateClawConfigSchema,
     register(api: OpenClawPluginApiCompat) {
       const runtime = runtimeFactory(api);
+      runtime.setOpenClawRuntime(api.runtime);
 
       api.registerService?.({
         id: "privateclaw-provider",
-        start: ({ stateDir, config }) => {
+        start: async ({ stateDir, config }) => {
           runtime.setStateDir(stateDir);
           runtime.setRootConfig(config);
+          await runtime.ensurePluginServiceControl();
         },
         stop: async () => {
           await runtime.dispose();
         },
+      });
+
+      api.registerChannel?.({
+        plugin: runtime.getChannelPlugin(),
       });
 
       api.registerCommand({

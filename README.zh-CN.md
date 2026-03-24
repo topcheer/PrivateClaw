@@ -100,11 +100,12 @@ https://relay.privateclaw.us
 安装或运行 PrivateClaw 这个 OpenClaw 插件的机器，请使用 Node.js 22 或更高版本。
 
 ```bash
-openclaw plugins install @privateclaw/privateclaw@latest
+npm pack @privateclaw/privateclaw@latest
+openclaw plugins install ./privateclaw-privateclaw-*.tgz
 openclaw plugins enable privateclaw
 ```
 
-这里应该使用 `openclaw plugins install`，而且它的帮助信息已经明确说明支持 `path, archive, or npm spec`，所以 `@privateclaw/privateclaw@latest` 是标准的 npm 安装路径，不是只能本地联调时用的命令。
+最近的 OpenClaw 对裸 npm spec 会先查 ClawHub。由于 PrivateClaw 的 ClawHub 条目还没有在所有环境里稳定可用，当前更可靠的生产安装路径是先把 npm 包打成本地归档，再把生成的 `.tgz` 装进 OpenClaw。
 
 如果你直接使用默认公共 relay `https://relay.privateclaw.us`，那么 `relayBaseUrl` 这一步是可选的，可以跳过。只有在你想把 PrivateClaw 的默认 relay 改成自己的部署时，才需要额外执行 `openclaw config set plugins.entries.privateclaw.config.relayBaseUrl ...`。如果只是某一次邀请想临时改 relay，现在也可以直接在命令里覆盖，而不用改持久配置。
 
@@ -114,7 +115,7 @@ PrivateClaw 是一个 OpenClaw 插件命令提供者，不是内置聊天传输 
 - 用 `openclaw plugins enable privateclaw` 启用插件
 - 用 `plugins.entries.privateclaw.config` 进行配置
 
-如果 npm 暂时还没追上 GitHub 最新代码，而你又想立即使用最新仓库版本，可以先打包工作区再安装 `.tgz`：
+如果你不是要安装 npm 已发布版本，而是想立刻使用 GitHub 仓库里的最新代码，可以先打包工作区再安装 `.tgz`：
 
 ```bash
 TARBALL="$(npm pack --workspace @privateclaw/privateclaw | tail -n 1)"

@@ -146,10 +146,14 @@ test("buildRelayProviderSetupPlan prints remote OpenClaw commands when openclaw 
   });
 
   assert.equal(plan.localOpenClaw, false);
-  assert.equal(plan.manualSteps.length, 4);
+  assert.equal(plan.manualSteps.length, 5);
   assert.match(
     renderRelayProviderSetupGuidance(plan),
-    /openclaw plugins install @privateclaw\/privateclaw@latest/,
+    /npm pack @privateclaw\/privateclaw@latest/,
+  );
+  assert.match(
+    renderRelayProviderSetupGuidance(plan),
+    /openclaw plugins install \.\/privateclaw-privateclaw-\*\.tgz/,
   );
   assert.match(
     renderRelayProviderSetupGuidance(plan),
@@ -256,7 +260,7 @@ test("offerRelayProviderSetup runs install + enable + config + restart, then sta
   });
 
   assert.deepEqual(executed, [
-    "openclaw plugins install @privateclaw/privateclaw@latest",
+    "npm pack @privateclaw/privateclaw@latest && openclaw plugins install ./privateclaw-privateclaw-*.tgz",
     "openclaw plugins enable privateclaw",
     "openclaw config set plugins.entries.privateclaw.config.relayBaseUrl https://relay.example.com",
     "openclaw gateway restart",

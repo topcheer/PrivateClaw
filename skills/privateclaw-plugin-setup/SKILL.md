@@ -40,7 +40,7 @@ This skill is especially relevant for requests like:
 ## Core facts
 
 - The production plugin package is `@privateclaw/privateclaw`.
-- The production install path is `openclaw plugins install @privateclaw/privateclaw@latest`.
+- The reliable manual production install path is `npm pack @privateclaw/privateclaw@latest` followed by `openclaw plugins install ./privateclaw-privateclaw-*.tgz`.
 - The plugin id is `privateclaw`.
 - The standalone npm binary is `privateclaw-provider`.
 - The default public relay is `https://relay.privateclaw.us`.
@@ -106,10 +106,11 @@ If `openclaw` is missing, stop and tell the user that OpenClaw itself must be in
 
 ### 2. Install and enable the plugin
 
-Use the production npm package by default:
+Use the published npm package by default, but install it through a locally packed archive so OpenClaw does not get diverted to ClawHub first:
 
 ```bash
-openclaw plugins install @privateclaw/privateclaw@latest
+npm pack @privateclaw/privateclaw@latest
+openclaw plugins install ./privateclaw-privateclaw-*.tgz
 openclaw plugins enable privateclaw
 ```
 

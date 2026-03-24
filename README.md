@@ -121,11 +121,12 @@ The repo code now defaults to that relay, so production installs can use it with
 Use Node.js 22 or newer on the machine where you install or run the PrivateClaw OpenClaw plugin.
 
 ```bash
-openclaw plugins install @privateclaw/privateclaw@latest
+npm pack @privateclaw/privateclaw@latest
+openclaw plugins install ./privateclaw-privateclaw-*.tgz
 openclaw plugins enable privateclaw
 ```
 
-`openclaw plugins install` is the correct production entrypoint here. Its built-in help explicitly says it installs a plugin from a `path, archive, or npm spec`, so `@privateclaw/privateclaw@latest` is a first-class npm install path rather than a local-only shortcut.
+Recent OpenClaw builds try ClawHub first for bare npm specs. Until the PrivateClaw ClawHub listing is fully available everywhere, the reliable manual production path is to pack the npm package locally and install the generated archive.
 
 If you are using the default public relay at `https://relay.privateclaw.us`, the `relayBaseUrl` config step is optional and can be skipped. Only run `openclaw config set plugins.entries.privateclaw.config.relayBaseUrl ...` when you want to change the default relay for the whole plugin. For one-off invites, you can now override the relay per command instead of changing persistent config.
 
@@ -135,7 +136,7 @@ PrivateClaw is an OpenClaw plugin command provider, not a built-in chat transpor
 - use `openclaw plugins enable privateclaw` to enable it,
 - and configure it under `plugins.entries.privateclaw.config`.
 
-If npm is temporarily behind the GitHub repo and you need the newest GitHub checkout immediately, install the packed workspace archive instead:
+If you need the newest GitHub checkout immediately instead of the published npm package, install the packed workspace archive instead:
 
 ```bash
 TARBALL="$(npm pack --workspace @privateclaw/privateclaw | tail -n 1)"

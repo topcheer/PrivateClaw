@@ -1,6 +1,8 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import { formatBilingualInline } from "./text.js";
@@ -16,6 +18,8 @@ export interface PrivateClawSetupStep {
   command: string;
   args: string[];
   display: string;
+  kind?: "command" | "npm-pack-install";
+  packageSpec?: string;
 }
 
 export interface PrivateClawSetupChoice {
@@ -172,12 +176,14 @@ function createStep(
   command: string,
   args: string[],
   display: string,
+  extra?: Pick<PrivateClawSetupStep, "kind" | "packageSpec">,
 ): PrivateClawSetupStep {
   return {
     title,
     command,
     args,
     display,
+    ...(extra ?? {}),
   };
 }
 
@@ -204,8 +210,12 @@ function delay(ms: number): Promise<void> {
 async function runOneShotCommand(
   command: string,
   args: string[],
+  options?: {
+    cwd?: string;
+  },
 ): Promise<RunOneShotCommandResult> {
   const child = spawn(command, args, {
+    ...(options?.cwd ? { cwd: options.cwd } : {}),
     stdio: ["ignore", "pipe", "pipe"],
   });
   let stdoutText = "";
@@ -245,8 +255,12 @@ async function runOneShotCommand(
 async function runStreamingCommand(
   command: string,
   args: string[],
+  options?: {
+    cwd?: string;
+  },
 ): Promise<RunOneShotCommandResult> {
   const child = spawn(command, args, {
+    ...(options?.cwd ? { cwd: options.cwd } : {}),
     stdio: ["ignore", "pipe", "pipe"],
   });
   let stdoutText = "";
@@ -374,6 +388,98 @@ export async function resolveCurrentPrivateClawPackageSpec(): Promise<string> {
     return `${packageName}@${packageVersion}`;
   } catch {
     return `${PRIVATECLAW_PACKAGE_NAME}@latest`;
+  }
+}
+
+function resolveNpmCommand(): string {
+  return process.platform === "win32" ? "npm.cmd" : "npm";
+}
+
+function isExactSemverVersion(value: string): boolean {
+  return /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u.test(
+    value.trim(),
+  );
+}
+
+function buildPackedArchiveHint(packageSpec: string): string {
+  const normalizedSpec = packageSpec.trim();
+  const lastAt = normalizedSpec.lastIndexOf("@");
+  const hasSelector = lastAt > 0;
+  const packageName = hasSelector ? normalizedSpec.slice(0, lastAt) : normalizedSpec;
+  const selector = hasSelector ? normalizedSpec.slice(lastAt + 1) : "";
+  const sanitizedName = packageName.replace(/^@/u, "").replace(/\//gu, "-");
+  if (selector && isExactSemverVersion(selector)) {
+    return `${sanitizedName}-${selector.replace(/^v/iu, "")}.tgz`;
+  }
+  return `${sanitizedName}-*.tgz`;
+}
+
+function createNpmPackInstallStep(packageSpec: string): PrivateClawSetupStep {
+  return createStep(
+    "Pack the PrivateClaw npm package locally, then install the generated archive into OpenClaw",
+    resolveNpmCommand(),
+    ["pack", packageSpec],
+    `npm pack ${packageSpec} && openclaw plugins install ./${buildPackedArchiveHint(packageSpec)}`,
+    {
+      kind: "npm-pack-install",
+      packageSpec,
+    },
+  );
+}
+
+function createManualNpmArchiveInstallSteps(
+  packageSpec: string,
+): [PrivateClawSetupStep, PrivateClawSetupStep] {
+  const archiveHint = buildPackedArchiveHint(packageSpec);
+  return [
+    createStep(
+      "Pack the PrivateClaw plugin from npm into a local archive",
+      resolveNpmCommand(),
+      ["pack", packageSpec],
+      `npm pack ${packageSpec}`,
+    ),
+    createStep(
+      "Install the generated PrivateClaw plugin archive into OpenClaw",
+      "openclaw",
+      ["plugins", "install", `./${archiveHint}`],
+      `openclaw plugins install ./${archiveHint}`,
+    ),
+  ];
+}
+
+async function runNpmPackInstallStep(step: PrivateClawSetupStep): Promise<void> {
+  if (!step.packageSpec) {
+    throw new Error("Missing packageSpec for npm-pack-install step.");
+  }
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "privateclaw-plugin-install-"));
+  try {
+    const packResult = await runOneShotCommand(
+      resolveNpmCommand(),
+      [
+        "pack",
+        step.packageSpec,
+        "--json",
+        "--ignore-scripts",
+        "--pack-destination",
+        tempDir,
+      ],
+    );
+    const packOutput = packResult.stdout.trim() || packResult.combined.trim();
+    const parsed = JSON.parse(packOutput) as Array<{ filename?: unknown }>;
+    const archiveFileName =
+      typeof parsed[0]?.filename === "string" && parsed[0].filename.trim() !== ""
+        ? parsed[0].filename.trim()
+        : undefined;
+    if (!archiveFileName) {
+      throw new Error(`Could not determine the generated archive for ${step.packageSpec}.`);
+    }
+    await runStreamingCommand("openclaw", [
+      "plugins",
+      "install",
+      path.join(tempDir, archiveFileName),
+    ]);
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
   }
 }
 
@@ -511,12 +617,8 @@ export function buildPrivateClawSetupPlan(params: {
   openInBrowser?: boolean;
   verbose?: boolean;
 }): PrivateClawSetupPlan {
-  const installStep = createStep(
-    "Install the PrivateClaw OpenClaw plugin",
-    "openclaw",
-    ["plugins", "install", params.packageSpec],
-    `openclaw plugins install ${params.packageSpec}`,
-  );
+  const installStep = createNpmPackInstallStep(params.packageSpec);
+  const manualInstallSteps = createManualNpmArchiveInstallSteps(params.packageSpec);
   const updateStep = createStep(
     "Update the existing PrivateClaw OpenClaw plugin",
     "openclaw",
@@ -572,7 +674,7 @@ export function buildPrivateClawSetupPlan(params: {
           "Could not detect `openclaw` on this machine. Run these commands on the machine where OpenClaw is installed:",
         )}`,
       automaticSteps: [],
-      manualSteps: [installStep, enableStep, restartStep, pairingCommand],
+      manualSteps: [...manualInstallSteps, enableStep, restartStep, pairingCommand],
       selectionNotes,
       verificationNotes,
       pairingCommand,
@@ -700,6 +802,10 @@ async function promptForPrivateClawChoice(
 async function runPrivateClawSetupStep(
   step: PrivateClawSetupStep,
 ): Promise<void> {
+  if (step.kind === "npm-pack-install") {
+    await runNpmPackInstallStep(step);
+    return;
+  }
   await runStreamingCommand(step.command, step.args);
 }
 

@@ -1,5 +1,8 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import { RelayCliUserError } from "./cli-error.js";
@@ -9,6 +12,8 @@ export interface RelayProviderSetupStep {
   command: string;
   args: string[];
   display: string;
+  kind?: "command" | "npm-pack-install";
+  packageSpec?: string;
 }
 
 export interface LocalOpenClawStatus {
@@ -62,12 +67,14 @@ function createStep(
   command: string,
   args: string[],
   display: string,
+  extra?: Pick<RelayProviderSetupStep, "kind" | "packageSpec">,
 ): RelayProviderSetupStep {
   return {
     title,
     command,
     args,
     display,
+    ...(extra ?? {}),
   };
 }
 
@@ -188,6 +195,99 @@ async function runStreamingCommand(
   }
 }
 
+function resolveNpmCommand(): string {
+  return process.platform === "win32" ? "npm.cmd" : "npm";
+}
+
+function isExactSemverVersion(value: string): boolean {
+  return /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u.test(
+    value.trim(),
+  );
+}
+
+function buildPackedArchiveHint(packageSpec: string): string {
+  const normalizedSpec = packageSpec.trim();
+  const lastAt = normalizedSpec.lastIndexOf("@");
+  const hasSelector = lastAt > 0;
+  const packageName = hasSelector ? normalizedSpec.slice(0, lastAt) : normalizedSpec;
+  const selector = hasSelector ? normalizedSpec.slice(lastAt + 1) : "";
+  const sanitizedName = packageName.replace(/^@/u, "").replace(/\//gu, "-");
+  if (selector && isExactSemverVersion(selector)) {
+    return `${sanitizedName}-${selector.replace(/^v/iu, "")}.tgz`;
+  }
+  return `${sanitizedName}-*.tgz`;
+}
+
+function createNpmPackInstallStep(packageSpec: string): RelayProviderSetupStep {
+  return createStep(
+    "Pack the PrivateClaw npm package locally, then install the generated archive into OpenClaw",
+    resolveNpmCommand(),
+    ["pack", packageSpec],
+    `npm pack ${packageSpec} && openclaw plugins install ./${buildPackedArchiveHint(packageSpec)}`,
+    {
+      kind: "npm-pack-install",
+      packageSpec,
+    },
+  );
+}
+
+function createManualNpmArchiveInstallSteps(
+  packageSpec: string,
+): [RelayProviderSetupStep, RelayProviderSetupStep] {
+  const archiveHint = buildPackedArchiveHint(packageSpec);
+  return [
+    createStep(
+      "Pack the PrivateClaw plugin from npm into a local archive",
+      resolveNpmCommand(),
+      ["pack", packageSpec],
+      `npm pack ${packageSpec}`,
+    ),
+    createStep(
+      "Install the generated PrivateClaw plugin archive into OpenClaw",
+      "openclaw",
+      ["plugins", "install", `./${archiveHint}`],
+      `openclaw plugins install ./${archiveHint}`,
+    ),
+  ];
+}
+
+async function runRelayNpmPackInstallStep(
+  step: RelayProviderSetupStep,
+): Promise<void> {
+  if (!step.packageSpec) {
+    throw new RelayCliUserError("Missing packageSpec for npm-pack-install step.");
+  }
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "privateclaw-relay-install-"));
+  try {
+    const packResult = await runOneShotCommand(resolveNpmCommand(), [
+      "pack",
+      step.packageSpec,
+      "--json",
+      "--ignore-scripts",
+      "--pack-destination",
+      tempDir,
+    ]);
+    const packOutput = packResult.stdout.trim() || packResult.combined.trim();
+    const parsed = JSON.parse(packOutput) as Array<{ filename?: unknown }>;
+    const archiveFileName =
+      typeof parsed[0]?.filename === "string" && parsed[0].filename.trim() !== ""
+        ? parsed[0].filename.trim()
+        : undefined;
+    if (!archiveFileName) {
+      throw new RelayCliUserError(
+        `Could not determine the generated archive for ${step.packageSpec}.`,
+      );
+    }
+    await runStreamingCommand("openclaw", [
+      "plugins",
+      "install",
+      path.join(tempDir, archiveFileName),
+    ]);
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+}
+
 async function commandExists(
   command: string,
   runCommand: OneShotCommandRunner = runOneShotCommand,
@@ -267,11 +367,9 @@ export function buildRelayProviderSetupPlan(params: {
   relayBaseUrl: string;
   status: LocalOpenClawStatus;
 }): RelayProviderSetupPlan {
-  const installStep = createStep(
-    "Install the PrivateClaw OpenClaw plugin",
-    "openclaw",
-    ["plugins", "install", "@privateclaw/privateclaw@latest"],
-    "openclaw plugins install @privateclaw/privateclaw@latest",
+  const installStep = createNpmPackInstallStep("@privateclaw/privateclaw@latest");
+  const manualInstallSteps = createManualNpmArchiveInstallSteps(
+    "@privateclaw/privateclaw@latest",
   );
   const updateStep = createStep(
     "Update the existing PrivateClaw OpenClaw plugin",
@@ -321,7 +419,7 @@ export function buildRelayProviderSetupPlan(params: {
       introduction:
         "[privateclaw-relay] To connect an OpenClaw machine to this relay, run these commands on the machine where `openclaw` is installed:",
       automaticSteps: [],
-      manualSteps: [installStep, enableStep, configStep, restartStep],
+      manualSteps: [...manualInstallSteps, enableStep, configStep, restartStep],
       verificationNotes,
       pairingCommand,
     };
@@ -394,6 +492,10 @@ async function promptForConfirmation(question: string): Promise<boolean> {
 async function runRelayProviderSetupStep(
   step: RelayProviderSetupStep,
 ): Promise<void> {
+  if (step.kind === "npm-pack-install") {
+    await runRelayNpmPackInstallStep(step);
+    return;
+  }
   const child = spawn(step.command, step.args, {
     stdio: "inherit",
   });

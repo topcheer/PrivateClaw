@@ -62,16 +62,17 @@ The production default relay for this package is:
 https://relay.privateclaw.us
 ```
 
-`openclaw plugins install` accepts a path, archive, or npm package spec. For production, use the npm package:
+Recent OpenClaw builds try ClawHub first for bare npm specs. Until the PrivateClaw ClawHub listing is fully available everywhere, the reliable manual production path is to pack the npm package locally and install the generated archive:
 
 ```bash
-openclaw plugins install @privateclaw/privateclaw@latest
+npm pack @privateclaw/privateclaw@latest
+openclaw plugins install ./privateclaw-privateclaw-*.tgz
 openclaw plugins enable privateclaw
 ```
 
 If you are using the default public relay at `https://relay.privateclaw.us`, the `relayBaseUrl` override is optional and can be skipped. Only run `openclaw config set plugins.entries.privateclaw.config.relayBaseUrl ...` when you want to change the default relay for the whole plugin. For one-off invites, you can now override the relay per slash command or per CLI invocation instead of changing persistent config.
 
-If npm is not updated yet but you want the newest GitHub checkout immediately, pack the workspace and install the archive:
+If you need the newest GitHub checkout immediately instead of the published npm package, pack the workspace and install the archive:
 
 ```bash
 TARBALL="$(npm pack --workspace @privateclaw/privateclaw | tail -n 1)"

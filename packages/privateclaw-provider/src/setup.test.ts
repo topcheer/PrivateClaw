@@ -151,10 +151,14 @@ test("buildPrivateClawSetupPlan prints manual OpenClaw commands when openclaw is
   });
 
   assert.equal(plan.localOpenClaw, false);
-  assert.equal(plan.manualSteps.length, 4);
+  assert.equal(plan.manualSteps.length, 5);
   assert.match(
     renderPrivateClawSetupGuidance(plan),
-    /openclaw plugins install @privateclaw\/privateclaw@0\.1\.26/,
+    /npm pack @privateclaw\/privateclaw@0\.1\.26/,
+  );
+  assert.match(
+    renderPrivateClawSetupGuidance(plan),
+    /openclaw plugins install \.\/privateclaw-privateclaw-0\.1\.26\.tgz/,
   );
   assert.equal(
     plan.pairingCommand.display,
@@ -212,7 +216,7 @@ test("runPrivateClawSetup installs, enables, restarts, then starts pairing", asy
   });
 
   assert.deepEqual(executed, [
-    "openclaw plugins install @privateclaw/privateclaw@0.1.26",
+    "npm pack @privateclaw/privateclaw@0.1.26 && openclaw plugins install ./privateclaw-privateclaw-0.1.26.tgz",
     "openclaw plugins enable privateclaw",
     "openclaw gateway restart",
   ]);

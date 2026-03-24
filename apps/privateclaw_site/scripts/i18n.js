@@ -125,13 +125,14 @@ const BUNDLES = {
         {
           step: "Backup",
           title: "Manually install the plugin if you prefer",
-          body: "Choose this path only when you want to manage OpenClaw yourself or point at your own relay before pairing.",
+          body: "Choose this path only when you want to manage OpenClaw yourself or point at your own relay before pairing. Recent OpenClaw builds check ClawHub first for bare npm specs, so the reliable manual route is to pack the npm package locally and install the generated archive.",
           commands: [
-            "openclaw plugins install @privateclaw/privateclaw@latest",
+            "npm pack @privateclaw/privateclaw@latest",
+            "openclaw plugins install ./privateclaw-privateclaw-*.tgz",
             "openclaw plugins enable privateclaw",
             "openclaw config set plugins.entries.privateclaw.config.relayBaseUrl https://your-relay.example.com",
           ],
-          note: "Skip the relay command if you are happy with the default public relay at https://relay.privateclaw.us.",
+          note: "Skip the relay command if you are happy with the default public relay at https://relay.privateclaw.us. The generated archive will be named like `privateclaw-privateclaw-0.x.y.tgz`.",
           variant: "fallback",
         },
         {
@@ -409,13 +410,14 @@ const BUNDLES = {
         {
           step: "备用",
           title: "如果你想自己掌控，就手动安装",
-          body: "只有在你想手工管理插件，或想一开始就指向自己的 relay 时，才使用这条路径。",
+          body: "只有在你想手工管理插件，或想一开始就指向自己的 relay 时，才使用这条路径。最近的 OpenClaw 对裸 npm spec 会先查 ClawHub，所以更稳妥的手动路径是先把 npm 包打成本地归档，再安装生成的 `.tgz`。",
           commands: [
-            "openclaw plugins install @privateclaw/privateclaw@latest",
+            "npm pack @privateclaw/privateclaw@latest",
+            "openclaw plugins install ./privateclaw-privateclaw-*.tgz",
             "openclaw plugins enable privateclaw",
             "openclaw config set plugins.entries.privateclaw.config.relayBaseUrl https://your-relay.example.com",
           ],
-          note: "如果你直接使用默认公共 relay `https://relay.privateclaw.us`，第三条可以跳过。",
+          note: "如果你直接使用默认公共 relay `https://relay.privateclaw.us`，第四条可以跳过。生成的归档名会类似 `privateclaw-privateclaw-0.x.y.tgz`。",
           variant: "fallback",
         },
         {
@@ -681,13 +683,14 @@ const BUNDLES = {
         {
           step: "備用",
           title: "如果你想自己掌控，就手動安裝",
-          body: "只有在你想手動管理外掛，或想一開始就指向自己的 relay 時，才使用這條路徑。",
+          body: "只有在你想手動管理外掛，或想一開始就指向自己的 relay 時，才使用這條路徑。最近的 OpenClaw 對裸 npm spec 會先查 ClawHub，所以更穩妥的手動路徑是先把 npm 套件打成本地封存，再安裝產生的 `.tgz`。",
           commands: [
-            "openclaw plugins install @privateclaw/privateclaw@latest",
+            "npm pack @privateclaw/privateclaw@latest",
+            "openclaw plugins install ./privateclaw-privateclaw-*.tgz",
             "openclaw plugins enable privateclaw",
             "openclaw config set plugins.entries.privateclaw.config.relayBaseUrl https://your-relay.example.com",
           ],
-          note: "如果你直接使用預設公共 relay `https://relay.privateclaw.us`，第三條可以略過。",
+          note: "如果你直接使用預設公共 relay `https://relay.privateclaw.us`，第四條可以略過。產生的封存檔名會類似 `privateclaw-privateclaw-0.x.y.tgz`。",
           variant: "fallback",
         },
         {

@@ -39,7 +39,7 @@ interface OpenClawCommandRuntime {
   listSkillCommandsForAgents?: (
     config: unknown,
   ) => OpenClawSkillCommandSpecLike[];
-  getPluginCommandSpecs: (provider?: string) => OpenClawPluginCommandSpecLike[];
+  getPluginCommandSpecs?: (provider?: string) => OpenClawPluginCommandSpecLike[];
 }
 
 let cachedRuntimePromise: Promise<OpenClawCommandRuntime | null> | undefined;
@@ -231,12 +231,100 @@ function findExportedFunction<T extends (...args: never[]) => unknown>(
   module: Record<string, unknown>,
   functionName: string,
 ): T | null {
+  const direct = module[functionName];
+  if (typeof direct === "function") {
+    return direct as T;
+  }
   for (const exported of Object.values(module)) {
     if (typeof exported === "function" && exported.name === functionName) {
       return exported as T;
     }
   }
   return null;
+}
+
+function findExportedFunctionInModules<T extends (...args: never[]) => unknown>(
+  modules: ReadonlyArray<Record<string, unknown>>,
+  functionName: string,
+): T | null {
+  for (const module of modules) {
+    const resolved = findExportedFunction<T>(module, functionName);
+    if (resolved) {
+      return resolved;
+    }
+  }
+  return null;
+}
+
+function dedupePaths(paths: ReadonlyArray<string | null | undefined>): string[] {
+  const unique = new Set<string>();
+  for (const candidate of paths) {
+    if (candidate) {
+      unique.add(candidate);
+    }
+  }
+  return [...unique];
+}
+
+async function resolveCommandDiscoveryModulePaths(
+  distDir: string,
+): Promise<string[]> {
+  const stablePaths = await Promise.all(
+    [
+      path.join(distDir, "plugin-sdk", "command-auth.js"),
+      path.join(distDir, "plugin-sdk", "plugin-runtime.js"),
+    ].map(async (candidate) => ((await pathExists(candidate)) ? candidate : null)),
+  );
+
+  const hashedPaths = await Promise.all([
+    resolveHashedModulePath({
+      distDir,
+      entryFile: "index.js",
+      prefix: "commands-registry-",
+    }),
+    resolveHashedModulePath({
+      distDir,
+      entryFile: "index.js",
+      prefix: "commands-registry.runtime-",
+    }),
+    resolveHashedModulePath({
+      distDir,
+      entryFile: "index.js",
+      prefix: "skill-commands-",
+    }),
+    resolveHashedModulePath({
+      distDir,
+      entryFile: "index.js",
+      prefix: "skill-commands.runtime-",
+    }),
+    resolveHashedModulePath({
+      distDir,
+      entryFile: "index.js",
+      prefix: "config-",
+    }),
+    resolveHashedModulePath({
+      distDir,
+      entryFile: "index.js",
+      prefix: "io-",
+    }),
+    resolveHashedModulePath({
+      distDir,
+      entryFile: "index.js",
+      prefix: "pi-embedded-",
+    }),
+    resolveHashedModulePath({
+      distDir,
+      entryFile: "index.js",
+      prefix: "reply-",
+    }),
+    resolveHashedModulePath({
+      distDir,
+      entryFile: "index.js",
+      prefix: "registry-",
+    }),
+  ]);
+
+  return dedupePaths([...stablePaths, ...hashedPaths]);
 }
 
 async function loadRuntime(): Promise<OpenClawCommandRuntime | null> {
@@ -248,51 +336,41 @@ async function loadRuntime(): Promise<OpenClawCommandRuntime | null> {
       }
 
       const distDir = path.join(openClawRoot, "dist");
-      const [replyPath, registryPath] = await Promise.all([
-        resolveHashedModulePath({
-          distDir,
-          entryFile: "index.js",
-          prefix: "reply-",
-        }),
-        resolveHashedModulePath({
-          distDir,
-          entryFile: "index.js",
-          prefix: "registry-",
-        }),
-      ]);
-
-      if (!replyPath || !registryPath) {
+      const modulePaths = await resolveCommandDiscoveryModulePaths(distDir);
+      if (modulePaths.length === 0) {
         return null;
       }
 
-      const [replyModule, registryModule] = await Promise.all([
-        import(pathToFileURL(replyPath).href) as Promise<Record<string, unknown>>,
-        import(pathToFileURL(registryPath).href) as Promise<Record<string, unknown>>,
-      ]);
+      const modules = await Promise.all(
+        modulePaths.map(
+          (modulePath) =>
+            import(pathToFileURL(modulePath).href) as Promise<Record<string, unknown>>,
+        ),
+      );
 
-      const listChatCommands = findExportedFunction<
+      const listChatCommands = findExportedFunctionInModules<
         (params?: {
           skillCommands?: OpenClawSkillCommandSpecLike[];
         }) => OpenClawCommandDefinitionLike[]
-      >(replyModule, "listChatCommands");
-      const listChatCommandsForConfig = findExportedFunction<
+      >(modules, "listChatCommands");
+      const listChatCommandsForConfig = findExportedFunctionInModules<
         (
           config: unknown,
           params?: { skillCommands?: OpenClawSkillCommandSpecLike[] },
         ) => OpenClawCommandDefinitionLike[]
-      >(replyModule, "listChatCommandsForConfig");
-      const loadConfig = findExportedFunction<() => unknown>(
-        replyModule,
+      >(modules, "listChatCommandsForConfig");
+      const loadConfig = findExportedFunctionInModules<() => unknown>(
+        modules,
         "loadConfig",
       );
-      const listSkillCommandsForAgents = findExportedFunction<
+      const listSkillCommandsForAgents = findExportedFunctionInModules<
         (config: unknown) => OpenClawSkillCommandSpecLike[]
-      >(replyModule, "listSkillCommandsForAgents");
-      const getPluginCommandSpecs = findExportedFunction<
+      >(modules, "listSkillCommandsForAgents");
+      const getPluginCommandSpecs = findExportedFunctionInModules<
         (provider?: string) => OpenClawPluginCommandSpecLike[]
-      >(registryModule, "getPluginCommandSpecs");
+      >(modules, "getPluginCommandSpecs");
 
-      if (!listChatCommands || !getPluginCommandSpecs) {
+      if (!listChatCommands) {
         return null;
       }
 
@@ -323,8 +401,12 @@ async function loadRuntime(): Promise<OpenClawCommandRuntime | null> {
                 ) as OpenClawSkillCommandSpecLike[],
             }
           : {}),
-        getPluginCommandSpecs: (provider?: string) =>
-          getPluginCommandSpecs(provider) as OpenClawPluginCommandSpecLike[],
+        ...(getPluginCommandSpecs
+          ? {
+              getPluginCommandSpecs: (provider?: string) =>
+                getPluginCommandSpecs(provider) as OpenClawPluginCommandSpecLike[],
+            }
+          : {}),
       };
     })();
   }
@@ -367,7 +449,7 @@ export async function loadAvailableOpenClawCommands(): Promise<PrivateClawSlashC
 
   return dedupeCommands([
     ...mapBuiltInCommands(builtInCommands),
-    ...mapPluginCommands(runtime.getPluginCommandSpecs()),
+    ...mapPluginCommands(runtime.getPluginCommandSpecs?.() ?? []),
   ]);
 }
 

@@ -182,6 +182,32 @@ function readNonEmptyString(value: unknown): string | undefined {
   return trimmed === "" ? undefined : trimmed;
 }
 
+function isDescriptorProcessAlive(
+  descriptor: Pick<PrivateClawSessionControlDescriptor, "pid">,
+): boolean {
+  if (!Number.isInteger(descriptor.pid) || descriptor.pid <= 0) {
+    return false;
+  }
+  try {
+    process.kill(descriptor.pid, 0);
+    return true;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException | undefined)?.code;
+    return code !== "ESRCH";
+  }
+}
+
+async function pruneDescriptorIfProcessExited(params: {
+  descriptor: PrivateClawSessionControlDescriptor;
+  descriptorPath: string;
+}): Promise<boolean> {
+  if (isDescriptorProcessAlive(params.descriptor)) {
+    return false;
+  }
+  await rm(params.descriptorPath, { force: true });
+  return true;
+}
+
 function normalizeManagedSessionLookupId(sessionId: string): string {
   const trimmed = sessionId.trim();
   const separatorIndex = trimmed.indexOf(":");
@@ -713,7 +739,7 @@ export async function listManagedSessionsFromStateDir(
         sessions: response.sessions ?? [],
       });
     } catch {
-      await rm(descriptorPath, { force: true });
+      await pruneDescriptorIfProcessExited({ descriptor, descriptorPath });
     }
   }
 
@@ -780,7 +806,7 @@ async function resolvePluginServiceDescriptor(params: {
       await requestDescriptorJson<{ ok: true }>(candidate.descriptor, "/healthz");
       return candidate;
     } catch {
-      await rm(candidate.descriptorPath, { force: true });
+      await pruneDescriptorIfProcessExited(candidate);
     }
   }
   throw new Error(

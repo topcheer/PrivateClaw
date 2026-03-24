@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { type AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -75,6 +75,21 @@ function nextMessages(socket: WebSocket, count: number): Promise<Record<string, 
     socket.on("message", handleMessage);
     socket.on("error", handleError);
   });
+}
+
+function findUnusedPid(start = 999_999): number {
+  let candidate = start;
+  for (;;) {
+    try {
+      process.kill(candidate, 0);
+      candidate += 1;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException | undefined)?.code === "ESRCH") {
+        return candidate;
+      }
+      candidate += 1;
+    }
+  }
 }
 
 function waitForClose(socket: WebSocket): Promise<void> {
@@ -815,4 +830,70 @@ test("session control falls back to the saved QR PNG when an older host lacks th
     }).join("\n"),
     /TestFlight|Google Play|Google Group/u,
   );
+});
+
+test("session listings keep a live descriptor when one sessions probe fails", async (t) => {
+  const stateDir = await mkdtemp(path.join(os.tmpdir(), "privateclaw-session-control-live-"));
+  t.after(async () => {
+    await rm(stateDir, { recursive: true, force: true });
+  });
+
+  const descriptorDir = resolvePrivateClawControlDir(stateDir);
+  await mkdir(descriptorDir, { recursive: true, mode: 0o700 });
+  const descriptorPath = path.join(descriptorDir, "pair-daemon-live.json");
+  await writeFile(
+    descriptorPath,
+    JSON.stringify(
+      {
+        version: 1,
+        controlId: "live-control-id",
+        kind: "pair-daemon",
+        pid: process.pid,
+        host: "127.0.0.1",
+        port: 1,
+        token: "live-token",
+        startedAt: new Date().toISOString(),
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+
+  const listings = await listManagedSessionsFromStateDir(stateDir);
+  assert.deepEqual(listings, []);
+  await access(descriptorPath);
+});
+
+test("session listings prune a stale descriptor after a failed sessions probe", async (t) => {
+  const stateDir = await mkdtemp(path.join(os.tmpdir(), "privateclaw-session-control-stale-"));
+  t.after(async () => {
+    await rm(stateDir, { recursive: true, force: true });
+  });
+
+  const descriptorDir = resolvePrivateClawControlDir(stateDir);
+  await mkdir(descriptorDir, { recursive: true, mode: 0o700 });
+  const descriptorPath = path.join(descriptorDir, "pair-daemon-stale.json");
+  await writeFile(
+    descriptorPath,
+    JSON.stringify(
+      {
+        version: 1,
+        controlId: "stale-control-id",
+        kind: "pair-daemon",
+        pid: findUnusedPid(),
+        host: "127.0.0.1",
+        port: 1,
+        token: "stale-token",
+        startedAt: new Date().toISOString(),
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+
+  const listings = await listManagedSessionsFromStateDir(stateDir);
+  assert.deepEqual(listings, []);
+  await assert.rejects(access(descriptorPath));
 });

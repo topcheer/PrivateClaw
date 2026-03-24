@@ -408,6 +408,287 @@ test("plugin routes paired app text through OpenClaw runtime helpers with the re
   });
 });
 
+test("plugin falls back to the bridge when runtime session recording reports an error", async (t) => {
+  const relay = createRelayServer({
+    host: "127.0.0.1",
+    port: 0,
+    sessionTtlMs: 60_000,
+    frameCacheSize: 8,
+  });
+  const { port } = await relay.start();
+
+  const stateDir = await mkdtemp(path.join(os.tmpdir(), "privateclaw-plugin-state-"));
+  t.after(async () => {
+    await rm(stateDir, { recursive: true, force: true });
+    await relay.stop();
+  });
+
+  let dispatchCalled = false;
+  const fakeRuntime = {
+    channel: {
+      reply: {
+        finalizeInboundContext: <T extends Record<string, unknown>>(ctx: T) =>
+          ({
+            ...ctx,
+            CommandAuthorized: true,
+          }) as T & { CommandAuthorized: true },
+        dispatchReplyWithBufferedBlockDispatcher: async () => {
+          dispatchCalled = true;
+          return {};
+        },
+      },
+      routing: {
+        resolveAgentRoute: ({ ctx }: { ctx: Record<string, unknown> }) => ({
+          agentId: "runtime-agent",
+          sessionKey: `runtime-${String(ctx.To ?? "session")}`,
+          mainSessionKey: `runtime-${String(ctx.To ?? "session")}`,
+          lastRoutePolicy: "current" as const,
+        }),
+      },
+      session: {
+        resolveStorePath: () => path.join(stateDir, "memory", "runtime-agent.sqlite"),
+        recordInboundSession: async (params: { onRecordError(error: unknown): void }) => {
+          params.onRecordError(new Error("simulated session-store failure"));
+        },
+      },
+    },
+  } satisfies OpenClawPluginRuntimeCompat;
+
+  const plugin = createOpenClawCompatiblePlugin({
+    providerWsUrl: `ws://127.0.0.1:${port}/ws/provider`,
+    appWsUrl: `ws://127.0.0.1:${port}/ws/app`,
+    bridge: new EchoBridge("Runtime fallback"),
+    welcomeMessage: "Welcome to PrivateClaw",
+  });
+  const { api, getCommand, getService } = createMockApi(fakeRuntime);
+  plugin.register(api);
+
+  const service = getService();
+  await service.start({
+    config: {},
+    stateDir,
+    logger: api.logger,
+  });
+  t.after(async () => {
+    await service.stop?.({
+      config: {},
+      stateDir,
+      logger: api.logger,
+    });
+  });
+
+  const command = getCommand();
+  const reply = await command.handler({
+    channel: "telegram",
+    senderId: "tester",
+    isAuthorizedSender: true,
+    commandBody: "/privateclaw",
+    config: {},
+  });
+  const inviteUri = reply.text?.match(/privateclaw:\/\/connect\?payload=\S+/)?.[0];
+  assert.ok(inviteUri, "reply text should include a PrivateClaw invite URI");
+  const invite = decodeInviteString(inviteUri);
+
+  const appUrl = new URL(invite.appWsUrl);
+  appUrl.searchParams.set("appId", "runtime-record-error-app");
+  const appSocket = new WebSocket(appUrl.toString());
+  t.after(() => {
+    appSocket.terminate();
+  });
+  const attached = nextMessage(appSocket);
+  await waitForOpen(appSocket);
+  assert.equal((await attached).type, "relay:attached");
+  const initialFrames = nextMessages(appSocket, 2);
+  appSocket.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "client_hello",
+          appId: "runtime-record-error-app",
+          displayName: "Runtime Record Error",
+          appVersion: "plugin-test",
+          deviceLabel: "Runtime Record Error Device",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+  await initialFrames;
+
+  appSocket.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "user_message",
+          appId: "runtime-record-error-app",
+          text: "hello fallback",
+          clientMessageId: "runtime-record-error-msg-1",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+
+  const replyFrame = await nextMessage(appSocket);
+  const replyPayload = decryptPayload({
+    sessionId: invite.sessionId,
+    sessionKey: invite.sessionKey,
+    envelope: replyFrame.envelope as Parameters<typeof decryptPayload>[0]["envelope"],
+  });
+  assert.equal(replyPayload.kind, "assistant_message");
+  assert.equal(replyPayload.text, "Runtime fallback: hello fallback");
+  assert.equal(dispatchCalled, false);
+});
+
+test("plugin falls back to the bridge when runtime reply dispatch reports an error", async (t) => {
+  const relay = createRelayServer({
+    host: "127.0.0.1",
+    port: 0,
+    sessionTtlMs: 60_000,
+    frameCacheSize: 8,
+  });
+  const { port } = await relay.start();
+
+  const stateDir = await mkdtemp(path.join(os.tmpdir(), "privateclaw-plugin-state-"));
+  t.after(async () => {
+    await rm(stateDir, { recursive: true, force: true });
+    await relay.stop();
+  });
+
+  const fakeRuntime = {
+    channel: {
+      reply: {
+        finalizeInboundContext: <T extends Record<string, unknown>>(ctx: T) =>
+          ({
+            ...ctx,
+            CommandAuthorized: true,
+          }) as T & { CommandAuthorized: true },
+        dispatchReplyWithBufferedBlockDispatcher: async ({
+          dispatcherOptions,
+        }: {
+          dispatcherOptions: {
+            onError?(error: unknown, info: { kind: "tool" | "block" | "final" }): void;
+          };
+        }) => {
+          dispatcherOptions.onError?.(
+            new Error("simulated runtime dispatch failure"),
+            { kind: "final" },
+          );
+          return {};
+        },
+      },
+      routing: {
+        resolveAgentRoute: ({ ctx }: { ctx: Record<string, unknown> }) => ({
+          agentId: "runtime-agent",
+          sessionKey: `runtime-${String(ctx.To ?? "session")}`,
+          mainSessionKey: `runtime-${String(ctx.To ?? "session")}`,
+          lastRoutePolicy: "current" as const,
+        }),
+      },
+      session: {
+        resolveStorePath: () => path.join(stateDir, "memory", "runtime-agent.sqlite"),
+        recordInboundSession: async () => undefined,
+      },
+    },
+  } satisfies OpenClawPluginRuntimeCompat;
+
+  const plugin = createOpenClawCompatiblePlugin({
+    providerWsUrl: `ws://127.0.0.1:${port}/ws/provider`,
+    appWsUrl: `ws://127.0.0.1:${port}/ws/app`,
+    bridge: new EchoBridge("Runtime fallback"),
+    welcomeMessage: "Welcome to PrivateClaw",
+  });
+  const { api, getCommand, getService } = createMockApi(fakeRuntime);
+  plugin.register(api);
+
+  const service = getService();
+  await service.start({
+    config: {},
+    stateDir,
+    logger: api.logger,
+  });
+  t.after(async () => {
+    await service.stop?.({
+      config: {},
+      stateDir,
+      logger: api.logger,
+    });
+  });
+
+  const command = getCommand();
+  const reply = await command.handler({
+    channel: "telegram",
+    senderId: "tester",
+    isAuthorizedSender: true,
+    commandBody: "/privateclaw",
+    config: {},
+  });
+  const inviteUri = reply.text?.match(/privateclaw:\/\/connect\?payload=\S+/)?.[0];
+  assert.ok(inviteUri, "reply text should include a PrivateClaw invite URI");
+  const invite = decodeInviteString(inviteUri);
+
+  const appUrl = new URL(invite.appWsUrl);
+  appUrl.searchParams.set("appId", "runtime-dispatch-error-app");
+  const appSocket = new WebSocket(appUrl.toString());
+  t.after(() => {
+    appSocket.terminate();
+  });
+  const attached = nextMessage(appSocket);
+  await waitForOpen(appSocket);
+  assert.equal((await attached).type, "relay:attached");
+  const initialFrames = nextMessages(appSocket, 2);
+  appSocket.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "client_hello",
+          appId: "runtime-dispatch-error-app",
+          displayName: "Runtime Dispatch Error",
+          appVersion: "plugin-test",
+          deviceLabel: "Runtime Dispatch Error Device",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+  await initialFrames;
+
+  appSocket.send(
+    JSON.stringify({
+      type: "app:frame",
+      envelope: encryptPayload({
+        sessionId: invite.sessionId,
+        sessionKey: invite.sessionKey,
+        payload: {
+          kind: "user_message",
+          appId: "runtime-dispatch-error-app",
+          text: "hello dispatch fallback",
+          clientMessageId: "runtime-dispatch-error-msg-1",
+          sentAt: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+
+  const replyFrame = await nextMessage(appSocket);
+  const replyPayload = decryptPayload({
+    sessionId: invite.sessionId,
+    sessionKey: invite.sessionKey,
+    envelope: replyFrame.envelope as Parameters<typeof decryptPayload>[0]["envelope"],
+  });
+  assert.equal(replyPayload.kind, "assistant_message");
+  assert.equal(replyPayload.text, "Runtime fallback: hello dispatch fallback");
+});
+
 test("privateclaw channel outbound delivers replies into managed sessions", async (t) => {
   const relay = createRelayServer({
     host: "127.0.0.1",

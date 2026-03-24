@@ -931,6 +931,7 @@ class PrivateClawPluginRuntime {
         agentId: route.agentId,
       },
     );
+    let recordErrorMessage: string | undefined;
     await runtime.session.recordInboundSession({
       storePath,
       sessionKey: route.sessionKey,
@@ -946,16 +947,28 @@ class PrivateClawPluginRuntime {
         accountId: PRIVATECLAW_OPENCLAW_ACCOUNT_ID,
       },
       onRecordError: (error) => {
+        const detail = formatCommandError(error);
+        if (!recordErrorMessage) {
+          recordErrorMessage = detail;
+        }
         this.providerOptions.onLog?.(
-          `[privateclaw] runtime_session_record_error session=${message.sessionId} message=${formatCommandError(error)}`,
+          `[privateclaw] runtime_session_record_error session=${message.sessionId} message=${detail}`,
         );
       },
     });
+    if (recordErrorMessage) {
+      throw new Error(
+        `Failed to record the OpenClaw runtime session for ${message.sessionId}: ${recordErrorMessage}`,
+      );
+    }
+    let finalReplyDelivered = false;
+    let dispatchErrorKind: string | undefined;
+    let dispatchErrorMessage: string | undefined;
     await runtime.reply.dispatchReplyWithBufferedBlockDispatcher({
       ctx: finalizedCtx,
       cfg,
       dispatcherOptions: {
-        deliver: async (payload) => {
+        deliver: async (payload, info) => {
           const replyToId =
             typeof payload.replyToId === "string" && payload.replyToId.trim() !== ""
               ? payload.replyToId
@@ -970,24 +983,37 @@ class PrivateClawPluginRuntime {
               : {}),
             replyToId,
           });
+          if (info.kind === "final") {
+            finalReplyDelivered = true;
+          }
         },
         onError: (error, info) => {
+          const detail = formatCommandError(error);
+          if (!dispatchErrorMessage) {
+            dispatchErrorKind = info.kind;
+            dispatchErrorMessage = detail;
+          }
           this.providerOptions.onLog?.(
-            `[privateclaw] runtime_dispatch_error kind=${info.kind} message=${formatCommandError(error)}`,
+            `[privateclaw] runtime_dispatch_error kind=${info.kind} message=${detail}`,
           );
         },
       },
     });
+    if (dispatchErrorMessage && !finalReplyDelivered) {
+      throw new Error(
+        `Failed to dispatch the OpenClaw runtime reply for ${message.sessionId} (${dispatchErrorKind ?? "unknown"}): ${dispatchErrorMessage}`,
+      );
+    }
   }
 
   private async routeOrForwardAppMessage(
     message: PrivateClawRoutedAppMessage,
   ): Promise<boolean> {
-    if (this.openClawRuntime?.channel) {
-      await this.routeAppMessageToOpenClaw(message);
-      return true;
-    }
     try {
+      if (this.openClawRuntime?.channel) {
+        await this.routeAppMessageToOpenClaw(message);
+        return true;
+      }
       await dispatchRoutedAppMessageToPluginServiceFromStateDir({
         stateDir: this.ensureStateDir(),
         message,

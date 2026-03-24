@@ -118,6 +118,8 @@ The repo code now defaults to that relay, so production installs can use it with
 
 ### 1. Install the provider into OpenClaw from npm
 
+Use Node.js 22 or newer on the machine where you install or run the PrivateClaw OpenClaw plugin.
+
 ```bash
 openclaw plugins install @privateclaw/privateclaw@latest
 openclaw plugins enable privateclaw

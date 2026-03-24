@@ -46,6 +46,8 @@ sequenceDiagram
 
 ## Install
 
+Current OpenClaw plugin guidance assumes Node.js 22 or newer on the machine that installs or runs this package.
+
 If `openclaw` is already installed on the current machine, the quickest standalone bootstrap flow is now:
 
 ```bash

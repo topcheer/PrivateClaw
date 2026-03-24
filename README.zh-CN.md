@@ -97,6 +97,8 @@ https://relay.privateclaw.us
 
 ### 1. 通过 npm 把 provider 安装到 OpenClaw
 
+安装或运行 PrivateClaw 这个 OpenClaw 插件的机器，请使用 Node.js 22 或更高版本。
+
 ```bash
 openclaw plugins install @privateclaw/privateclaw@latest
 openclaw plugins enable privateclaw

@@ -8,7 +8,7 @@ import {
 
 test("appendPrivateClawAppInstallFooter appends concise store links", () => {
   const text = appendPrivateClawAppInstallFooter("PrivateClaw session ready.");
-  assert.match(text, /TestFlight/i);
+  assert.match(text, /App Store/i);
   assert.match(text, /Google Play/i);
   assert.match(text, /Google Group/i);
   assert.ok(
@@ -20,7 +20,7 @@ test("appendPrivateClawAppInstallFooter appends concise store links", () => {
 test("buildPrivateClawCommandErrorMessage also appends store links", () => {
   const text = buildPrivateClawCommandErrorMessage("boom");
   assert.match(text, /Failed to create a PrivateClaw session: boom/);
-  assert.match(text, /TestFlight/i);
+  assert.match(text, /App Store/i);
   assert.match(text, /Google Play/i);
   assert.match(text, /Google Group/i);
 });

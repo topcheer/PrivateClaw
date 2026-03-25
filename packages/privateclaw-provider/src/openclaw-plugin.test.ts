@@ -838,7 +838,7 @@ test("privateclaw command writes QR media into the OpenClaw state media director
   assert.ok(!reply.text.includes("<qqimg>"));
   assert.match(reply.text, /邀请链接 \/ Invite URI/);
   assert.match(reply.text, /PrivateClaw 会话|PrivateClaw session/);
-  assert.match(reply.text, /TestFlight/i);
+  assert.match(reply.text, /App Store/i);
   assert.match(reply.text, /Google Play/i);
   assert.match(reply.text, /Google Group/i);
 
@@ -912,7 +912,7 @@ test("privateclaw command embeds qqimg tags for QQ channel replies", async (t) =
   assert.ok(reply.text);
   assert.equal(reply.mediaUrl, undefined);
   assert.match(reply.text, /<qqimg>[^<]+<\/qqimg>/);
-  assert.match(reply.text, /TestFlight/i);
+  assert.match(reply.text, /App Store/i);
   assert.match(reply.text, /Google Play/i);
   assert.match(reply.text, /Google Group/i);
 

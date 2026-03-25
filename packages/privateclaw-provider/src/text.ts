@@ -9,8 +9,8 @@ export function formatBilingualInline(
   return `${chinese} / ${english}`;
 }
 
-export const PRIVATECLAW_IOS_PUBLIC_BETA_URL =
-  "https://testflight.apple.com/join/XvgJ9c33";
+export const PRIVATECLAW_IOS_APP_STORE_URL =
+  "https://apps.apple.com/us/app/yourclaw/id6760531637";
 export const PRIVATECLAW_ANDROID_CLOSED_TESTING_PLAY_URL =
   "https://play.google.com/store/apps/details?id=gg.ai.privateclaw";
 export const PRIVATECLAW_ANDROID_CLOSED_TESTING_GROUP_URL =
@@ -18,8 +18,8 @@ export const PRIVATECLAW_ANDROID_CLOSED_TESTING_GROUP_URL =
 
 export const PRIVATECLAW_APP_INSTALL_FOOTER_LINES = [
   formatBilingualInline(
-    `iOS 公开测试（TestFlight）：${PRIVATECLAW_IOS_PUBLIC_BETA_URL}`,
-    `iOS public beta (TestFlight): ${PRIVATECLAW_IOS_PUBLIC_BETA_URL}`,
+    `iOS App Store（YourClaw）：${PRIVATECLAW_IOS_APP_STORE_URL}`,
+    `iOS App Store (YourClaw): ${PRIVATECLAW_IOS_APP_STORE_URL}`,
   ),
   formatBilingualInline(
     `Android 封闭测试（Google Play）：${PRIVATECLAW_ANDROID_CLOSED_TESTING_PLAY_URL}`,

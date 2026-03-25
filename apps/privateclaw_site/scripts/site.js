@@ -1,4 +1,4 @@
-import { applyTranslations, bindLocaleSelect, getValue, onLocaleChange, t } from "./i18n.js?v=20260324-1";
+import { applyTranslations, bindLocaleSelect, getValue, onLocaleChange, t } from "./i18n.js?v=20260325-1";
 
 const localeSelect = document.getElementById("locale-select");
 const webEntry = document.getElementById("web-entry");

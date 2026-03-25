@@ -15,9 +15,9 @@ It is responsible for:
 
 Join the community on Telegram: [PrivateClaw Telegram group](https://t.me/+W3RUKxEO9kIxMmZl)
 
-Mobile beta access:
+Mobile app access:
 
-- iOS public beta (TestFlight): https://testflight.apple.com/join/XvgJ9c33
+- iOS App Store (YourClaw): https://apps.apple.com/us/app/yourclaw/id6760531637
 - Android closed alpha tester group: https://groups.google.com/g/gg-studio-ai-products
 - Android closed alpha (Google Play): https://play.google.com/store/apps/details?id=gg.ai.privateclaw
 

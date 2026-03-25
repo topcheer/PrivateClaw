@@ -44,7 +44,7 @@ This skill is especially relevant for requests like:
 - The plugin id is `privateclaw`.
 - The standalone npm binary is `privateclaw-provider`.
 - The default public relay is `https://relay.privateclaw.us`.
-- The iOS public beta is available at `https://testflight.apple.com/join/XvgJ9c33`.
+- The iOS App Store release (YourClaw) is available at `https://apps.apple.com/us/app/yourclaw/id6760531637`.
 - The Android closed alpha lives at `https://play.google.com/store/apps/details?id=gg.ai.privateclaw`, but Google Play only grants access after the tester joins `https://groups.google.com/g/gg-studio-ai-products`.
 - If the user is happy with the default public relay, do **not** set `relayBaseUrl`.
 - PrivateClaw is an **OpenClaw plugin**, not an OpenClaw channel. Do **not** run `openclaw channels add privateclaw`.
@@ -82,11 +82,11 @@ If there is no suitable active OpenClaw chat channel available, fall back to the
 
 If the user does not have the OpenClaw alias available but does have the standalone npm binary installed, use the equivalent `privateclaw-provider ...` commands.
 
-## Mobile beta app access
+## Mobile app access
 
 When a user asks where to get the mobile client builds, point them at:
 
-- iOS public beta (TestFlight): `https://testflight.apple.com/join/XvgJ9c33`
+- iOS App Store (YourClaw): `https://apps.apple.com/us/app/yourclaw/id6760531637`
 - Android closed alpha tester group: `https://groups.google.com/g/gg-studio-ai-products`
 - Android closed alpha (Google Play): `https://play.google.com/store/apps/details?id=gg.ai.privateclaw`
 

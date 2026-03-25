@@ -7,6 +7,7 @@ import 'package:privateclaw_app/models/privateclaw_slash_command.dart';
 import 'package:privateclaw_app/services/privateclaw_quick_actions.dart';
 import 'package:privateclaw_app/services/privateclaw_session_client.dart';
 import 'package:privateclaw_app/store_screenshot_preview.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class _FakePrivateClawQuickActions implements PrivateClawQuickActions {
   PrivateClawQuickActionHandler? _handler;
@@ -103,6 +104,7 @@ void main() {
         find.byKey(const ValueKey<String>('composer-send-button')),
         findsOneWidget,
       );
+      expect(find.text('privateclaw.us'), findsOneWidget);
 
       final TextField composerField = tester.widget<TextField>(
         find.byKey(const ValueKey<String>('composer-input-field')),
@@ -111,6 +113,33 @@ void main() {
       expect(composerField.maxLines, 4);
     },
   );
+
+  testWidgets('connection status page opens privateclaw.us', (
+    WidgetTester tester,
+  ) async {
+    final PrivateClawUrlLauncher originalLauncher = privateClawWebsiteLauncher;
+    Uri? launchedUrl;
+    LaunchMode? launchedMode;
+    addTearDown(() {
+      privateClawWebsiteLauncher = originalLauncher;
+    });
+    privateClawWebsiteLauncher =
+        (Uri url, {LaunchMode mode = LaunchMode.platformDefault}) async {
+          launchedUrl = url;
+          launchedMode = mode;
+          return true;
+        };
+
+    await tester.pumpWidget(const PrivateClawApp());
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('plugin-install-site-link')),
+    );
+    await tester.pump();
+
+    expect(launchedUrl, Uri.parse('https://privateclaw.us'));
+    expect(launchedMode, LaunchMode.externalApplication);
+  });
 
   testWidgets('launcher quick action opens the QR scanner sheet', (
     WidgetTester tester,
@@ -259,6 +288,7 @@ void main() {
       expect(find.text('Scan QR code'), findsOneWidget);
       expect(find.text('Disconnect'), findsOneWidget);
       expect(find.text('relay.privateclaw.us'), findsOneWidget);
+      expect(find.text('privateclaw.us'), findsOneWidget);
       expect(
         find.byKey(const ValueKey<String>('session-disconnect-button')),
         findsOneWidget,

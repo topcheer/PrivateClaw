@@ -11,6 +11,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:photo_manager/photo_manager.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'l10n/app_localizations.dart';
 import 'models/chat_attachment.dart';
@@ -43,6 +44,7 @@ const int _maxFrequentEmoji = 18;
 const int _recentPhotoPageSize = 48;
 const double _photoTrayHeight = 188;
 const double _recordingPanelHeight = 280;
+const String _privateClawWebsiteUrl = 'https://privateclaw.us';
 const List<String> _defaultEmoji = <String>[
   '😀',
   '😁',
@@ -97,6 +99,19 @@ const List<String> _defaultEmoji = <String>[
 ];
 
 enum _EmojiPickerTab { frequent, defaults }
+
+typedef PrivateClawUrlLauncher =
+    Future<bool> Function(Uri url, {LaunchMode mode});
+
+Future<bool> _defaultPrivateClawWebsiteLauncher(
+  Uri url, {
+  LaunchMode mode = LaunchMode.platformDefault,
+}) {
+  return launchUrl(url, mode: mode);
+}
+
+PrivateClawUrlLauncher privateClawWebsiteLauncher =
+    _defaultPrivateClawWebsiteLauncher;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -1992,6 +2007,36 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     return 'voice-note-${DateFormat('yyyyMMdd-HHmmss').format(DateTime.now())}.m4a';
   }
 
+  Future<void> _openPrivateClawWebsite() async {
+    final bool launched = await privateClawWebsiteLauncher(
+      Uri.parse(_privateClawWebsiteUrl),
+      mode: LaunchMode.externalApplication,
+    );
+    if (launched || !mounted) {
+      return;
+    }
+    ScaffoldMessenger.maybeOf(
+      context,
+    )?.showSnackBar(const SnackBar(content: Text(_privateClawWebsiteUrl)));
+  }
+
+  Widget _buildPluginInstallWebsiteLink(BuildContext context) {
+    return TextButton.icon(
+      key: const ValueKey<String>('plugin-install-site-link'),
+      onPressed: () {
+        unawaited(_openPrivateClawWebsite());
+      },
+      style: TextButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        minimumSize: const Size(0, 32),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        visualDensity: VisualDensity.compact,
+      ),
+      icon: const Icon(Icons.open_in_new, size: 16),
+      label: const Text('privateclaw.us'),
+    );
+  }
+
   Widget _buildSessionRenewPrompt(BuildContext context, AppLocalizations l10n) {
     final Duration? remaining = _sessionRemainingDuration;
     if (remaining == null || _sessionRenewCommand == null) {
@@ -2466,6 +2511,8 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
                       Icon(_statusIcon()),
                       const SizedBox(width: 12),
                       Expanded(child: Text(_statusText)),
+                      const SizedBox(width: 8),
+                      _buildPluginInstallWebsiteLink(context),
                     ],
                   ),
                 ),
@@ -2656,6 +2703,8 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
                     Icon(_statusIcon()),
                     const SizedBox(width: 12),
                     Expanded(child: Text(_statusText)),
+                    const SizedBox(width: 8),
+                    _buildPluginInstallWebsiteLink(context),
                   ],
                 ),
               ),

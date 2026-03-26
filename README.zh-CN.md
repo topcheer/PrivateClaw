@@ -440,9 +440,9 @@ docker run --rm \
 - 推送 `app-v*` tag（例如 `app-v0.1.12`）时，会自动构建产物并发布一个 GitHub Release。
 - 也可以手动触发这个 workflow，只构建产物而不发布 Release，并且可选覆盖自动解析出来的 `build name` / `build number`。
 - 桌面端产物格式：
-  - Windows：`.zip`（`x64`）
+  - Windows：`.zip`（`x64`、`arm64`）
   - macOS：`.dmg`（`x64`、`arm64`）
-  - Linux：`.tar.gz`（`x64`）
+  - Linux：`.tar.gz`（`x64`、`arm64`）
 - 移动端产物格式：
   - Android：release `.aab`，以及 `arm64` / `x64` 的拆分 `.apk`
   - iOS：未签名的 release `.ipa`，以及对应的 `.xcarchive` 归档
@@ -463,7 +463,7 @@ gh workflow run app-arm-probe.yml \
 
 这样 app 发布使用 `app-v*` tag，而 provider / relay 现有的 npm 发布流程仍继续使用 `v*` tag，互不干扰。
 
-当前仓库固定使用 Flutter `3.38.6`，而它的官方 release manifest 只提供 Linux / Windows 的 `x64` 桌面 SDK 归档；macOS 仍同时提供 `x64` 和 `arm64`。所以 GitHub workflow 目前会构建 macOS 双架构，但 Linux / Windows 先固定为 `x64`，等上游 Flutter 发布对应的 arm64 桌面 SDK 后再扩回去。
+当前仓库仍固定使用 Flutter `3.38.6`，而它的官方 release manifest 只提供 Linux / Windows 的 `x64` 桌面 SDK 归档。为了依然产出 Linux / Windows 的 `arm64` 桌面包，GitHub 的 app release workflow 现在会在 `ubuntu-24.04-arm` 和 `windows-11-arm` 上使用已经验证过的 clone-and-bootstrap 方案：浅克隆 Flutter `3.38.6` 仓库、加入 `PATH`，并在桌面构建前先跑一次 `flutter doctor`。macOS 双架构仍继续走正常的预构建 SDK 路径。
 
 ### 发布到 npm 的 relay 包
 

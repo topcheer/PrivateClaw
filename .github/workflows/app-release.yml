@@ -126,23 +126,61 @@ jobs:
           - platform: linux
             arch: x64
             runner: ubuntu-24.04
+            flutter_install_method: flutter-action
+          - platform: linux
+            arch: arm64
+            runner: ubuntu-24.04-arm
+            flutter_install_method: git-clone
           - platform: windows
             arch: x64
             runner: windows-latest
+            flutter_install_method: flutter-action
+          - platform: windows
+            arch: arm64
+            runner: windows-11-arm
+            flutter_install_method: git-clone
           - platform: macos
             arch: x64
             runner: macos-15-intel
+            flutter_install_method: flutter-action
           - platform: macos
             arch: arm64
             runner: macos-latest
+            flutter_install_method: flutter-action
     steps:
       - uses: actions/checkout@v4
 
-      - uses: subosito/flutter-action@v2
+      - if: matrix.flutter_install_method == 'flutter-action'
+        uses: subosito/flutter-action@v2
         with:
           flutter-version: 3.38.6
           channel: stable
           cache: true
+
+      - name: Clone Flutter SDK
+        if: matrix.flutter_install_method == 'git-clone'
+        shell: pwsh
+        run: |
+          $flutterDir = Join-Path $env:RUNNER_TEMP 'flutter'
+          if (Test-Path $flutterDir) {
+            Remove-Item $flutterDir -Recurse -Force
+          }
+
+          git clone --depth 1 --branch 3.38.6 https://github.com/flutter/flutter.git $flutterDir
+          (Join-Path $flutterDir 'bin') | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Bootstrap cloned Flutter SDK
+        if: matrix.flutter_install_method == 'git-clone'
+        shell: pwsh
+        run: |
+          if ('${{ matrix.platform }}' -eq 'linux') {
+            flutter config --enable-linux-desktop
+          } elseif ('${{ matrix.platform }}' -eq 'windows') {
+            flutter config --enable-windows-desktop
+          }
+
+          flutter --version
+          flutter doctor -v
 
       - name: Install Linux desktop dependencies
         if: matrix.platform == 'linux'

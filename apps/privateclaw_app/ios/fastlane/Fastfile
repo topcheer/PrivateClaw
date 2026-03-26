@@ -72,6 +72,52 @@ platform :ios do
     value.nil? || value.empty? ? nil : value
   end
 
+  def privateclaw_optional_env(name)
+    value = ENV[name]
+    value.nil? || value.empty? ? nil : value
+  end
+
+  def privateclaw_optional_file_env(name)
+    path = privateclaw_optional_env(name)
+    return nil if path.nil?
+    UI.user_error!("#{name} file not found: #{path}") unless File.exist?(path)
+    path
+  end
+
+  def privateclaw_app_review_information
+    info = {}
+    notes_file = privateclaw_optional_file_env("PRIVATECLAW_APP_REVIEW_NOTES_FILE")
+    info[:notes] = File.read(notes_file) unless notes_file.nil?
+
+    {
+      first_name: "PRIVATECLAW_APP_REVIEW_FIRST_NAME",
+      last_name: "PRIVATECLAW_APP_REVIEW_LAST_NAME",
+      phone_number: "PRIVATECLAW_APP_REVIEW_PHONE_NUMBER",
+      email_address: "PRIVATECLAW_APP_REVIEW_EMAIL_ADDRESS",
+      demo_user: "PRIVATECLAW_APP_REVIEW_DEMO_USER",
+      demo_password: "PRIVATECLAW_APP_REVIEW_DEMO_PASSWORD"
+    }.each do |key, env_name|
+      value = privateclaw_optional_env(env_name)
+      info[key] = value unless value.nil?
+    end
+
+    info
+  end
+
+  def privateclaw_app_review_attachment_file
+    privateclaw_optional_file_env("DELIVER_APP_REVIEW_ATTACHMENT_FILE")
+  end
+
+  def privateclaw_apply_review_upload_options(options)
+    review_info = privateclaw_app_review_information
+    options[:app_review_information] = review_info unless review_info.empty?
+
+    attachment = privateclaw_app_review_attachment_file
+    options[:app_review_attachment_file] = attachment unless attachment.nil?
+
+    options
+  end
+
   desc "Build an App Store signed IPA for PrivateClaw"
   lane :build_release do
     privateclaw_prepare_ios_build_settings
@@ -91,7 +137,7 @@ platform :ios do
 
   desc "Upload localized metadata only"
   lane :metadata do
-    upload_to_app_store(
+    options = {
       api_key: privateclaw_app_store_api_key,
       skip_binary_upload: true,
       skip_screenshots: false,
@@ -99,7 +145,8 @@ platform :ios do
       screenshots_path: "./fastlane/screenshots",
       force: true,
       precheck_include_in_app_purchases: false
-    )
+    }
+    upload_to_app_store(**privateclaw_apply_review_upload_options(options))
   end
 
   desc "Upload an existing IPA to TestFlight without rebuilding"
@@ -157,7 +204,7 @@ platform :ios do
     else
       options[:ipa] = "../builds/ios/PrivateClaw.ipa"
     end
-    options
+    privateclaw_apply_review_upload_options(options)
   end
 
   desc "Submit the existing App Store Connect build for App Store review"

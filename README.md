@@ -458,14 +458,16 @@ This repository now also includes `.github/workflows/app-release.yml` for packag
 - Push an `app-v*` tag (for example `app-v0.1.12`) to build and publish a GitHub release automatically.
 - Or run the workflow manually with `workflow_dispatch` to build artifacts without creating a release, optionally overriding the resolved build name / build number.
 - Desktop artifacts are emitted as:
-  - Windows: `.zip` (`x64`, `arm64`)
+  - Windows: `.zip` (`x64`)
   - macOS: `.dmg` (`x64`, `arm64`)
-  - Linux: `.tar.gz` (`x64`, `arm64`)
+  - Linux: `.tar.gz` (`x64`)
 - Mobile artifacts are emitted as:
   - Android: release `.aab` plus split `.apk` files for `arm64` and `x64`
   - iOS: unsigned release `.ipa` plus the matching `.xcarchive` bundle
 
 Keeping app releases on `app-v*` tags leaves the existing provider / relay npm publish flow on `v*` tags unchanged.
+
+At the moment this repo pins Flutter `3.38.6`, whose official release manifests only provide `x64` desktop SDK archives for Linux and Windows. macOS still ships both `x64` and `arm64`, so the GitHub workflow builds both there and keeps Linux / Windows on `x64` until upstream Flutter publishes matching arm64 desktop archives for those hosts.
 
 ### Published relay npm package
 

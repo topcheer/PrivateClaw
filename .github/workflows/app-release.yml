@@ -126,15 +126,9 @@ jobs:
           - platform: linux
             arch: x64
             runner: ubuntu-24.04
-          - platform: linux
-            arch: arm64
-            runner: ubuntu-24.04-arm
           - platform: windows
             arch: x64
             runner: windows-latest
-          - platform: windows
-            arch: arm64
-            runner: windows-11-arm
           - platform: macos
             arch: x64
             runner: macos-15-intel

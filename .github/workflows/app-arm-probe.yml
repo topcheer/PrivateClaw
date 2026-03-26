@@ -169,24 +169,25 @@ jobs:
             '${{ steps.build-windows.outcome }}'
           }
 
-          $report = @"
-          # ARM desktop probe: ${{ matrix.platform }}-${{ matrix.arch }}
-
-          - Runner label: `${{ matrix.runner }}`
-          - Runner OS: `$env:RUNNER_OS`
-          - Runner arch: `$env:RUNNER_ARCH`
-          - Requested Flutter version: `${{ inputs.flutter_version }}`
-          - Requested Flutter channel: `${{ inputs.flutter_channel }}`
-          - Build mode: `${{ inputs.build_mode }}`
-          - Requested desktop build: `${{ inputs.run_desktop_build }}`
-          - Official manifest has matching arm64 SDK: `${{ steps.manifest.outputs.supported }}`
-          - Matching official archive: `$archive`
-          - Flutter setup outcome: `${{ steps.flutter.outcome }}`
-          - Desktop build outcome: `$buildOutcome`
-          "@
+          $reportLines = @(
+            '# ARM desktop probe: ${{ matrix.platform }}-${{ matrix.arch }}',
+            '',
+            '- Runner label: ${{ matrix.runner }}',
+            "- Runner OS: $env:RUNNER_OS",
+            "- Runner arch: $env:RUNNER_ARCH",
+            '- Requested Flutter version: ${{ inputs.flutter_version }}',
+            '- Requested Flutter channel: ${{ inputs.flutter_channel }}',
+            '- Build mode: ${{ inputs.build_mode }}',
+            '- Requested desktop build: ${{ inputs.run_desktop_build }}',
+            '- Official manifest has matching arm64 SDK: ${{ steps.manifest.outputs.supported }}',
+            "- Matching official archive: $archive",
+            '- Flutter setup outcome: ${{ steps.flutter.outcome }}',
+            "- Desktop build outcome: $buildOutcome"
+          )
+          $report = $reportLines -join [Environment]::NewLine
 
           $reportPath = "arm-probe-${{ matrix.platform }}-${{ matrix.arch }}.md"
-          $report | Set-Content -Path $reportPath
+          $report | Set-Content -Path $reportPath -Encoding utf8
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $report
 
       - name: Upload probe summary

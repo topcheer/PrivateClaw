@@ -446,6 +446,17 @@ docker run --rm \
 - 移动端产物格式：
   - Android：release `.aab`，以及 `arm64` / `x64` 的拆分 `.apk`
   - iOS：未签名的 release `.ipa`，以及对应的 `.xcarchive` 归档
+- 仓库还包含 `.github/workflows/app-arm-probe.yml`，用于手动验证 ARM GitHub-hosted runner。它会在 `ubuntu-24.04-arm` 和 `windows-11-arm` 上运行，先记录指定 Flutter 版本是否真的发布了对应主机的官方 `arm64` 桌面 SDK，再在 Flutter 安装成功时尝试真实的桌面构建。
+- 示例：
+
+```bash
+gh workflow run app-arm-probe.yml \
+  -f flutter_version=3.38.6 \
+  -f flutter_channel=stable \
+  -f build_mode=release \
+  -f run_desktop_build=true \
+  -f fail_on_probe_failure=false
+```
 
 这样 app 发布使用 `app-v*` tag，而 provider / relay 现有的 npm 发布流程仍继续使用 `v*` tag，互不干扰。
 

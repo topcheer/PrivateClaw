@@ -464,6 +464,17 @@ This repository now also includes `.github/workflows/app-release.yml` for packag
 - Mobile artifacts are emitted as:
   - Android: release `.aab` plus split `.apk` files for `arm64` and `x64`
   - iOS: unsigned release `.ipa` plus the matching `.xcarchive` bundle
+- This repository also includes `.github/workflows/app-arm-probe.yml` for manual ARM runner experiments. It runs on `ubuntu-24.04-arm` and `windows-11-arm`, records whether the requested Flutter version publishes official `arm64` desktop SDK archives for those hosts, and attempts a real desktop build when Flutter setup succeeds.
+- Example:
+
+```bash
+gh workflow run app-arm-probe.yml \
+  -f flutter_version=3.38.6 \
+  -f flutter_channel=stable \
+  -f build_mode=release \
+  -f run_desktop_build=true \
+  -f fail_on_probe_failure=false
+```
 
 Keeping app releases on `app-v*` tags leaves the existing provider / relay npm publish flow on `v*` tags unchanged.
 

@@ -1,0 +1,228 @@
+name: Probe ARM Desktop Runners
+
+on:
+  workflow_dispatch:
+    inputs:
+      flutter_version:
+        description: Flutter version to probe on ARM desktop runners
+        required: true
+        default: '3.38.6'
+        type: string
+      flutter_channel:
+        description: Flutter channel used for manifest lookup and setup
+        required: true
+        default: stable
+        type: choice
+        options:
+          - stable
+          - beta
+          - dev
+      build_mode:
+        description: Build mode used when the desktop build step runs
+        required: true
+        default: release
+        type: choice
+        options:
+          - debug
+          - release
+      run_desktop_build:
+        description: Attempt a real desktop build after Flutter setup succeeds
+        required: true
+        default: true
+        type: boolean
+      fail_on_probe_failure:
+        description: Fail the job when ARM SDK setup or desktop build is unsupported
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-arm-probe-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    name: Probe ${{ matrix.platform }}-arm64
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux
+            runner: ubuntu-24.04-arm
+            arch: arm64
+            manifest_url: https://storage.googleapis.com/flutter_infra_release/releases/releases_linux.json
+          - platform: windows
+            runner: windows-11-arm
+            arch: arm64
+            manifest_url: https://storage.googleapis.com/flutter_infra_release/releases/releases_windows.json
+    env:
+      FLUTTER_VERSION: ${{ inputs.flutter_version }}
+      FLUTTER_CHANNEL: ${{ inputs.flutter_channel }}
+      BUILD_MODE: ${{ inputs.build_mode }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Collect runner details
+        shell: pwsh
+        run: |
+          "Runner name: $env:RUNNER_NAME"
+          "Runner OS: $env:RUNNER_OS"
+          "Runner arch: $env:RUNNER_ARCH"
+          "Process arch: $env:PROCESSOR_ARCHITECTURE"
+          "OS arch: $([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)"
+          if ($env:RUNNER_OS -eq 'Linux') {
+            uname -a
+            lscpu
+          } else {
+            systeminfo | Select-Object -First 20
+            Get-CimInstance Win32_Processor | Format-List Name, Architecture, AddressWidth
+          }
+
+      - id: manifest
+        name: Check official Flutter SDK manifest
+        shell: pwsh
+        run: |
+          $manifest = Invoke-RestMethod -Uri '${{ matrix.manifest_url }}'
+          $match = $manifest.releases | Where-Object {
+            $_.version -eq $env:FLUTTER_VERSION -and
+            $_.channel -eq $env:FLUTTER_CHANNEL -and
+            $_.dart_sdk_arch -eq '${{ matrix.arch }}'
+          } | Select-Object -First 1
+
+          $supported = $null -ne $match
+          "supported=$($supported.ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          if ($supported) {
+            "archive=$($match.archive)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          } else {
+            'archive=' | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          }
+
+      - id: flutter
+        name: Set up Flutter
+        continue-on-error: true
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ inputs.flutter_version }}
+          channel: ${{ inputs.flutter_channel }}
+          cache: true
+
+      - name: Show Flutter toolchain
+        if: ${{ steps.flutter.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          flutter --version
+          flutter doctor -v
+
+      - name: Install Linux desktop dependencies
+        if: ${{ steps.flutter.outcome == 'success' && inputs.run_desktop_build && matrix.platform == 'linux' }}
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            clang \
+            cmake \
+            libgtk-3-dev \
+            liblzma-dev \
+            libstdc++-12-dev \
+            ninja-build \
+            pkg-config
+
+      - name: Get Flutter dependencies
+        if: ${{ steps.flutter.outcome == 'success' && inputs.run_desktop_build }}
+        working-directory: apps/privateclaw_app
+        shell: pwsh
+        run: flutter pub get
+
+      - id: build-linux
+        name: Build Linux desktop app
+        if: ${{ steps.flutter.outcome == 'success' && inputs.run_desktop_build && matrix.platform == 'linux' }}
+        continue-on-error: true
+        working-directory: apps/privateclaw_app
+        shell: bash
+        run: |
+          set -euo pipefail
+          flutter build linux "--${BUILD_MODE}"
+
+      - id: build-windows
+        name: Build Windows desktop app
+        if: ${{ steps.flutter.outcome == 'success' && inputs.run_desktop_build && matrix.platform == 'windows' }}
+        continue-on-error: true
+        working-directory: apps/privateclaw_app
+        shell: pwsh
+        run: flutter build windows "--$env:BUILD_MODE"
+
+      - name: Write probe summary
+        if: always()
+        shell: pwsh
+        run: |
+          $archive = '${{ steps.manifest.outputs.archive }}'
+          if (-not $archive) {
+            $archive = 'n/a'
+          }
+
+          $buildOutcome = if ('${{ matrix.platform }}' -eq 'linux') {
+            '${{ steps.build-linux.outcome }}'
+          } else {
+            '${{ steps.build-windows.outcome }}'
+          }
+
+          $report = @"
+          # ARM desktop probe: ${{ matrix.platform }}-${{ matrix.arch }}
+
+          - Runner label: `${{ matrix.runner }}`
+          - Runner OS: `$env:RUNNER_OS`
+          - Runner arch: `$env:RUNNER_ARCH`
+          - Requested Flutter version: `${{ inputs.flutter_version }}`
+          - Requested Flutter channel: `${{ inputs.flutter_channel }}`
+          - Build mode: `${{ inputs.build_mode }}`
+          - Requested desktop build: `${{ inputs.run_desktop_build }}`
+          - Official manifest has matching arm64 SDK: `${{ steps.manifest.outputs.supported }}`
+          - Matching official archive: `$archive`
+          - Flutter setup outcome: `${{ steps.flutter.outcome }}`
+          - Desktop build outcome: `$buildOutcome`
+          "@
+
+          $reportPath = "arm-probe-${{ matrix.platform }}-${{ matrix.arch }}.md"
+          $report | Set-Content -Path $reportPath
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $report
+
+      - name: Upload probe summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: arm-probe-${{ matrix.platform }}-${{ matrix.arch }}
+          path: arm-probe-${{ matrix.platform }}-${{ matrix.arch }}.md
+          if-no-files-found: error
+
+      - name: Fail on unsupported probe result
+        if: ${{ always() && inputs.fail_on_probe_failure }}
+        shell: pwsh
+        run: |
+          $errors = New-Object System.Collections.Generic.List[string]
+
+          if ('${{ steps.manifest.outputs.supported }}' -ne 'true') {
+            $errors.Add("Flutter $env:FLUTTER_VERSION does not publish an official ${{ matrix.platform }}-${{ matrix.arch }} desktop SDK archive on channel $env:FLUTTER_CHANNEL.")
+          }
+
+          if ('${{ steps.flutter.outcome }}' -ne 'success') {
+            $errors.Add("subosito/flutter-action could not install Flutter $env:FLUTTER_VERSION on runner ${{ matrix.runner }}.")
+          }
+
+          if ('${{ inputs.run_desktop_build }}' -eq 'true') {
+            $buildOutcome = if ('${{ matrix.platform }}' -eq 'linux') {
+              '${{ steps.build-linux.outcome }}'
+            } else {
+              '${{ steps.build-windows.outcome }}'
+            }
+            if ($buildOutcome -notin @('success', 'skipped')) {
+              $errors.Add("The ${{ matrix.platform }} desktop build failed after Flutter setup.")
+            }
+          }
+
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_ }
+            exit 1
+          }

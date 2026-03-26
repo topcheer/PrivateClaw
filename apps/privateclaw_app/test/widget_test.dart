@@ -9,6 +9,8 @@ import 'package:privateclaw_app/services/privateclaw_session_client.dart';
 import 'package:privateclaw_app/store_screenshot_preview.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'test_support/privateclaw_directory_overrides.dart';
+
 class _FakePrivateClawQuickActions implements PrivateClawQuickActions {
   PrivateClawQuickActionHandler? _handler;
   List<PrivateClawShortcutItem> items = const <PrivateClawShortcutItem>[];
@@ -39,7 +41,17 @@ class _FakePrivateClawQuickActions implements PrivateClawQuickActions {
   }
 }
 
+Opacity _nearestOpacityFor(WidgetTester tester, Finder target) {
+  return tester.widget<Opacity>(
+    find.ancestor(of: target, matching: find.byType(Opacity)).first,
+  );
+}
+
 void main() {
+  setUp(() {
+    installPrivateClawTestDirectoryOverrides();
+  });
+
   test('notification bootstrap is skipped for preview launches', () {
     expect(
       privateClawShouldSkipNotificationsInDebug(
@@ -113,6 +125,213 @@ void main() {
       expect(composerField.maxLines, 4);
     },
   );
+
+  test('desktop capability helpers keep desktop session and voice support', () {
+    expect(
+      privateClawSupportsVoiceRecordingForTargetPlatform(
+        TargetPlatform.android,
+      ),
+      isTrue,
+    );
+    expect(
+      privateClawSupportsVoiceRecordingForTargetPlatform(TargetPlatform.macOS),
+      isTrue,
+    );
+    expect(
+      privateClawSupportsVoiceRecordingForTargetPlatform(
+        TargetPlatform.windows,
+      ),
+      isTrue,
+    );
+    expect(
+      privateClawUsesTapToToggleVoiceRecordingForTargetPlatform(
+        TargetPlatform.windows,
+      ),
+      isTrue,
+    );
+    expect(
+      privateClawUsesTapToToggleVoiceRecordingForTargetPlatform(
+        TargetPlatform.macOS,
+      ),
+      isFalse,
+    );
+    expect(
+      privateClawShouldAutoSendPickedAttachmentsForTargetPlatform(
+        TargetPlatform.windows,
+      ),
+      isTrue,
+    );
+    expect(
+      privateClawShouldAutoSendPickedAttachmentsForTargetPlatform(
+        TargetPlatform.macOS,
+      ),
+      isFalse,
+    );
+    expect(
+      privateClawSupportsRecentPhotoTrayForTargetPlatform(TargetPlatform.iOS),
+      isTrue,
+    );
+    expect(
+      privateClawSupportsRecentPhotoTrayForTargetPlatform(
+        TargetPlatform.windows,
+      ),
+      isFalse,
+    );
+    expect(
+      privateClawShouldKeepLiveSessionInBackgroundForTargetPlatform(
+        TargetPlatform.macOS,
+      ),
+      isTrue,
+    );
+    expect(
+      privateClawShouldKeepLiveSessionInBackgroundForTargetPlatform(
+        TargetPlatform.android,
+      ),
+      isFalse,
+    );
+    expect(
+      privateClawShouldShowLocalNotificationForLifecycleState(
+        platform: TargetPlatform.macOS,
+        state: AppLifecycleState.hidden,
+      ),
+      isTrue,
+    );
+    expect(
+      privateClawShouldShowLocalNotificationForLifecycleState(
+        platform: TargetPlatform.macOS,
+        state: AppLifecycleState.resumed,
+      ),
+      isFalse,
+    );
+    expect(
+      privateClawShouldSuspendLiveSession(
+        platform: TargetPlatform.android,
+        state: AppLifecycleState.hidden,
+      ),
+      isTrue,
+    );
+    expect(
+      privateClawShouldSuspendLiveSession(
+        platform: TargetPlatform.macOS,
+        state: AppLifecycleState.hidden,
+      ),
+      isFalse,
+    );
+  });
+
+  testWidgets(
+    'desktop home screen keeps desktop voice and attachment buttons',
+    (WidgetTester tester) async {
+      final TargetPlatform Function() originalResolver =
+          privateClawTargetPlatformResolver;
+      privateClawTargetPlatformResolver = () => TargetPlatform.macOS;
+      addTearDown(() {
+        privateClawTargetPlatformResolver = originalResolver;
+      });
+
+      await tester.pumpWidget(const PrivateClawApp());
+
+      expect(
+        find.byKey(const ValueKey<String>('voice-record-button')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('composer-photo-button')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('composer-file-button')),
+        findsOneWidget,
+      );
+      expect(
+        _nearestOpacityFor(
+          tester,
+          find.byKey(const ValueKey<String>('composer-photo-button')),
+        ).opacity,
+        0.45,
+      );
+      expect(
+        _nearestOpacityFor(
+          tester,
+          find.byKey(const ValueKey<String>('composer-file-button')),
+        ).opacity,
+        0.45,
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('composer-file-button')),
+      );
+      await tester.pump();
+      expect(
+        find.text('Wait for the session to finish connecting…'),
+        findsWidgets,
+      );
+    },
+  );
+
+  testWidgets('desktop scan button falls back to manual invite entry', (
+    WidgetTester tester,
+  ) async {
+    final TargetPlatform Function() originalResolver =
+        privateClawTargetPlatformResolver;
+    privateClawTargetPlatformResolver = () => TargetPlatform.windows;
+    addTearDown(() {
+      privateClawTargetPlatformResolver = originalResolver;
+    });
+
+    bool launchedScanner = false;
+    await tester.pumpWidget(
+      PrivateClawApp(
+        scannerSheetLauncher:
+            (BuildContext context, Widget? previewOverride) async {
+              launchedScanner = true;
+              return null;
+            },
+      ),
+    );
+
+    await tester.tap(find.text('Scan QR code').first);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('voice-record-button')),
+      findsOneWidget,
+    );
+    expect(launchedScanner, isFalse);
+    expect(
+      find.text(
+        'Live camera scanning is unavailable here. Choose a photo instead, or paste the invite link.',
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('windows voice button uses tap-to-record tooltip', (
+    WidgetTester tester,
+  ) async {
+    final TargetPlatform Function() originalResolver =
+        privateClawTargetPlatformResolver;
+    privateClawTargetPlatformResolver = () => TargetPlatform.windows;
+    addTearDown(() {
+      privateClawTargetPlatformResolver = originalResolver;
+    });
+
+    await tester.pumpWidget(const PrivateClawApp());
+
+    final Finder voiceButton = find.byKey(
+      const ValueKey<String>('voice-record-button'),
+    );
+    expect(voiceButton, findsOneWidget);
+    expect(
+      tester
+          .widget<Tooltip>(
+            find.ancestor(of: voiceButton, matching: find.byType(Tooltip)),
+          )
+          .message,
+      'Tap to start recording',
+    );
+    expect(_nearestOpacityFor(tester, voiceButton).opacity, 0.45);
+  });
 
   testWidgets('connection status page opens privateclaw.us', (
     WidgetTester tester,

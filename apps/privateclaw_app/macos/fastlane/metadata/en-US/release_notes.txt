@@ -1,0 +1,2 @@
+Mixed photo + file replies are more reliable, with better attachment delivery and opening.
+Pairing, invite parsing, and session feedback are smoother across the app and provider.

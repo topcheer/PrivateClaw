@@ -29,6 +29,10 @@ const Duration _pushTokenRequestTimeout = Duration(seconds: 15);
 const Duration _apnsTokenPollInterval = Duration(milliseconds: 500);
 const int _apnsTokenPollAttempts = 10;
 
+bool privateClawSupportsDesktopLocalNotificationsOnCurrentPlatform() {
+  return Platform.isMacOS;
+}
+
 @pragma('vm:entry-point')
 Future<void> privateClawBackgroundMessageHandler(RemoteMessage message) async {
   await PrivateClawNotificationService.instance.handleBackgroundMessage(
@@ -79,10 +83,17 @@ class PrivateClawNotificationService {
   Future<void>? _bootstrapFuture;
   Future<void>? _permissionFuture;
   bool _firebaseUnavailable = false;
+  bool _desktopLocalNotificationsUnavailable = false;
+
+  bool get _supportsRemotePush =>
+      privateClawSupportsFirebasePushOnCurrentPlatform();
+  bool get _supportsDesktopLocalNotifications =>
+      privateClawSupportsDesktopLocalNotificationsOnCurrentPlatform();
 
   bool get isConfigured =>
-      !_firebaseUnavailable &&
-      privateClawSupportsFirebasePushOnCurrentPlatform();
+      (_supportsDesktopLocalNotifications &&
+          !_desktopLocalNotificationsUnavailable) ||
+      (_supportsRemotePush && !_firebaseUnavailable);
 
   Future<void> bootstrap() {
     if (!isConfigured) {
@@ -92,6 +103,9 @@ class PrivateClawNotificationService {
   }
 
   Future<void> _bootstrapInternal() async {
+    if (_supportsDesktopLocalNotifications) {
+      return;
+    }
     final FirebaseOptions? options =
         privateClawFirebaseOptionsForCurrentPlatform();
     try {
@@ -133,6 +147,11 @@ class PrivateClawNotificationService {
     debugPrint(message.trim());
   }
 
+  void _disableDesktopLocalNotifications(String message) {
+    _desktopLocalNotificationsUnavailable = true;
+    debugPrint(message.trim());
+  }
+
   Future<void> prepareForSession() async {
     if (!isConfigured) {
       return;
@@ -141,11 +160,32 @@ class PrivateClawNotificationService {
     if (!isConfigured) {
       return;
     }
-    _permissionFuture ??= _requestPermission();
+    _permissionFuture ??= _requestNotificationPermission();
     await _permissionFuture;
   }
 
-  Future<void> _requestPermission() async {
+  Future<void> _requestNotificationPermission() async {
+    if (_supportsDesktopLocalNotifications) {
+      try {
+        final bool granted = await _localNotifications.requestPermission();
+        if (!granted) {
+          _disableDesktopLocalNotifications(
+            '[privateclaw-app] local notifications disabled: permission denied',
+          );
+          return;
+        }
+        debugPrint(
+          '[privateclaw-app] local notification permission: granted',
+        );
+      } on PlatformException catch (error, stackTrace) {
+        _disableDesktopLocalNotifications(
+          '[privateclaw-app] local notifications disabled: '
+          '${error.code}${error.message == null ? '' : ' ${error.message}'}',
+        );
+        debugPrintStack(stackTrace: stackTrace);
+      }
+      return;
+    }
     final NotificationSettings settings = await FirebaseMessaging.instance
         .requestPermission(
           alert: true,
@@ -160,6 +200,12 @@ class PrivateClawNotificationService {
   }
 
   Future<String?> getPushToken() async {
+    if (!_supportsRemotePush) {
+      debugPrint(
+        '[privateclaw-app] push token request skipped: remote push unsupported on this platform',
+      );
+      return null;
+    }
     if (!isConfigured) {
       debugPrint(
         '[privateclaw-app] push token request skipped: Firebase disabled',
@@ -380,6 +426,19 @@ class PrivateClawNotificationService {
 
     debugPrint(
       '[privateclaw-app] background wake completed with no notifiable messages',
+    );
+  }
+
+  Future<void> showForegroundNotification({
+    required PrivateClawInvite invite,
+    required ChatMessage message,
+  }) async {
+    if (!_supportsDesktopLocalNotifications || !_isNotifiableMessage(message)) {
+      return;
+    }
+    await _showNotificationSummary(
+      invite: invite,
+      messages: <ChatMessage>[message],
     );
   }
 

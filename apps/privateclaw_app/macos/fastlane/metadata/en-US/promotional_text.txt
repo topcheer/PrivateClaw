@@ -1,0 +1,1 @@
+Leave public chat behind and talk to your PrivateClaw/OpenClaw session over a one-time encrypted channel.

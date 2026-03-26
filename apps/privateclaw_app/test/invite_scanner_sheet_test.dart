@@ -13,6 +13,7 @@ void main() {
     Future<String?> Function()? captureInviteFromCamera,
     bool? useNativeIosCapture,
     bool? autoStartNativeIosCapture,
+    Widget? previewOverride = const ColoredBox(color: Colors.black),
   }) {
     return MaterialApp(
       locale: const Locale('en'),
@@ -26,11 +27,40 @@ void main() {
           captureInviteFromCamera: captureInviteFromCamera,
           useNativeIosCapture: useNativeIosCapture,
           autoStartNativeIosCapture: autoStartNativeIosCapture,
-          previewOverride: const ColoredBox(color: Colors.black),
+          previewOverride: previewOverride,
         ),
       ),
     );
   }
+
+  test('invite scanner platform helpers gate desktop support correctly', () {
+    expect(
+      privateClawSupportsInviteScannerForTargetPlatform(TargetPlatform.macOS),
+      isTrue,
+    );
+    expect(
+      privateClawSupportsInviteScannerForTargetPlatform(TargetPlatform.windows),
+      isFalse,
+    );
+    expect(
+      privateClawSupportsInviteLivePreviewForTargetPlatform(
+        TargetPlatform.android,
+      ),
+      isTrue,
+    );
+    expect(
+      privateClawSupportsInviteLivePreviewForTargetPlatform(
+        TargetPlatform.linux,
+      ),
+      isFalse,
+    );
+    expect(
+      privateClawSupportsInviteImageAnalysisForTargetPlatform(
+        TargetPlatform.iOS,
+      ),
+      isTrue,
+    );
+  });
 
   testWidgets('scanner sheet shows photo scan button without simulator hint', (
     WidgetTester tester,
@@ -177,5 +207,32 @@ void main() {
 
     expect(captureAttempts, 1);
     expect(detectedValue, 'privateclaw://connect?payload=auto-opened-invite');
+  });
+
+  testWidgets('scanner sheet shows an unsupported preview on Windows desktop', (
+    WidgetTester tester,
+  ) async {
+    final TargetPlatform Function() originalResolver =
+        privateClawInviteScannerTargetPlatformResolver;
+    privateClawInviteScannerTargetPlatformResolver = () =>
+        TargetPlatform.windows;
+    addTearDown(() {
+      privateClawInviteScannerTargetPlatformResolver = originalResolver;
+    });
+
+    await tester.pumpWidget(
+      buildScannerSheet(onDetected: (_) {}, previewOverride: null),
+    );
+
+    expect(
+      find.text(
+        'Live camera scanning is unavailable here. Choose a photo instead, or paste the invite link.',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('scan-photo-button')),
+      findsOneWidget,
+    );
   });
 }

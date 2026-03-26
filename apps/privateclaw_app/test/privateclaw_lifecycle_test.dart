@@ -4,27 +4,49 @@ import 'package:privateclaw_app/main.dart';
 
 void main() {
   test(
-    'privateClawShouldSuspendLiveSession only suspends background states',
+    'privateClawShouldSuspendLiveSession only suspends mobile background states',
     () {
       expect(
-        privateClawShouldSuspendLiveSession(AppLifecycleState.resumed),
+        privateClawShouldSuspendLiveSession(
+          platform: TargetPlatform.android,
+          state: AppLifecycleState.resumed,
+        ),
         isFalse,
       );
       expect(
-        privateClawShouldSuspendLiveSession(AppLifecycleState.inactive),
+        privateClawShouldSuspendLiveSession(
+          platform: TargetPlatform.android,
+          state: AppLifecycleState.inactive,
+        ),
         isFalse,
       );
       expect(
-        privateClawShouldSuspendLiveSession(AppLifecycleState.paused),
+        privateClawShouldSuspendLiveSession(
+          platform: TargetPlatform.android,
+          state: AppLifecycleState.paused,
+        ),
         isTrue,
       );
       expect(
-        privateClawShouldSuspendLiveSession(AppLifecycleState.hidden),
+        privateClawShouldSuspendLiveSession(
+          platform: TargetPlatform.android,
+          state: AppLifecycleState.hidden,
+        ),
         isTrue,
       );
       expect(
-        privateClawShouldSuspendLiveSession(AppLifecycleState.detached),
+        privateClawShouldSuspendLiveSession(
+          platform: TargetPlatform.android,
+          state: AppLifecycleState.detached,
+        ),
         isTrue,
+      );
+      expect(
+        privateClawShouldSuspendLiveSession(
+          platform: TargetPlatform.macOS,
+          state: AppLifecycleState.hidden,
+        ),
+        isFalse,
       );
     },
   );

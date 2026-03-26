@@ -48,7 +48,9 @@ platform :ios do
   def privateclaw_prepare_ios_build_settings
     UI.message("Using PrivateClaw iOS version #{privateclaw_build_name} (#{privateclaw_build_number})")
     sh(
-      "cd #{Shellwords.escape(privateclaw_app_root)} && flutter build ios --config-only --release " \
+      "cd #{Shellwords.escape(privateclaw_app_root)} && " \
+      "unset BUNDLE_BIN_PATH BUNDLE_GEMFILE RUBYOPT GEM_HOME GEM_PATH && " \
+      "flutter build ios --config-only --release " \
       "--build-name #{Shellwords.escape(privateclaw_build_name)} " \
       "--build-number #{Shellwords.escape(privateclaw_build_number)}"
     )

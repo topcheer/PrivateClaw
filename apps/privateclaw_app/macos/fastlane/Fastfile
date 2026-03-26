@@ -1,0 +1,241 @@
+require "json"
+require "shellwords"
+require "spaceship"
+
+default_platform(:mac)
+
+platform :mac do
+  def privateclaw_app_identifier
+    "gg.ai.privateclaw"
+  end
+
+  def privateclaw_app_root
+    @privateclaw_app_root ||= File.expand_path("../..", __dir__)
+  end
+
+  def privateclaw_version_script_path
+    @privateclaw_version_script_path ||= File.expand_path("../../../../scripts/resolve-mobile-version.mjs", __dir__)
+  end
+
+  def privateclaw_mobile_version
+    @privateclaw_mobile_version ||= JSON.parse(
+      sh("node #{Shellwords.escape(privateclaw_version_script_path)} --json")
+    )
+  end
+
+  def privateclaw_build_name
+    privateclaw_mobile_version.fetch("versionName")
+  end
+
+  def privateclaw_build_number
+    privateclaw_mobile_version.fetch("buildNumber").to_s
+  end
+
+  def privateclaw_app_store_api_key
+    app_store_connect_api_key(
+      key_id: ENV.fetch("PRIVATECLAW_APP_STORE_CONNECT_KEY_ID"),
+      issuer_id: ENV.fetch("PRIVATECLAW_APP_STORE_CONNECT_ISSUER_ID"),
+      key_filepath: ENV.fetch("PRIVATECLAW_APP_STORE_CONNECT_KEY_FILE"),
+      duration: 1200,
+      in_house: false
+    )
+  end
+
+  def privateclaw_connect_api_client
+    @privateclaw_connect_api_client ||= begin
+      Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(
+        key_id: ENV.fetch("PRIVATECLAW_APP_STORE_CONNECT_KEY_ID"),
+        issuer_id: ENV.fetch("PRIVATECLAW_APP_STORE_CONNECT_ISSUER_ID"),
+        filepath: ENV.fetch("PRIVATECLAW_APP_STORE_CONNECT_KEY_FILE"),
+        duration: 1200,
+        in_house: false
+      )
+      Spaceship::ConnectAPI
+    end
+  end
+
+  def privateclaw_signing_xcargs
+    [
+      "-allowProvisioningUpdates",
+      "-authenticationKeyPath #{Shellwords.escape(ENV.fetch('PRIVATECLAW_APP_STORE_CONNECT_KEY_FILE'))}",
+      "-authenticationKeyID #{Shellwords.escape(ENV.fetch('PRIVATECLAW_APP_STORE_CONNECT_KEY_ID'))}",
+      "-authenticationKeyIssuerID #{Shellwords.escape(ENV.fetch('PRIVATECLAW_APP_STORE_CONNECT_ISSUER_ID'))}",
+      "DEVELOPMENT_TEAM=#{Shellwords.escape(ENV.fetch('PRIVATECLAW_APPLE_TEAM_ID'))}"
+    ].join(" ")
+  end
+
+  def privateclaw_optional_env(name)
+    value = ENV[name]
+    value.nil? || value.empty? ? nil : value
+  end
+
+  def privateclaw_optional_file_env(name)
+    path = privateclaw_optional_env(name)
+    return nil if path.nil?
+    UI.user_error!("#{name} file not found: #{path}") unless File.exist?(path)
+    path
+  end
+
+  def privateclaw_default_review_contact
+    @privateclaw_default_review_contact ||= begin
+      app = Spaceship::ConnectAPI::App.find(
+        privateclaw_app_identifier,
+        client: privateclaw_connect_api_client
+      )
+      version = app&.get_latest_app_store_version(
+        client: privateclaw_connect_api_client,
+        platform: Spaceship::ConnectAPI::Platform::IOS,
+        includes: "appStoreReviewDetail"
+      )
+      detail = version&.app_store_review_detail || version&.fetch_app_store_review_detail(client: privateclaw_connect_api_client)
+      if detail.nil?
+        {}
+      else
+        {
+          first_name: detail.contact_first_name,
+          last_name: detail.contact_last_name,
+          phone_number: detail.contact_phone,
+          email_address: detail.contact_email
+        }.compact
+      end
+    end
+  end
+
+  def privateclaw_app_review_information
+    info = privateclaw_default_review_contact.dup
+    notes_file = privateclaw_optional_file_env("PRIVATECLAW_APP_REVIEW_NOTES_FILE")
+    info[:notes] = File.read(notes_file) unless notes_file.nil?
+
+    {
+      first_name: "PRIVATECLAW_APP_REVIEW_FIRST_NAME",
+      last_name: "PRIVATECLAW_APP_REVIEW_LAST_NAME",
+      phone_number: "PRIVATECLAW_APP_REVIEW_PHONE_NUMBER",
+      email_address: "PRIVATECLAW_APP_REVIEW_EMAIL_ADDRESS",
+      demo_user: "PRIVATECLAW_APP_REVIEW_DEMO_USER",
+      demo_password: "PRIVATECLAW_APP_REVIEW_DEMO_PASSWORD"
+    }.each do |key, env_name|
+      value = privateclaw_optional_env(env_name)
+      info[key] = value unless value.nil?
+    end
+
+    info
+  end
+
+  def privateclaw_app_review_attachment_file
+    privateclaw_optional_file_env("DELIVER_APP_REVIEW_ATTACHMENT_FILE")
+  end
+
+  def privateclaw_apply_review_upload_options(options)
+    review_info = privateclaw_app_review_information
+    options[:app_review_information] = review_info unless review_info.empty?
+
+    attachment = privateclaw_app_review_attachment_file
+    options[:app_review_attachment_file] = attachment unless attachment.nil?
+
+    options
+  end
+
+  def privateclaw_prepare_macos_build_settings
+    UI.message("Using PrivateClaw macOS version #{privateclaw_build_name} (#{privateclaw_build_number})")
+    sh(
+      "cd #{Shellwords.escape(privateclaw_app_root)} && " \
+      "unset BUNDLE_BIN_PATH BUNDLE_GEMFILE RUBYOPT GEM_HOME GEM_PATH && " \
+      "flutter build macos --config-only --release " \
+      "--build-name #{Shellwords.escape(privateclaw_build_name)} " \
+      "--build-number #{Shellwords.escape(privateclaw_build_number)}"
+    )
+  end
+
+  def privateclaw_skip_macos_screenshots
+    ENV["PRIVATECLAW_SKIP_MACOS_SCREENSHOTS"] == "true"
+  end
+
+  def privateclaw_macos_output_directory
+    "../builds/macos"
+  end
+
+  def privateclaw_macos_output_name
+    "PrivateClaw"
+  end
+
+  def privateclaw_macos_pkg_path
+    File.join(privateclaw_macos_output_directory, "#{privateclaw_macos_output_name}.pkg")
+  end
+
+  desc "Build an App Store signed macOS package for PrivateClaw"
+  lane :build_release do
+    privateclaw_prepare_macos_build_settings
+    options = {
+      workspace: "Runner.xcworkspace",
+      scheme: "Runner",
+      clean: true,
+      export_method: "app-store",
+      export_options: {
+        signingStyle: "automatic",
+        teamID: ENV.fetch("PRIVATECLAW_APPLE_TEAM_ID")
+      },
+      xcargs: privateclaw_signing_xcargs,
+      output_directory: privateclaw_macos_output_directory,
+      output_name: privateclaw_macos_output_name
+    }
+    installer_cert_name = privateclaw_optional_env("PRIVATECLAW_MACOS_INSTALLER_CERT_NAME")
+    options[:installer_cert_name] = installer_cert_name unless installer_cert_name.nil?
+    codesigning_identity = privateclaw_optional_env("PRIVATECLAW_MACOS_CODE_SIGN_IDENTITY")
+    options[:codesigning_identity] = codesigning_identity unless codesigning_identity.nil?
+    build_mac_app(**options)
+  end
+
+  desc "Upload localized macOS metadata only"
+  lane :metadata do
+    options = {
+      api_key: privateclaw_app_store_api_key,
+      app_identifier: privateclaw_app_identifier,
+      platform: "osx",
+      skip_binary_upload: true,
+      skip_screenshots: privateclaw_skip_macos_screenshots,
+      metadata_path: "./fastlane/metadata",
+      screenshots_path: "./fastlane/screenshots",
+      force: true,
+      precheck_include_in_app_purchases: false
+    }
+    upload_to_app_store(**privateclaw_apply_review_upload_options(options))
+  end
+
+  def privateclaw_release_upload_options(skip_binary_upload: false)
+    options = {
+      api_key: privateclaw_app_store_api_key,
+      app_identifier: privateclaw_app_identifier,
+      platform: "osx",
+      metadata_path: "./fastlane/metadata",
+      screenshots_path: "./fastlane/screenshots",
+      skip_screenshots: privateclaw_skip_macos_screenshots,
+      submit_for_review: true,
+      automatic_release: ENV["PRIVATECLAW_AUTOMATIC_RELEASE"] == "true",
+      force: true,
+      precheck_include_in_app_purchases: false,
+      submission_information: {
+        add_id_info_uses_idfa: false,
+        export_compliance_uses_encryption: false
+      }
+    }
+    if skip_binary_upload
+      options[:app_version] = privateclaw_build_name
+      options[:build_number] = privateclaw_build_number
+      options[:skip_binary_upload] = true
+    else
+      options[:pkg] = privateclaw_macos_pkg_path
+    end
+    privateclaw_apply_review_upload_options(options)
+  end
+
+  desc "Submit the existing macOS App Store Connect build for App Store review"
+  lane :upload_release do
+    upload_to_app_store(**privateclaw_release_upload_options(skip_binary_upload: true))
+  end
+
+  desc "Build and submit a production macOS App Store release"
+  lane :release do
+    build_release
+    upload_to_app_store(**privateclaw_release_upload_options)
+  end
+end

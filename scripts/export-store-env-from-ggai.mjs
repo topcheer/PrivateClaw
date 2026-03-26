@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { execFileSync } from "node:child_process";
 
 const ggaiDoodleRoot = path.resolve(
   process.env.PRIVATECLAW_GGAIDOODLE_ROOT || path.join(os.homedir(), "ggai", "GGAiDoodle"),
@@ -36,12 +37,38 @@ function resolveIosConfig() {
   const issuerId = firstMatch(fastfile, /issuer_id:\s*"([^"]+)"/, "App Store Connect issuer_id");
   const keyFileRelativePath = firstMatch(fastfile, /key_filepath:\s*"([^"]+)"/, "App Store Connect key_filepath");
   const keyFilePath = requireFile(path.resolve(path.dirname(path.dirname(fastfilePath)), keyFileRelativePath), "App Store Connect API key file");
+  const teamId = resolveAppleTeamId();
 
   return {
     PRIVATECLAW_APP_STORE_CONNECT_KEY_ID: keyId,
     PRIVATECLAW_APP_STORE_CONNECT_ISSUER_ID: issuerId,
     PRIVATECLAW_APP_STORE_CONNECT_KEY_FILE: keyFilePath,
+    ...(teamId ? { PRIVATECLAW_APPLE_TEAM_ID: teamId } : {}),
   };
+}
+
+function resolveAppleTeamId() {
+  const provisioningProfilePath = path.join(
+    ggaiDoodleRoot,
+    "ios",
+    "GuangguangDrawingFresh.mobileprovision",
+  );
+  if (!fs.existsSync(provisioningProfilePath)) {
+    return "";
+  }
+
+  const decoded = execFileSync("security", ["cms", "-D", "-i", provisioningProfilePath], {
+    encoding: "utf8",
+  });
+  const match = decoded.match(
+    /<key>TeamIdentifier<\/key>\s*<array>\s*<string>([A-Z0-9]+)<\/string>/,
+  );
+  if (!match?.[1]) {
+    throw new Error(
+      `Could not find TeamIdentifier in provisioning profile: ${provisioningProfilePath}`,
+    );
+  }
+  return match[1];
 }
 
 function resolveAndroidConfig() {

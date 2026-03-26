@@ -1,0 +1,2 @@
+Respostas com foto e arquivo juntos estão mais confiáveis, e a abertura de anexos foi melhorada.
+Pareamento, leitura de convites e avisos de sessão agora estão mais suaves.

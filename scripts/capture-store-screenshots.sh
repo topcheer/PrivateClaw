@@ -9,6 +9,7 @@ IOS_PHONE_DEVICE_NAME="${PRIVATECLAW_IOS_PHONE_DEVICE:-iPhone 16 Pro Max}"
 IOS_TABLET_DEVICE_NAME="${PRIVATECLAW_IOS_TABLET_DEVICE:-iPad Pro 13-inch (M5)}"
 IOS_CAPTURE_IPAD="${PRIVATECLAW_IOS_CAPTURE_IPAD:-true}"
 ANDROID_EMULATOR_ID="${PRIVATECLAW_ANDROID_SCREENSHOT_EMULATOR:-Nexus_5X}"
+MACOS_APP_NAME="${PRIVATECLAW_MACOS_APP_NAME:-PrivateClaw}"
 TARGET="${1:-all}"
 LOCALE="${2:-en-US}"
 
@@ -191,6 +192,33 @@ capture_android() {
   adb -s "$serial" shell am broadcast -a com.android.systemui.demo -e command exit >/dev/null 2>&1 || true
 }
 
+capture_macos() {
+  require_command swift
+  require_command osascript
+  require_command sips
+
+  if [[ ! -t 0 ]]; then
+    echo "macOS screenshot capture requires an interactive terminal so you can stage each real interaction before capture." >&2
+    exit 1
+  fi
+
+  local out_dir="$APP_DIR/macos/fastlane/screenshots/$LOCALE"
+  mkdir -p "$out_dir"
+
+  for entry in "${SCENARIOS[@]}"; do
+    local scenario="${entry%%:*}"
+    local name="${entry##*:}"
+    log "Prepare macOS $scenario in the running $MACOS_APP_NAME app, then press Enter to capture"
+    read -r _
+    osascript -e "tell application \"$MACOS_APP_NAME\" to activate" >/dev/null 2>&1 || true
+    sleep 1
+    swift "$ROOT_DIR/scripts/capture-macos-window.swift" \
+      "$MACOS_APP_NAME" \
+      "$out_dir/$name.png"
+    sips -g pixelWidth -g pixelHeight "$out_dir/$name.png"
+  done
+}
+
 main() {
   case "$TARGET" in
     ios)
@@ -199,12 +227,15 @@ main() {
     android)
       capture_android
       ;;
+    macos)
+      capture_macos
+      ;;
     all)
       capture_ios
       capture_android
       ;;
     *)
-      echo "Usage: scripts/capture-store-screenshots.sh [ios|android|all] [locale]" >&2
+      echo "Usage: scripts/capture-store-screenshots.sh [ios|android|macos|all] [locale]" >&2
       exit 1
       ;;
   esac

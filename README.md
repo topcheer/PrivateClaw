@@ -451,6 +451,22 @@ docker run --rm \
   ghcr.io/topcheer/privateclaw-relay:main
 ```
 
+### GitHub-hosted app release artifacts
+
+This repository now also includes `.github/workflows/app-release.yml` for packaging desktop and mobile app artifacts on GitHub-hosted runners.
+
+- Push an `app-v*` tag (for example `app-v0.1.12`) to build and publish a GitHub release automatically.
+- Or run the workflow manually with `workflow_dispatch` to build artifacts without creating a release, optionally overriding the resolved build name / build number.
+- Desktop artifacts are emitted as:
+  - Windows: `.zip` (`x64`, `arm64`)
+  - macOS: `.dmg` (`x64`, `arm64`)
+  - Linux: `.tar.gz` (`x64`, `arm64`)
+- Mobile artifacts are emitted as:
+  - Android: release `.aab` plus split `.apk` files for `arm64` and `x64`
+  - iOS: unsigned release `.ipa` plus the matching `.xcarchive` bundle
+
+Keeping app releases on `app-v*` tags leaves the existing provider / relay npm publish flow on `v*` tags unchanged.
+
 ### Published relay npm package
 
 The relay is also packaged for npm as `@privateclaw/privateclaw-relay`.

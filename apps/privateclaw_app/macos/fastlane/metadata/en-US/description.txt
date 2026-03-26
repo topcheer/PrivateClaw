@@ -1,0 +1,12 @@
+PrivateClaw creates a private, end-to-end encrypted path between a user and a self-hosted or cloud OpenClaw deployment.
+
+Use a one-time QR invite to join a session, keep the relay blind to message contents, and move sensitive conversations away from public chat surfaces.
+
+Features:
+- Scan or paste one-time invite links
+- End-to-end encrypted relay transport
+- Works with custom home or cloud relays
+- Designed for private OpenClaw conversations
+- Lightweight session flow for secure access
+
+Push notifications are only available out of the box on the official relay `relay.privateclaw.us`. If you switch to a custom relay, wire the relay and app build to your own Firebase / FCM project.

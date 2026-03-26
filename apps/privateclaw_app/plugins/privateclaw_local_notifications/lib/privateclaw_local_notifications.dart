@@ -7,6 +7,11 @@ class PrivateClawLocalNotifications {
     'gg.ai.privateclaw/local_notifications',
   );
 
+  Future<bool> requestPermission() async {
+    final bool? granted = await _channel.invokeMethod<bool>('requestPermission');
+    return granted == true;
+  }
+
   Future<void> show({
     required int id,
     required String title,

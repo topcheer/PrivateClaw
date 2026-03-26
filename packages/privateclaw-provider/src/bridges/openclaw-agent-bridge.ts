@@ -692,19 +692,33 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
     const deltaText = deltaBuffer.toString("utf8");
     let parseText = deltaText;
     let nextSize = sessionLogBuffer.length;
-    if (!options?.allowTrailingPartial && !deltaText.endsWith("\n")) {
+    if (!deltaText.endsWith("\n")) {
       const lastNewlineIndex = deltaText.lastIndexOf("\n");
-      if (lastNewlineIndex < 0) {
-        return {
-          entries: [],
-          nextCursor: {
-            path: sessionLogPath,
-            sizeBytes: startOffset,
-          },
-        };
+      const trailingSegment =
+        lastNewlineIndex < 0 ? deltaText : deltaText.slice(lastNewlineIndex + 1);
+      const trimmedTrailingSegment = trailingSegment.trim();
+      let canParseTrailingSegment = false;
+      if (options?.allowTrailingPartial && trimmedTrailingSegment !== "") {
+        try {
+          JSON.parse(trimmedTrailingSegment);
+          canParseTrailingSegment = true;
+        } catch {
+          canParseTrailingSegment = false;
+        }
       }
-      parseText = deltaText.slice(0, lastNewlineIndex + 1);
-      nextSize = startOffset + Buffer.byteLength(parseText, "utf8");
+      if (!canParseTrailingSegment) {
+        if (lastNewlineIndex < 0) {
+          return {
+            entries: [],
+            nextCursor: {
+              path: sessionLogPath,
+              sizeBytes: startOffset,
+            },
+          };
+        }
+        parseText = deltaText.slice(0, lastNewlineIndex + 1);
+        nextSize = startOffset + Buffer.byteLength(parseText, "utf8");
+      }
     }
 
     const entries = parseText

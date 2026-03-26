@@ -812,6 +812,61 @@ test("OpenClawAgentBridge recovers assistant text from the session log when agen
   assert.equal(result, "pixel.png");
 });
 
+test("OpenClawAgentBridge ignores a trailing partial session-log line during fallback recovery", async (t) => {
+  const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "privateclaw-openclaw-state-"));
+  const workspaceDir = path.join(stateDir, "workspace");
+  const sessionLogPath = path.join(
+    stateDir,
+    "agents",
+    "main",
+    "sessions",
+    "privateclaw-session.jsonl",
+  );
+  await fs.mkdir(workspaceDir, { recursive: true });
+  t.after(async () => {
+    await fs.rm(stateDir, { recursive: true, force: true });
+  });
+
+  const bridge = new OpenClawAgentBridge({
+    stateDir,
+    workspaceDir,
+    execFileImpl: (_file, _args, _options, callback) => {
+      void (async () => {
+        await fs.mkdir(path.dirname(sessionLogPath), { recursive: true });
+        await fs.writeFile(
+          sessionLogPath,
+          [
+            JSON.stringify({
+              type: "message",
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: "Recovered before partial" }],
+                isError: false,
+              },
+            }),
+            '{"type":"message","message":{"role":"assistant"',
+          ].join("\n"),
+          "utf8",
+        );
+        callback(
+          null,
+          '{"result":{"payloads":[',
+          "",
+        );
+      })().catch((error) => {
+        callback(error instanceof Error ? error : new Error(String(error)), "", "");
+      });
+    },
+  });
+
+  const result = await bridge.handleUserMessage({
+    sessionId: "privateclaw-session",
+    message: "Recover from the completed session log line.",
+  });
+
+  assert.equal(result, "Recovered before partial");
+});
+
 test("OpenClawAgentBridge streams thinking traces from the session log while the agent is running", async (t) => {
   const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "privateclaw-openclaw-state-"));
   const workspaceDir = path.join(stateDir, "workspace");

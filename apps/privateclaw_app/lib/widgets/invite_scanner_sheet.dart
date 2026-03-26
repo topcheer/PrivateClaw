@@ -9,6 +9,47 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import '../l10n/app_localizations.dart';
 import '../services/privateclaw_invite_image_decoder.dart';
 
+bool privateClawSupportsInviteScannerForTargetPlatform(
+  TargetPlatform platform,
+) {
+  return switch (platform) {
+    TargetPlatform.android ||
+    TargetPlatform.iOS ||
+    TargetPlatform.macOS => true,
+    TargetPlatform.fuchsia ||
+    TargetPlatform.linux ||
+    TargetPlatform.windows => false,
+  };
+}
+
+bool privateClawUsesNativeInviteCameraForTargetPlatform(
+  TargetPlatform platform,
+) {
+  return platform == TargetPlatform.iOS;
+}
+
+bool privateClawSupportsInviteLivePreviewForTargetPlatform(
+  TargetPlatform platform,
+) {
+  return switch (platform) {
+    TargetPlatform.android || TargetPlatform.macOS => true,
+    TargetPlatform.fuchsia ||
+    TargetPlatform.iOS ||
+    TargetPlatform.linux ||
+    TargetPlatform.windows => false,
+  };
+}
+
+bool privateClawSupportsInviteImageAnalysisForTargetPlatform(
+  TargetPlatform platform,
+) {
+  return privateClawUsesNativeInviteCameraForTargetPlatform(platform) ||
+      privateClawSupportsInviteLivePreviewForTargetPlatform(platform);
+}
+
+TargetPlatform Function() privateClawInviteScannerTargetPlatformResolver = () =>
+    defaultTargetPlatform;
+
 class InviteScannerSheet extends StatefulWidget {
   const InviteScannerSheet({
     required this.onDetected,
@@ -34,7 +75,7 @@ class InviteScannerSheet extends StatefulWidget {
 }
 
 class _InviteScannerSheetState extends State<InviteScannerSheet> {
-  final MobileScannerController _controller = MobileScannerController();
+  MobileScannerController? _controller;
   bool _isCapturingCamera = false;
   bool _handled = false;
   bool _isAnalyzingImage = false;
@@ -44,14 +85,29 @@ class _InviteScannerSheetState extends State<InviteScannerSheet> {
   @override
   void initState() {
     super.initState();
+    if (_supportsLivePreview) {
+      _controller = MobileScannerController();
+    }
     _scheduleNativeIosAutoStartIfNeeded();
   }
 
   @override
   void dispose() {
-    unawaited(_controller.dispose());
+    final MobileScannerController? controller = _controller;
+    if (controller != null) {
+      unawaited(controller.dispose());
+    }
     super.dispose();
   }
+
+  TargetPlatform get _targetPlatform =>
+      privateClawInviteScannerTargetPlatformResolver();
+
+  bool get _supportsLivePreview =>
+      privateClawSupportsInviteLivePreviewForTargetPlatform(_targetPlatform);
+
+  bool get _supportsImageAnalysis =>
+      privateClawSupportsInviteImageAnalysisForTargetPlatform(_targetPlatform);
 
   Future<String?> _pickImagePath() async {
     final FilePickerResult? result = await FilePicker.platform.pickFiles(
@@ -74,8 +130,15 @@ class _InviteScannerSheetState extends State<InviteScannerSheet> {
       return PrivateClawInviteImageDecoder.decodeImage(path);
     }
 
+    final MobileScannerController? controller = _controller;
+    if (!_supportsImageAnalysis || controller == null) {
+      throw UnsupportedError(
+        'Image QR decoding is unavailable on this platform.',
+      );
+    }
+
     try {
-      final BarcodeCapture? capture = await _controller.analyzeImage(path);
+      final BarcodeCapture? capture = await controller.analyzeImage(path);
       return _firstRawValue(capture?.barcodes ?? const <Barcode>[]);
     } on MissingPluginException {
       return PrivateClawInviteImageDecoder.decodeImage(path);
@@ -86,7 +149,8 @@ class _InviteScannerSheetState extends State<InviteScannerSheet> {
 
   bool get _usesNativeIosCapture =>
       widget.useNativeIosCapture ??
-      (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS);
+      (!kIsWeb &&
+          privateClawUsesNativeInviteCameraForTargetPlatform(_targetPlatform));
 
   bool get _shouldAutoStartNativeIosCapture =>
       widget.autoStartNativeIosCapture ?? _usesNativeIosCapture;
@@ -111,7 +175,10 @@ class _InviteScannerSheetState extends State<InviteScannerSheet> {
       return;
     }
     _handled = true;
-    await _controller.stop();
+    final MobileScannerController? controller = _controller;
+    if (controller != null) {
+      await controller.stop();
+    }
     if (!mounted) {
       return;
     }
@@ -322,47 +389,51 @@ class _InviteScannerSheetState extends State<InviteScannerSheet> {
                           ),
                         )
                       : widget.previewOverride ??
-                            MobileScanner(
-                              controller: _controller,
-                              errorBuilder:
-                                  (
-                                    BuildContext context,
-                                    MobileScannerException error,
-                                  ) {
-                                    return _ScannerUnavailableView(
-                                      error: error,
-                                    );
-                                  },
-                              placeholderBuilder: (BuildContext context) {
-                                return ColoredBox(
-                                  color: Colors.black,
-                                  child: Center(
-                                    child: Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: <Widget>[
-                                        const CircularProgressIndicator(),
-                                        const SizedBox(height: 16),
-                                        Text(
-                                          l10n.scannerLoading,
-                                          style: const TextStyle(
-                                            color: Colors.white,
+                            (_supportsLivePreview && _controller != null
+                                ? MobileScanner(
+                                    controller: _controller,
+                                    errorBuilder:
+                                        (
+                                          BuildContext context,
+                                          MobileScannerException error,
+                                        ) {
+                                          return _ScannerUnavailableView(
+                                            error: error,
+                                          );
+                                        },
+                                    placeholderBuilder: (BuildContext context) {
+                                      return ColoredBox(
+                                        color: Colors.black,
+                                        child: Center(
+                                          child: Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: <Widget>[
+                                              const CircularProgressIndicator(),
+                                              const SizedBox(height: 16),
+                                              Text(
+                                                l10n.scannerLoading,
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                ),
+                                              ),
+                                            ],
                                           ),
                                         ),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              },
-                              onDetect: (BarcodeCapture capture) async {
-                                final String? value = _firstRawValue(
-                                  capture.barcodes,
-                                );
-                                if (value == null) {
-                                  return;
-                                }
-                                await _handleDetectedValue(value);
-                              },
-                            ),
+                                      );
+                                    },
+                                    onDetect: (BarcodeCapture capture) async {
+                                      final String? value = _firstRawValue(
+                                        capture.barcodes,
+                                      );
+                                      if (value == null) {
+                                        return;
+                                      }
+                                      await _handleDetectedValue(value);
+                                    },
+                                  )
+                                : _ScannerMessageView(
+                                    message: l10n.scannerUnsupported,
+                                  )),
                 ),
               ),
             ),
@@ -433,6 +504,21 @@ class _ScannerUnavailableView extends StatelessWidget {
       _ => l10n.scannerUnavailable,
     };
 
+    return _ScannerMessageView(
+      message: message,
+      details: error.errorDetails?.message,
+    );
+  }
+}
+
+class _ScannerMessageView extends StatelessWidget {
+  const _ScannerMessageView({required this.message, this.details});
+
+  final String message;
+  final String? details;
+
+  @override
+  Widget build(BuildContext context) {
     return ColoredBox(
       color: Colors.black,
       child: Center(
@@ -448,11 +534,11 @@ class _ScannerUnavailableView extends StatelessWidget {
                 textAlign: TextAlign.center,
                 style: const TextStyle(color: Colors.white),
               ),
-              if (error.errorDetails?.message case final String details)
+              if (details case final String detailText)
                 Padding(
                   padding: const EdgeInsets.only(top: 12),
                   child: Text(
-                    details,
+                    detailText,
                     textAlign: TextAlign.center,
                     style: const TextStyle(color: Colors.white70, fontSize: 12),
                   ),

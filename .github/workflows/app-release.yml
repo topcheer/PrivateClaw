@@ -1,0 +1,423 @@
+name: Release App Artifacts
+
+on:
+  push:
+    tags:
+      - 'app-v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Optional Git tag to publish a GitHub release for this run
+        required: false
+        type: string
+      include_mobile:
+        description: Build Android and iOS artifacts in addition to desktop packages
+        required: true
+        default: true
+        type: boolean
+      publish_github_release:
+        description: Publish the built artifacts to a GitHub release
+        required: true
+        default: true
+        type: boolean
+      build_name:
+        description: Override the app marketing version (defaults to pubspec / version resolver)
+        required: false
+        type: string
+      build_number:
+        description: Override the app build number (defaults to scripts/resolve-mobile-version.mjs)
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: app-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Prepare release metadata
+    runs-on: ubuntu-24.04
+    outputs:
+      version_name: ${{ steps.version.outputs.version_name }}
+      build_number: ${{ steps.version.outputs.build_number }}
+      version_slug: ${{ steps.version.outputs.version_slug }}
+      release_tag: ${{ steps.version.outputs.release_tag }}
+      upload_release: ${{ steps.version.outputs.upload_release }}
+      include_mobile: ${{ steps.version.outputs.include_mobile }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - id: version
+        env:
+          MANUAL_BUILD_NAME: ${{ github.event.inputs.build_name || '' }}
+          MANUAL_BUILD_NUMBER: ${{ github.event.inputs.build_number || '' }}
+          MANUAL_RELEASE_TAG: ${{ github.event.inputs.release_tag || '' }}
+          MANUAL_INCLUDE_MOBILE: ${{ github.event.inputs.include_mobile || '' }}
+          MANUAL_PUBLISH_RELEASE: ${{ github.event.inputs.publish_github_release || '' }}
+        run: |
+          set -euo pipefail
+          export PRIVATECLAW_BUILD_NAME="${MANUAL_BUILD_NAME}"
+          export PRIVATECLAW_BUILD_NUMBER="${MANUAL_BUILD_NUMBER}"
+          VERSION_JSON="$(node scripts/resolve-mobile-version.mjs --json)"
+          VERSION_NAME="$(node -e "const value = JSON.parse(process.argv[1]); console.log(value.versionName);" "$VERSION_JSON")"
+          BUILD_NUMBER="$(node -e "const value = JSON.parse(process.argv[1]); console.log(value.buildNumber);" "$VERSION_JSON")"
+          VERSION_SLUG="v${VERSION_NAME}-b${BUILD_NUMBER}"
+
+          if [ "${GITHUB_EVENT_NAME}" = "push" ]; then
+            RELEASE_TAG="${GITHUB_REF_NAME}"
+            UPLOAD_RELEASE="true"
+            INCLUDE_MOBILE="true"
+          else
+            RELEASE_TAG="${MANUAL_RELEASE_TAG}"
+            UPLOAD_RELEASE="${MANUAL_PUBLISH_RELEASE}"
+            INCLUDE_MOBILE="${MANUAL_INCLUDE_MOBILE}"
+          fi
+
+          if [ "${UPLOAD_RELEASE}" = "true" ] && [ -z "${RELEASE_TAG}" ]; then
+            echo "::error::release_tag is required when publish_github_release is true."
+            exit 1
+          fi
+
+          echo "version_name=${VERSION_NAME}" >> "${GITHUB_OUTPUT}"
+          echo "build_number=${BUILD_NUMBER}" >> "${GITHUB_OUTPUT}"
+          echo "version_slug=${VERSION_SLUG}" >> "${GITHUB_OUTPUT}"
+          echo "release_tag=${RELEASE_TAG}" >> "${GITHUB_OUTPUT}"
+          echo "upload_release=${UPLOAD_RELEASE}" >> "${GITHUB_OUTPUT}"
+          echo "include_mobile=${INCLUDE_MOBILE}" >> "${GITHUB_OUTPUT}"
+
+  validate-app:
+    name: Validate Flutter app
+    needs: prepare
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.38.6
+          channel: stable
+          cache: true
+
+      - name: Get Flutter dependencies
+        working-directory: apps/privateclaw_app
+        run: flutter pub get
+
+      - name: Run Flutter tests
+        working-directory: apps/privateclaw_app
+        run: flutter test
+
+  desktop:
+    name: Build desktop (${{ matrix.platform }}-${{ matrix.arch }})
+    needs:
+      - prepare
+      - validate-app
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux
+            arch: x64
+            runner: ubuntu-24.04
+          - platform: linux
+            arch: arm64
+            runner: ubuntu-24.04-arm
+          - platform: windows
+            arch: x64
+            runner: windows-latest
+          - platform: windows
+            arch: arm64
+            runner: windows-11-arm
+          - platform: macos
+            arch: x64
+            runner: macos-15-intel
+          - platform: macos
+            arch: arm64
+            runner: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.38.6
+          channel: stable
+          cache: true
+
+      - name: Install Linux desktop dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            clang \
+            cmake \
+            libgtk-3-dev \
+            liblzma-dev \
+            libstdc++-12-dev \
+            ninja-build \
+            pkg-config
+
+      - name: Get Flutter dependencies
+        working-directory: apps/privateclaw_app
+        run: flutter pub get
+
+      - name: Build Linux desktop app
+        if: matrix.platform == 'linux'
+        working-directory: apps/privateclaw_app
+        run: >
+          flutter build linux
+          --release
+          --build-name "${{ needs.prepare.outputs.version_name }}"
+          --build-number "${{ needs.prepare.outputs.build_number }}"
+
+      - name: Build macOS desktop app
+        if: matrix.platform == 'macos'
+        working-directory: apps/privateclaw_app
+        run: >
+          flutter build macos
+          --release
+          --build-name "${{ needs.prepare.outputs.version_name }}"
+          --build-number "${{ needs.prepare.outputs.build_number }}"
+
+      - name: Build Windows desktop app
+        if: matrix.platform == 'windows'
+        working-directory: apps/privateclaw_app
+        shell: pwsh
+        run: >
+          flutter build windows
+          --release
+          --build-name "${{ needs.prepare.outputs.version_name }}"
+          --build-number "${{ needs.prepare.outputs.build_number }}"
+
+      - id: package-linux
+        if: matrix.platform == 'linux'
+        working-directory: apps/privateclaw_app
+        run: |
+          set -euo pipefail
+          BUNDLE_DIR="$(find build/linux -type d -path '*/release/bundle' | head -n 1)"
+          if [ -z "${BUNDLE_DIR}" ]; then
+            echo "::error::Linux release bundle not found."
+            exit 1
+          fi
+          ASSET_NAME="PrivateClaw-${{ needs.prepare.outputs.version_slug }}-linux-${{ matrix.arch }}.tar.gz"
+          tar -C "$(dirname "${BUNDLE_DIR}")" -czf "${ASSET_NAME}" "$(basename "${BUNDLE_DIR}")"
+          echo "artifact=${ASSET_NAME}" >> "${GITHUB_OUTPUT}"
+
+      - id: package-macos
+        if: matrix.platform == 'macos'
+        working-directory: apps/privateclaw_app
+        run: |
+          set -euo pipefail
+          APP_PATH="build/macos/Build/Products/Release/PrivateClaw.app"
+          if [ ! -d "${APP_PATH}" ]; then
+            echo "::error::macOS app bundle not found."
+            exit 1
+          fi
+          STAGING_DIR="build/macos/dmg-staging"
+          rm -rf "${STAGING_DIR}"
+          mkdir -p "${STAGING_DIR}"
+          cp -R "${APP_PATH}" "${STAGING_DIR}/"
+          ASSET_NAME="PrivateClaw-${{ needs.prepare.outputs.version_slug }}-macos-${{ matrix.arch }}.dmg"
+          hdiutil create -volname "PrivateClaw" -srcfolder "${STAGING_DIR}" -ov -format UDZO "${ASSET_NAME}"
+          echo "artifact=${ASSET_NAME}" >> "${GITHUB_OUTPUT}"
+
+      - id: package-windows
+        if: matrix.platform == 'windows'
+        working-directory: apps/privateclaw_app
+        shell: pwsh
+        run: |
+          $releaseDir = Get-ChildItem build/windows -Directory |
+            Where-Object { Test-Path (Join-Path $_.FullName 'runner/Release') } |
+            Select-Object -First 1
+          if (-not $releaseDir) {
+            Write-Error "Windows release directory not found."
+          }
+          $runnerDir = Join-Path $releaseDir.FullName 'runner/Release'
+          if (-not (Test-Path $runnerDir)) {
+            Write-Error "Windows runner Release directory not found."
+          }
+          $assetName = "PrivateClaw-${{ needs.prepare.outputs.version_slug }}-windows-${{ matrix.arch }}.zip"
+          if (Test-Path $assetName) {
+            Remove-Item $assetName -Force
+          }
+          Compress-Archive -Path (Join-Path $runnerDir '*') -DestinationPath $assetName
+          "artifact=$assetName" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Upload Linux artifact
+        if: matrix.platform == 'linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package-linux.outputs.artifact }}
+          path: apps/privateclaw_app/${{ steps.package-linux.outputs.artifact }}
+          if-no-files-found: error
+
+      - name: Upload macOS artifact
+        if: matrix.platform == 'macos'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package-macos.outputs.artifact }}
+          path: apps/privateclaw_app/${{ steps.package-macos.outputs.artifact }}
+          if-no-files-found: error
+
+      - name: Upload Windows artifact
+        if: matrix.platform == 'windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package-windows.outputs.artifact }}
+          path: apps/privateclaw_app/${{ steps.package-windows.outputs.artifact }}
+          if-no-files-found: error
+
+  android:
+    name: Build Android artifacts
+    if: needs.prepare.outputs.include_mobile == 'true'
+    needs:
+      - prepare
+      - validate-app
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.38.6
+          channel: stable
+          cache: true
+
+      - name: Get Flutter dependencies
+        working-directory: apps/privateclaw_app
+        run: flutter pub get
+
+      - name: Build Android app bundle
+        working-directory: apps/privateclaw_app
+        run: >
+          flutter build appbundle
+          --release
+          --build-name "${{ needs.prepare.outputs.version_name }}"
+          --build-number "${{ needs.prepare.outputs.build_number }}"
+
+      - name: Build Android split APKs
+        working-directory: apps/privateclaw_app
+        run: >
+          flutter build apk
+          --release
+          --split-per-abi
+          --target-platform android-arm64,android-x64
+          --build-name "${{ needs.prepare.outputs.version_name }}"
+          --build-number "${{ needs.prepare.outputs.build_number }}"
+
+      - name: Collect Android artifacts
+        working-directory: apps/privateclaw_app
+        run: |
+          set -euo pipefail
+          mkdir -p release-artifacts
+          cp build/app/outputs/bundle/release/app-release.aab \
+            "release-artifacts/PrivateClaw-${{ needs.prepare.outputs.version_slug }}-android.aab"
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk \
+            "release-artifacts/PrivateClaw-${{ needs.prepare.outputs.version_slug }}-android-arm64.apk"
+          cp build/app/outputs/flutter-apk/app-x86_64-release.apk \
+            "release-artifacts/PrivateClaw-${{ needs.prepare.outputs.version_slug }}-android-x64.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-mobile-artifacts
+          path: apps/privateclaw_app/release-artifacts/*
+          if-no-files-found: error
+
+  ios:
+    name: Build iOS artifacts
+    if: needs.prepare.outputs.include_mobile == 'true'
+    needs:
+      - prepare
+      - validate-app
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.38.6
+          channel: stable
+          cache: true
+
+      - name: Get Flutter dependencies
+        working-directory: apps/privateclaw_app
+        run: flutter pub get
+
+      - name: Build unsigned iOS archive
+        working-directory: apps/privateclaw_app
+        run: >
+          flutter build ipa
+          --release
+          --no-codesign
+          --build-name "${{ needs.prepare.outputs.version_name }}"
+          --build-number "${{ needs.prepare.outputs.build_number }}"
+
+      - name: Collect iOS artifacts
+        working-directory: apps/privateclaw_app
+        run: |
+          set -euo pipefail
+          mkdir -p release-artifacts
+          IPA_PATH="$(find build/ios -type f -name '*.ipa' | head -n 1 || true)"
+          ARCHIVE_PATH="$(find build/ios -type d -name '*.xcarchive' | head -n 1 || true)"
+          if [ -n "${IPA_PATH}" ]; then
+            cp "${IPA_PATH}" \
+              "release-artifacts/PrivateClaw-${{ needs.prepare.outputs.version_slug }}-ios-unsigned.ipa"
+          fi
+          if [ -n "${ARCHIVE_PATH}" ]; then
+            ditto -c -k --sequesterRsrc --keepParent "${ARCHIVE_PATH}" \
+              "release-artifacts/PrivateClaw-${{ needs.prepare.outputs.version_slug }}-ios-archive.zip"
+          fi
+          if [ -z "$(find release-artifacts -maxdepth 1 -type f | head -n 1)" ]; then
+            echo "::error::No iOS release artifacts were produced."
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-mobile-artifacts
+          path: apps/privateclaw_app/release-artifacts/*
+          if-no-files-found: error
+
+  publish-release:
+    name: Publish GitHub release
+    if: >
+      always() &&
+      needs.prepare.outputs.upload_release == 'true' &&
+      needs.prepare.result == 'success' &&
+      needs.validate-app.result == 'success' &&
+      needs.desktop.result == 'success' &&
+      (needs.android.result == 'success' || needs.android.result == 'skipped') &&
+      (needs.ios.result == 'success' || needs.ios.result == 'skipped')
+    needs:
+      - prepare
+      - validate-app
+      - desktop
+      - android
+      - ios
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: List release assets
+        run: ls -R release-assets
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.release_tag }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
+          files: release-assets/*

@@ -1,0 +1,2 @@
+Balasan yang berisi foto dan file sekaligus kini lebih andal, dan membuka lampiran juga lebih baik.
+Proses pairing, parsing undangan, dan info sesi kini lebih mulus.

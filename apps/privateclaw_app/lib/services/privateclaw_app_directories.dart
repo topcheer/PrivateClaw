@@ -2,7 +2,19 @@ import 'dart:io';
 
 import 'package:path_provider/path_provider.dart' deferred as path_provider;
 
+typedef PrivateClawDirectoryProvider = Future<Directory> Function();
+
+PrivateClawDirectoryProvider? privateClawApplicationSupportDirectoryProvider;
+
+PrivateClawDirectoryProvider? privateClawTemporaryDirectoryProvider;
+
 Future<Directory> getPrivateClawApplicationSupportDirectory() async {
+  final PrivateClawDirectoryProvider? override =
+      privateClawApplicationSupportDirectoryProvider;
+  if (override != null) {
+    return override();
+  }
+
   final Directory? appleDirectory = _appleSandboxDirectory(
     relativePath: 'Library/Application Support',
   );
@@ -15,6 +27,12 @@ Future<Directory> getPrivateClawApplicationSupportDirectory() async {
 }
 
 Future<Directory> getPrivateClawTemporaryDirectory() async {
+  final PrivateClawDirectoryProvider? override =
+      privateClawTemporaryDirectoryProvider;
+  if (override != null) {
+    return override();
+  }
+
   final Directory? appleDirectory = _appleSandboxDirectory(relativePath: 'tmp');
   if (appleDirectory != null) {
     return appleDirectory;

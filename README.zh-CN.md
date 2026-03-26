@@ -433,6 +433,22 @@ docker run --rm \
   ghcr.io/topcheer/privateclaw-relay:main
 ```
 
+### GitHub Actions 构建的 app 发布产物
+
+仓库现在还包含 `.github/workflows/app-release.yml`，用于在 GitHub 托管 runner 上打包桌面端和移动端 app 产物。
+
+- 推送 `app-v*` tag（例如 `app-v0.1.12`）时，会自动构建产物并发布一个 GitHub Release。
+- 也可以手动触发这个 workflow，只构建产物而不发布 Release，并且可选覆盖自动解析出来的 `build name` / `build number`。
+- 桌面端产物格式：
+  - Windows：`.zip`（`x64`、`arm64`）
+  - macOS：`.dmg`（`x64`、`arm64`）
+  - Linux：`.tar.gz`（`x64`、`arm64`）
+- 移动端产物格式：
+  - Android：release `.aab`，以及 `arm64` / `x64` 的拆分 `.apk`
+  - iOS：未签名的 release `.ipa`，以及对应的 `.xcarchive` 归档
+
+这样 app 发布使用 `app-v*` tag，而 provider / relay 现有的 npm 发布流程仍继续使用 `v*` tag，互不干扰。
+
 ### 发布到 npm 的 relay 包
 
 Relay 也可以直接作为 npm 包使用，包名是 `@privateclaw/privateclaw-relay`：

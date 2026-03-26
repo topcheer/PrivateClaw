@@ -484,6 +484,18 @@ abstract class AppLocalizations {
   /// **'Hold to Talk'**
   String get voiceRecordHoldToSend;
 
+  /// No description provided for @voiceRecordTapToStart.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap to start recording'**
+  String get voiceRecordTapToStart;
+
+  /// No description provided for @voiceRecordTapAgainToSend.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap again to send'**
+  String get voiceRecordTapAgainToSend;
+
   /// No description provided for @voiceRecordReleaseToSend.
   ///
   /// In en, this message translates to:
@@ -517,7 +529,7 @@ abstract class AppLocalizations {
   /// No description provided for @voiceRecordingTooShort.
   ///
   /// In en, this message translates to:
-  /// **'Hold a little longer before releasing your voice message.'**
+  /// **'Record a little longer before sending your voice message.'**
   String get voiceRecordingTooShort;
 
   /// No description provided for @voiceRecordingTooLarge.

@@ -6,6 +6,7 @@ import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:image_picker/image_picker.dart';
@@ -103,6 +104,18 @@ enum _EmojiPickerTab { frequent, defaults }
 typedef PrivateClawUrlLauncher =
     Future<bool> Function(Uri url, {LaunchMode mode});
 
+typedef PrivateClawActiveSessionStoreFactory =
+    PrivateClawActiveSessionStore Function();
+
+typedef PrivateClawIdentityStoreFactory = PrivateClawIdentityStore Function();
+
+typedef PrivateClawSessionClientFactory =
+    PrivateClawSessionClient Function(
+      PrivateClawInvite invite, {
+      required PrivateClawIdentity identity,
+      PrivateClawPushTokenProvider? pushTokenProvider,
+    });
+
 Future<bool> _defaultPrivateClawWebsiteLauncher(
   Uri url, {
   LaunchMode mode = LaunchMode.platformDefault,
@@ -112,6 +125,23 @@ Future<bool> _defaultPrivateClawWebsiteLauncher(
 
 PrivateClawUrlLauncher privateClawWebsiteLauncher =
     _defaultPrivateClawWebsiteLauncher;
+
+PrivateClawActiveSessionStoreFactory privateClawActiveSessionStoreFactory =
+    () => const PrivateClawActiveSessionStore();
+
+PrivateClawIdentityStoreFactory privateClawIdentityStoreFactory = () =>
+    const PrivateClawIdentityStore();
+
+PrivateClawSessionClientFactory privateClawSessionClientFactory =
+    (
+      PrivateClawInvite invite, {
+      required PrivateClawIdentity identity,
+      PrivateClawPushTokenProvider? pushTokenProvider,
+    }) => PrivateClawSessionClient(
+      invite,
+      identity: identity,
+      pushTokenProvider: pushTokenProvider,
+    );
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -146,11 +176,62 @@ bool privateClawShouldSkipNotificationsInDebug({
   return debugSkipNotifications || screenshotConfig.previewData != null;
 }
 
-bool privateClawShouldSuspendLiveSession(AppLifecycleState state) {
+bool privateClawShouldKeepLiveSessionInBackgroundForTargetPlatform(
+  TargetPlatform platform,
+) {
+  return platform == TargetPlatform.macOS ||
+      platform == TargetPlatform.windows ||
+      platform == TargetPlatform.linux;
+}
+
+bool privateClawShouldSuspendLiveSession({
+  required TargetPlatform platform,
+  required AppLifecycleState state,
+}) {
+  if (privateClawShouldKeepLiveSessionInBackgroundForTargetPlatform(platform)) {
+    return false;
+  }
   return state == AppLifecycleState.paused ||
       state == AppLifecycleState.hidden ||
       state == AppLifecycleState.detached;
 }
+
+bool privateClawShouldShowLocalNotificationForLifecycleState({
+  required TargetPlatform platform,
+  required AppLifecycleState state,
+}) {
+  return platform == TargetPlatform.macOS && state != AppLifecycleState.resumed;
+}
+
+bool privateClawSupportsVoiceRecordingForTargetPlatform(
+  TargetPlatform platform,
+) {
+  return platform == TargetPlatform.android ||
+      platform == TargetPlatform.iOS ||
+      platform == TargetPlatform.macOS ||
+      platform == TargetPlatform.windows;
+}
+
+bool privateClawUsesTapToToggleVoiceRecordingForTargetPlatform(
+  TargetPlatform platform,
+) {
+  return platform == TargetPlatform.windows;
+}
+
+bool privateClawShouldAutoSendPickedAttachmentsForTargetPlatform(
+  TargetPlatform platform,
+) {
+  return platform == TargetPlatform.windows;
+}
+
+bool privateClawSupportsRecentPhotoTrayForTargetPlatform(
+  TargetPlatform platform,
+) {
+  return platform == TargetPlatform.android || platform == TargetPlatform.iOS;
+}
+
+TargetPlatform Function() privateClawTargetPlatformResolver = () =>
+    defaultTargetPlatform;
 
 typedef PrivateClawScannerSheetLauncher =
     Future<String?> Function(BuildContext context, Widget? previewOverride);
@@ -223,9 +304,9 @@ class PrivateClawHomePage extends StatefulWidget {
 class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     with WidgetsBindingObserver {
   final PrivateClawActiveSessionStore _activeSessionStore =
-      const PrivateClawActiveSessionStore();
+      privateClawActiveSessionStoreFactory();
   final PrivateClawIdentityStore _identityStore =
-      const PrivateClawIdentityStore();
+      privateClawIdentityStoreFactory();
   final PrivateClawEmojiStore _emojiStore = const PrivateClawEmojiStore();
   final PrivateClawNotificationService _notificationService =
       PrivateClawNotificationService.instance;
@@ -280,6 +361,8 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
   String _previousComposerText = '';
   final PrivateClawDebugPendingInviteData? _debugPendingInvite =
       loadPrivateClawDebugPendingInviteFromEnvironment();
+  AppLifecycleState _appLifecycleState = AppLifecycleState.resumed;
+  Future<void>? _pendingRestoreSessionFuture;
 
   bool get _canSend => _sessionStatus == PrivateClawSessionStatus.active;
   bool get _hasPendingReply =>
@@ -297,6 +380,21 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
   bool get _canCollapsePairingPanel => _hasManagedSessionContext;
   bool get _canShowSessionQr => _hasManagedSessionContext;
   bool get _isPreviewMode => widget.previewData != null;
+  TargetPlatform get _targetPlatform => privateClawTargetPlatformResolver();
+  bool get _supportsVoiceRecording =>
+      privateClawSupportsVoiceRecordingForTargetPlatform(_targetPlatform);
+  bool get _usesTapToToggleVoiceRecording =>
+      privateClawUsesTapToToggleVoiceRecordingForTargetPlatform(
+        _targetPlatform,
+      );
+  bool get _shouldAutoSendPickedAttachments =>
+      privateClawShouldAutoSendPickedAttachmentsForTargetPlatform(
+        _targetPlatform,
+      );
+  bool get _supportsRecentPhotoTray =>
+      privateClawSupportsRecentPhotoTrayForTargetPlatform(_targetPlatform);
+  bool get _supportsInviteScanner =>
+      privateClawSupportsInviteScannerForTargetPlatform(_targetPlatform);
   bool get _hasLiveSessionContext =>
       _invite != null &&
       (_hasConnectedSession ||
@@ -480,6 +578,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    _appLifecycleState = state;
     if (_isPreviewMode) {
       return;
     }
@@ -495,7 +594,10 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       return;
     }
 
-    if (!privateClawShouldSuspendLiveSession(state)) {
+    if (!privateClawShouldSuspendLiveSession(
+      platform: _targetPlatform,
+      state: state,
+    )) {
       return;
     }
 
@@ -707,7 +809,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     bool collapsePairingPanel = false,
   }) async {
     final AppLocalizations l10n = AppLocalizations.of(context)!;
-    final PrivateClawSessionClient client = PrivateClawSessionClient(
+    final PrivateClawSessionClient client = privateClawSessionClientFactory(
       invite,
       identity: identity,
       pushTokenProvider: widget.skipNotificationsInDebug
@@ -716,7 +818,10 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     );
     final StreamSubscription<PrivateClawSessionEvent> subscription = client
         .events
-        .listen(_handleClientEvent);
+        .listen(
+          (PrivateClawSessionEvent event) =>
+              _handleClientEventForClient(client, event),
+        );
 
     setState(() {
       _hasConnectedSession =
@@ -754,6 +859,25 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
   }
 
   Future<void> _restoreActiveSessionIfAvailable() async {
+    final Future<void>? pendingRestore = _pendingRestoreSessionFuture;
+    if (pendingRestore != null) {
+      await pendingRestore;
+      return;
+    }
+
+    late final Future<void> trackedRestore;
+    trackedRestore = _restoreActiveSessionIfAvailableInternal().whenComplete(
+      () {
+        if (identical(_pendingRestoreSessionFuture, trackedRestore)) {
+          _pendingRestoreSessionFuture = null;
+        }
+      },
+    );
+    _pendingRestoreSessionFuture = trackedRestore;
+    await trackedRestore;
+  }
+
+  Future<void> _restoreActiveSessionIfAvailableInternal() async {
     if (_isPreviewMode || _client != null) {
       return;
     }
@@ -761,6 +885,9 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     final PrivateClawActiveSessionRecord? record =
         await _loadDebugBootstrapSessionIfAvailable() ??
         await _activeSessionStore.load();
+    if (!mounted || _client != null) {
+      return;
+    }
     if (record == null) {
       return;
     }
@@ -771,6 +898,9 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
 
     try {
       await _identityStore.save(record.identity);
+      if (!mounted || _client != null) {
+        return;
+      }
       await _connectToInvite(
         invite: record.invite,
         identity: record.identity,
@@ -793,6 +923,16 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
         _isPairingPanelCollapsed = true;
       });
     }
+  }
+
+  void _handleClientEventForClient(
+    PrivateClawSessionClient client,
+    PrivateClawSessionEvent event,
+  ) {
+    if (!mounted || !identical(_client, client)) {
+      return;
+    }
+    _handleClientEvent(event);
   }
 
   Future<PrivateClawActiveSessionRecord?>
@@ -867,7 +1007,9 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
           ..addAll(event.participants!);
       }
       if (event.message != null) {
-        _upsertMessage(event.message!);
+        final ChatMessage message = event.message!;
+        _upsertMessage(message);
+        _maybeShowDesktopNotification(message);
       }
       if (event.renewedExpiresAt != null) {
         _isRenewingSession = false;
@@ -928,6 +1070,36 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       unawaited(_cancelVoiceRecording(updateStatus: false));
     }
     _scheduleScrollToBottom();
+  }
+
+  void _maybeShowDesktopNotification(ChatMessage message) {
+    final PrivateClawInvite? invite = _invite;
+    if (invite == null ||
+        _isPreviewMode ||
+        widget.skipNotificationsInDebug ||
+        _sessionStatus != PrivateClawSessionStatus.active ||
+        !privateClawShouldShowLocalNotificationForLifecycleState(
+          platform: _targetPlatform,
+          state: _appLifecycleState,
+        )) {
+      return;
+    }
+    unawaited(_showDesktopNotification(invite: invite, message: message));
+  }
+
+  Future<void> _showDesktopNotification({
+    required PrivateClawInvite invite,
+    required ChatMessage message,
+  }) async {
+    try {
+      await _notificationService.showForegroundNotification(
+        invite: invite,
+        message: message,
+      );
+    } catch (error, stackTrace) {
+      debugPrint('[privateclaw-app] desktop notification failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
   }
 
   void _upsertMessage(ChatMessage message) {
@@ -1015,6 +1187,13 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
   }
 
   Future<void> _openScanner() async {
+    final AppLocalizations l10n = AppLocalizations.of(context)!;
+    if (!_supportsInviteScanner) {
+      setState(() {
+        _statusText = l10n.scannerUnsupported;
+      });
+      return;
+    }
     if (_isScannerSheetOpen) {
       return;
     }
@@ -1170,30 +1349,18 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
         return;
       }
 
-      final List<ChatAttachment> nextAttachments = <ChatAttachment>[];
-      for (final PlatformFile file in result.files) {
-        final Uint8List? bytes = file.bytes;
-        if (bytes == null || bytes.isEmpty) {
-          continue;
-        }
-        final ChatAttachment? attachment = _buildInlineAttachment(
-          l10n,
-          bytes: bytes,
-          name: file.name,
-          mimeType: _inferMimeType(file.name),
-        );
-        if (attachment != null) {
-          nextAttachments.add(attachment);
-        }
-      }
+      final List<ChatAttachment> nextAttachments =
+          await _inlineAttachmentsFromPlatformFiles(
+            l10n,
+            result.files,
+            inferMimeType: (PlatformFile file) => _inferMimeType(file.name),
+          );
 
       if (nextAttachments.isEmpty || !mounted) {
         return;
       }
 
-      setState(() {
-        _selectedAttachments.addAll(nextAttachments);
-      });
+      await _addPickedAttachments(nextAttachments);
     } catch (error) {
       if (!mounted) {
         return;
@@ -1204,8 +1371,76 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     }
   }
 
+  Future<Uint8List?> _readPlatformFileBytes(PlatformFile file) async {
+    final Uint8List? inMemoryBytes = file.bytes;
+    if (inMemoryBytes != null && inMemoryBytes.isNotEmpty) {
+      return inMemoryBytes;
+    }
+
+    final String? path = file.path;
+    if (path == null || path.isEmpty) {
+      return null;
+    }
+    final File diskFile = File(path);
+    if (!await diskFile.exists()) {
+      return null;
+    }
+    final Uint8List bytes = await diskFile.readAsBytes();
+    return bytes.isEmpty ? null : bytes;
+  }
+
+  Future<List<ChatAttachment>> _inlineAttachmentsFromPlatformFiles(
+    AppLocalizations l10n,
+    Iterable<PlatformFile> files, {
+    required String Function(PlatformFile file) inferMimeType,
+  }) async {
+    final List<ChatAttachment> nextAttachments = <ChatAttachment>[];
+    for (final PlatformFile file in files) {
+      final Uint8List? bytes = await _readPlatformFileBytes(file);
+      if (bytes == null || bytes.isEmpty) {
+        continue;
+      }
+      final ChatAttachment? attachment = _buildInlineAttachment(
+        l10n,
+        bytes: bytes,
+        name: file.name,
+        mimeType: inferMimeType(file),
+      );
+      if (attachment != null) {
+        nextAttachments.add(attachment);
+      }
+    }
+    return nextAttachments;
+  }
+
+  Future<void> _addPickedAttachments(
+    List<ChatAttachment> nextAttachments,
+  ) async {
+    if (nextAttachments.isEmpty || !mounted) {
+      return;
+    }
+
+    final bool shouldAutoSend =
+        _shouldAutoSendPickedAttachments &&
+        _messageController.text.trim().isEmpty &&
+        _selectedAttachments.isEmpty;
+
+    setState(() {
+      _selectedAttachments.addAll(nextAttachments);
+    });
+
+    if (shouldAutoSend) {
+      await _sendMessage();
+    }
+  }
+
   Future<void> _togglePhotoTray() async {
     if (!_canSend) {
+      return;
+    }
+
+    if (!_supportsRecentPhotoTray) {
+      await _pickFromGallery();
       return;
     }
 
@@ -1223,6 +1458,14 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
 
   Future<void> _loadRecentPhotos({bool force = false}) async {
     final AppLocalizations l10n = AppLocalizations.of(context)!;
+    if (!_supportsRecentPhotoTray) {
+      setState(() {
+        _recentPhotoAssets.clear();
+        _photoThumbnailFutures.clear();
+        _photoTrayStatusText = l10n.photoTrayNoImages;
+      });
+      return;
+    }
     if (_isLoadingRecentPhotos || (!force && _recentPhotoAssets.isNotEmpty)) {
       return;
     }
@@ -1351,6 +1594,28 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     final AppLocalizations l10n = AppLocalizations.of(context)!;
     _closeComposerPanels(clearFocus: true);
     try {
+      if (!_supportsRecentPhotoTray) {
+        final FilePickerResult? result = await FilePicker.platform.pickFiles(
+          allowMultiple: true,
+          withData: true,
+          type: FileType.image,
+        );
+        if (result == null || result.files.isEmpty || !mounted) {
+          return;
+        }
+        final List<ChatAttachment> nextAttachments =
+            await _inlineAttachmentsFromPlatformFiles(
+              l10n,
+              result.files,
+              inferMimeType: (PlatformFile file) => _inferMimeType(file.name),
+            );
+        if (nextAttachments.isEmpty || !mounted) {
+          return;
+        }
+        await _addPickedAttachments(nextAttachments);
+        return;
+      }
+
       final List<XFile> photos = await _imagePicker.pickMultiImage(
         maxWidth: 1920,
         maxHeight: 1920,
@@ -1666,6 +1931,25 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     await _startVoiceRecording();
   }
 
+  Future<void> _handleTapVoiceRecording() async {
+    if (!_canSend || _isStoppingVoiceRecording || _client == null) {
+      _showInactiveComposerStatus();
+      return;
+    }
+
+    if (_isRecordingVoice) {
+      await _finishVoiceRecordingAndSend();
+      return;
+    }
+
+    setState(() {
+      _isEmojiPickerVisible = false;
+      _isPhotoTrayVisible = false;
+      _resetVoiceHoldOverlayState();
+    });
+    await _startVoiceRecording();
+  }
+
   void _handleVoiceHoldMove(Offset globalPosition) {
     final Offset? start = _voiceHoldStartGlobalPosition;
     if (start == null) {
@@ -1752,6 +2036,33 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     if (clearFocus) {
       _composerFocusNode.unfocus();
     }
+  }
+
+  void _showInactiveComposerStatus() {
+    final AppLocalizations l10n = AppLocalizations.of(context)!;
+    setState(() {
+      _statusText = l10n.sendHintInactive;
+    });
+  }
+
+  Future<void> _handlePhotoComposerButtonPressed() async {
+    if (!_canSend) {
+      _showInactiveComposerStatus();
+      return;
+    }
+    if (_supportsRecentPhotoTray) {
+      await _togglePhotoTray();
+      return;
+    }
+    await _pickFromGallery();
+  }
+
+  Future<void> _handleFileComposerButtonPressed() async {
+    if (!_canSend) {
+      _showInactiveComposerStatus();
+      return;
+    }
+    await _pickAttachments();
   }
 
   Future<void> _recordEmojiSelection(String emoji) async {
@@ -2227,7 +2538,8 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
                     _buildComposer(l10n),
                     if (_isEmojiPickerVisible)
                       _buildEmojiPickerPanel(l10n, height: emojiPanelHeight),
-                    if (_isPhotoTrayVisible) _buildPhotoTrayPanel(l10n),
+                    if (_isPhotoTrayVisible && _supportsRecentPhotoTray)
+                      _buildPhotoTrayPanel(l10n),
                   ],
                 ),
               ),
@@ -2247,6 +2559,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
   ) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme colorScheme = theme.colorScheme;
+    final bool usesTapToToggle = _usesTapToToggleVoiceRecording;
     return Positioned.fill(
       child: IgnorePointer(
         child: SafeArea(
@@ -2301,23 +2614,33 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
                     const Spacer(),
                     _VoiceRecordingActionBadge(
                       key: const ValueKey<String>('voice-record-hint'),
-                      icon: _isVoiceCancelArmed
+                      icon: usesTapToToggle
+                          ? Icons.send_rounded
+                          : _isVoiceCancelArmed
                           ? Icons.delete_outline
                           : Icons.north_rounded,
-                      label: _isVoiceCancelArmed
+                      label: usesTapToToggle
+                          ? l10n.voiceRecordTapAgainToSend
+                          : _isVoiceCancelArmed
                           ? l10n.voiceRecordingReleaseToCancel
                           : l10n.voiceRecordingSlideUpToCancel,
-                      backgroundColor: _isVoiceCancelArmed
+                      backgroundColor: usesTapToToggle
+                          ? colorScheme.primaryContainer
+                          : _isVoiceCancelArmed
                           ? colorScheme.errorContainer
                           : colorScheme.primaryContainer,
-                      foregroundColor: _isVoiceCancelArmed
+                      foregroundColor: usesTapToToggle
+                          ? colorScheme.onPrimaryContainer
+                          : _isVoiceCancelArmed
                           ? colorScheme.onErrorContainer
                           : colorScheme.onPrimaryContainer,
                     ),
                     const SizedBox(height: 16),
                     DecoratedBox(
                       decoration: BoxDecoration(
-                        color: _isVoiceCancelArmed
+                        color: usesTapToToggle
+                            ? colorScheme.primary
+                            : _isVoiceCancelArmed
                             ? colorScheme.error
                             : colorScheme.primary,
                         borderRadius: BorderRadius.circular(999),
@@ -2331,14 +2654,18 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
                           mainAxisSize: MainAxisSize.min,
                           children: <Widget>[
                             Icon(
-                              _isVoiceCancelArmed
+                              usesTapToToggle
+                                  ? Icons.send_rounded
+                                  : _isVoiceCancelArmed
                                   ? Icons.delete_outline
                                   : Icons.mic,
                               color: Colors.white,
                             ),
                             const SizedBox(width: 10),
                             Text(
-                              _isVoiceCancelArmed
+                              usesTapToToggle
+                                  ? l10n.voiceRecordTapAgainToSend
+                                  : _isVoiceCancelArmed
                                   ? l10n.voiceRecordingReleaseToCancel
                                   : l10n.voiceRecordReleaseToSend,
                               key: const ValueKey<String>(
@@ -2838,22 +3165,26 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
                 isActive: _isEmojiPickerVisible,
                 onPressed: _canSend ? _openEmojiPicker : null,
               ),
-              const SizedBox(width: 8),
-              _buildVoiceComposerButton(l10n),
+              if (_supportsVoiceRecording) ...<Widget>[
+                const SizedBox(width: 8),
+                _buildVoiceComposerButton(l10n),
+              ],
               const SizedBox(width: 8),
               _buildComposerActionButton(
                 key: const ValueKey<String>('composer-photo-button'),
                 icon: Icons.photo_library_outlined,
                 tooltip: l10n.photoTrayTooltip,
-                isActive: _isPhotoTrayVisible,
-                onPressed: _canSend ? _togglePhotoTray : null,
+                isActive: _supportsRecentPhotoTray && _isPhotoTrayVisible,
+                isEnabled: _canSend,
+                onPressed: _handlePhotoComposerButtonPressed,
               ),
               const SizedBox(width: 8),
               _buildComposerActionButton(
                 key: const ValueKey<String>('composer-file-button'),
                 icon: Icons.attach_file,
                 tooltip: l10n.filePickerTooltip,
-                onPressed: _canSend ? _pickAttachments : null,
+                isEnabled: _canSend,
+                onPressed: _handleFileComposerButtonPressed,
               ),
               const Spacer(),
               IconButton.filled(
@@ -2992,15 +3323,49 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     final ThemeData theme = Theme.of(context);
     final bool enabled = _canSend && !_isStoppingVoiceRecording;
     final ColorScheme colorScheme = theme.colorScheme;
+    final bool usesTapToToggle = _usesTapToToggleVoiceRecording;
+    final IconData icon = _isStoppingVoiceRecording
+        ? Icons.hourglass_top
+        : usesTapToToggle && _isRecordingVoice
+        ? Icons.send_rounded
+        : Icons.mic_none;
+    final String tooltip = usesTapToToggle
+        ? (_isRecordingVoice
+              ? l10n.voiceRecordTapAgainToSend
+              : l10n.voiceRecordTapToStart)
+        : l10n.voiceRecordHoldToSend;
+
+    if (usesTapToToggle) {
+      return _buildComposerActionButton(
+        key: const ValueKey<String>('voice-record-button'),
+        icon: icon,
+        tooltip: tooltip,
+        isActive: _isRecordingVoice,
+        isEnabled: enabled,
+        onPressed: enabled
+            ? () {
+                unawaited(_handleTapVoiceRecording());
+              }
+            : _showInactiveComposerStatus,
+        foregroundColor: _isRecordingVoice
+            ? colorScheme.onPrimaryContainer
+            : null,
+        backgroundColor: _isRecordingVoice
+            ? colorScheme.primaryContainer
+            : null,
+      );
+    }
 
     return Listener(
       key: const ValueKey<String>('voice-record-button'),
       behavior: HitTestBehavior.opaque,
-      onPointerDown: enabled
-          ? (PointerDownEvent event) {
-              unawaited(_handleVoiceHoldStart(event.position));
-            }
-          : null,
+      onPointerDown: (PointerDownEvent event) {
+        if (!enabled) {
+          _showInactiveComposerStatus();
+          return;
+        }
+        unawaited(_handleVoiceHoldStart(event.position));
+      },
       onPointerMove: enabled
           ? (PointerMoveEvent event) {
               _handleVoiceHoldMove(event.position);
@@ -3017,10 +3382,11 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
             }
           : null,
       child: _buildComposerActionButton(
-        icon: _isStoppingVoiceRecording ? Icons.hourglass_top : Icons.mic_none,
-        tooltip: l10n.voiceRecordHoldToSend,
+        icon: icon,
+        tooltip: tooltip,
         isActive: _isRecordingVoice,
-        onPressed: enabled ? () {} : null,
+        isEnabled: enabled,
+        onPressed: enabled ? () {} : _showInactiveComposerStatus,
         foregroundColor: _isRecordingVoice
             ? colorScheme.onPrimaryContainer
             : null,
@@ -3037,32 +3403,36 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     required VoidCallback? onPressed,
     Key? key,
     bool isActive = false,
+    bool isEnabled = true,
     Color? backgroundColor,
     Color? foregroundColor,
   }) {
     final ColorScheme colorScheme = Theme.of(context).colorScheme;
     return Tooltip(
       message: tooltip,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color:
-              backgroundColor ??
-              (isActive
-                  ? colorScheme.primaryContainer
-                  : colorScheme.surfaceContainerHighest),
-          borderRadius: BorderRadius.circular(18),
-        ),
-        child: IconButton(
-          key: key,
-          onPressed: onPressed,
-          icon: Icon(icon),
-          color:
-              foregroundColor ??
-              (isActive
-                  ? colorScheme.onPrimaryContainer
-                  : colorScheme.onSurfaceVariant),
-          constraints: const BoxConstraints.tightFor(width: 52, height: 52),
-          padding: EdgeInsets.zero,
+      child: Opacity(
+        opacity: isEnabled ? 1 : 0.45,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color:
+                backgroundColor ??
+                (isActive
+                    ? colorScheme.primaryContainer
+                    : colorScheme.surfaceContainerHighest),
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: IconButton(
+            key: key,
+            onPressed: onPressed,
+            icon: Icon(icon),
+            color:
+                foregroundColor ??
+                (isActive
+                    ? colorScheme.onPrimaryContainer
+                    : colorScheme.onSurfaceVariant),
+            constraints: const BoxConstraints.tightFor(width: 52, height: 52),
+            padding: EdgeInsets.zero,
+          ),
         ),
       ),
     );

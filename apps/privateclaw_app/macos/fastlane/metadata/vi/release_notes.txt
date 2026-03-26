@@ -1,0 +1,2 @@
+Trả lời kèm cả ảnh và tệp nay ổn định hơn, đồng thời việc mở tệp đính kèm cũng được cải thiện.
+Ghép đôi, phân tích lời mời và thông báo phiên giờ đây mượt mà hơn.

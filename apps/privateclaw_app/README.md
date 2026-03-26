@@ -26,6 +26,21 @@ flutter pub get
 flutter run
 ```
 
+Desktop targets are now scaffolded for macOS, Windows, and Linux. Use the matching host OS to run each desktop target:
+
+```bash
+flutter run -d macos
+flutter run -d windows
+flutter run -d linux
+```
+
+Current desktop behavior:
+
+- macOS supports the live QR scanner sheet
+- Windows and Linux fall back to manual invite paste when live scanning is unavailable
+- desktop uses file pickers for image/file attachments instead of the mobile recent-photo tray
+- push notifications and voice recording remain mobile-only for now
+
 The app's Firebase push setup is intentionally local-only by default. Keep your own native Firebase files outside Git at:
 
 - `android/app/google-services.json`
@@ -61,7 +76,13 @@ flowchart TD
 flutter test
 flutter build apk --debug
 flutter build ios --simulator
+flutter build macos
 ```
+
+Build the other desktop targets on their matching host OS:
+
+- Windows: `flutter build windows`
+- Linux: `flutter build linux`
 
 ## Store delivery
 

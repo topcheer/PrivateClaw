@@ -228,6 +228,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get voiceRecordHoldToSend => 'Hold to Talk';
 
   @override
+  String get voiceRecordTapToStart => 'Tap to start recording';
+
+  @override
+  String get voiceRecordTapAgainToSend => 'Tap again to send';
+
+  @override
   String get voiceRecordReleaseToSend => 'Release to send';
 
   @override
@@ -247,7 +253,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get voiceRecordingTooShort =>
-      'Hold a little longer before releasing your voice message.';
+      'Record a little longer before sending your voice message.';
 
   @override
   String get voiceRecordingTooLarge =>

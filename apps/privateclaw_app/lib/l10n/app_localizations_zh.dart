@@ -216,6 +216,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get voiceRecordHoldToSend => '按住说话';
 
   @override
+  String get voiceRecordTapToStart => '点击开始录音';
+
+  @override
+  String get voiceRecordTapAgainToSend => '再次点击发送语音';
+
+  @override
   String get voiceRecordReleaseToSend => '松开发送语音';
 
   @override
@@ -231,7 +237,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get voiceRecordingUnsupported => '当前设备暂不支持语音录制。';
 
   @override
-  String get voiceRecordingTooShort => '请再多按住一会儿再松开发送。';
+  String get voiceRecordingTooShort => '请再多录一会儿再发送语音。';
 
   @override
   String get voiceRecordingTooLarge => '这条语音太大，无法直接发送。';

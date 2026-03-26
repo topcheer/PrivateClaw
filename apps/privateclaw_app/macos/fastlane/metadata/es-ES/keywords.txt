@@ -1,0 +1,1 @@
+privado,cifrado,chat IA,OpenClaw,relay,QR,autoalojado

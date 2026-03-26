@@ -1,0 +1,2 @@
+Antworten mit Fotos und Dateien zusammen sind jetzt zuverlässiger, ebenso das Öffnen von Anhängen.
+Pairing, Einladungslink-Erkennung und Sitzungshinweise laufen jetzt reibungsloser.

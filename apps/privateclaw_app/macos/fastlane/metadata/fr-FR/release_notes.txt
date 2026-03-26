@@ -1,0 +1,2 @@
+Les réponses mêlant photos et fichiers sont plus fiables, et l’ouverture des pièces jointes a été améliorée.
+L’appairage, l’analyse des invitations et les messages de session sont désormais plus fluides.

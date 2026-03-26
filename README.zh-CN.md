@@ -453,10 +453,13 @@ docker run --rm \
 gh workflow run app-arm-probe.yml \
   -f flutter_version=3.38.6 \
   -f flutter_channel=stable \
+  -f flutter_install_method=flutter-action \
   -f build_mode=release \
   -f run_desktop_build=true \
   -f fail_on_probe_failure=false
 ```
+
+如果想验证 `subosito/flutter-action` issue `#345` 里讨论的 clone 方案，可以把 `flutter_install_method` 改成 `git-clone`。这个 probe workflow 会改为从 GitHub 浅克隆 Flutter、加入 `PATH`，再先跑 `flutter doctor` 做自举，然后才继续尝试桌面构建。
 
 这样 app 发布使用 `app-v*` tag，而 provider / relay 现有的 npm 发布流程仍继续使用 `v*` tag，互不干扰。
 

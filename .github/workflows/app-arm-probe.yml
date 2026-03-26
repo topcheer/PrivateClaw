@@ -17,6 +17,18 @@ on:
           - stable
           - beta
           - dev
+      flutter_install_method:
+        description: How to install Flutter on the ARM runner
+        required: true
+        default: flutter-action
+        type: choice
+        options:
+          - flutter-action
+          - git-clone
+      flutter_git_ref:
+        description: Git ref used when flutter_install_method is git-clone (defaults to flutter_version)
+        required: false
+        type: string
       build_mode:
         description: Build mode used when the desktop build step runs
         required: true
@@ -103,6 +115,7 @@ jobs:
 
       - id: flutter
         name: Set up Flutter
+        if: ${{ inputs.flutter_install_method == 'flutter-action' }}
         continue-on-error: true
         uses: subosito/flutter-action@v2
         with:
@@ -110,15 +123,49 @@ jobs:
           channel: ${{ inputs.flutter_channel }}
           cache: true
 
+      - id: clone-flutter
+        name: Clone Flutter SDK
+        if: ${{ inputs.flutter_install_method == 'git-clone' }}
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $flutterDir = Join-Path $env:RUNNER_TEMP 'flutter'
+          if (Test-Path $flutterDir) {
+            Remove-Item $flutterDir -Recurse -Force
+          }
+
+          $flutterRef = '${{ inputs.flutter_git_ref }}'
+          if (-not $flutterRef) {
+            $flutterRef = $env:FLUTTER_VERSION
+          }
+
+          git clone --depth 1 --branch $flutterRef https://github.com/flutter/flutter.git $flutterDir
+          (Join-Path $flutterDir 'bin') | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
       - name: Show Flutter toolchain
-        if: ${{ steps.flutter.outcome == 'success' }}
+        if: ${{ inputs.flutter_install_method == 'flutter-action' && steps.flutter.outcome == 'success' }}
         shell: pwsh
         run: |
           flutter --version
           flutter doctor -v
 
+      - id: bootstrap-clone
+        name: Bootstrap cloned Flutter SDK
+        if: ${{ inputs.flutter_install_method == 'git-clone' && steps.clone-flutter.outcome == 'success' }}
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          if ('${{ matrix.platform }}' -eq 'linux') {
+            flutter config --enable-linux-desktop
+          } else {
+            flutter config --enable-windows-desktop
+          }
+
+          flutter --version
+          flutter doctor -v
+
       - name: Install Linux desktop dependencies
-        if: ${{ steps.flutter.outcome == 'success' && inputs.run_desktop_build && matrix.platform == 'linux' }}
+        if: ${{ ((inputs.flutter_install_method == 'flutter-action' && steps.flutter.outcome == 'success') || (inputs.flutter_install_method == 'git-clone' && steps.bootstrap-clone.outcome == 'success')) && inputs.run_desktop_build && matrix.platform == 'linux' }}
         run: |
           sudo apt-get update -y
           sudo apt-get install -y \
@@ -131,14 +178,14 @@ jobs:
             pkg-config
 
       - name: Get Flutter dependencies
-        if: ${{ steps.flutter.outcome == 'success' && inputs.run_desktop_build }}
+        if: ${{ ((inputs.flutter_install_method == 'flutter-action' && steps.flutter.outcome == 'success') || (inputs.flutter_install_method == 'git-clone' && steps.bootstrap-clone.outcome == 'success')) && inputs.run_desktop_build }}
         working-directory: apps/privateclaw_app
         shell: pwsh
         run: flutter pub get
 
       - id: build-linux
         name: Build Linux desktop app
-        if: ${{ steps.flutter.outcome == 'success' && inputs.run_desktop_build && matrix.platform == 'linux' }}
+        if: ${{ ((inputs.flutter_install_method == 'flutter-action' && steps.flutter.outcome == 'success') || (inputs.flutter_install_method == 'git-clone' && steps.bootstrap-clone.outcome == 'success')) && inputs.run_desktop_build && matrix.platform == 'linux' }}
         continue-on-error: true
         working-directory: apps/privateclaw_app
         shell: bash
@@ -148,7 +195,7 @@ jobs:
 
       - id: build-windows
         name: Build Windows desktop app
-        if: ${{ steps.flutter.outcome == 'success' && inputs.run_desktop_build && matrix.platform == 'windows' }}
+        if: ${{ ((inputs.flutter_install_method == 'flutter-action' && steps.flutter.outcome == 'success') || (inputs.flutter_install_method == 'git-clone' && steps.bootstrap-clone.outcome == 'success')) && inputs.run_desktop_build && matrix.platform == 'windows' }}
         continue-on-error: true
         working-directory: apps/privateclaw_app
         shell: pwsh
@@ -169,6 +216,17 @@ jobs:
             '${{ steps.build-windows.outcome }}'
           }
 
+          $flutterRef = '${{ inputs.flutter_git_ref }}'
+          if (-not $flutterRef) {
+            $flutterRef = '${{ inputs.flutter_version }}'
+          }
+
+          $installOutcome = if ('${{ inputs.flutter_install_method }}' -eq 'git-clone') {
+            '${{ steps.bootstrap-clone.outcome }}'
+          } else {
+            '${{ steps.flutter.outcome }}'
+          }
+
           $reportLines = @(
             '# ARM desktop probe: ${{ matrix.platform }}-${{ matrix.arch }}',
             '',
@@ -177,11 +235,13 @@ jobs:
             "- Runner arch: $env:RUNNER_ARCH",
             '- Requested Flutter version: ${{ inputs.flutter_version }}',
             '- Requested Flutter channel: ${{ inputs.flutter_channel }}',
+            '- Install method: ${{ inputs.flutter_install_method }}',
+            "- Git ref for clone mode: $flutterRef",
             '- Build mode: ${{ inputs.build_mode }}',
             '- Requested desktop build: ${{ inputs.run_desktop_build }}',
             '- Official manifest has matching arm64 SDK: ${{ steps.manifest.outputs.supported }}',
             "- Matching official archive: $archive",
-            '- Flutter setup outcome: ${{ steps.flutter.outcome }}',
+            "- Flutter install outcome: $installOutcome",
             "- Desktop build outcome: $buildOutcome"
           )
           $report = $reportLines -join [Environment]::NewLine
@@ -203,13 +263,23 @@ jobs:
         shell: pwsh
         run: |
           $errors = New-Object System.Collections.Generic.List[string]
+          $installMethod = '${{ inputs.flutter_install_method }}'
+          $installOutcome = if ($installMethod -eq 'git-clone') {
+            '${{ steps.bootstrap-clone.outcome }}'
+          } else {
+            '${{ steps.flutter.outcome }}'
+          }
 
-          if ('${{ steps.manifest.outputs.supported }}' -ne 'true') {
+          if ($installMethod -eq 'flutter-action' -and '${{ steps.manifest.outputs.supported }}' -ne 'true') {
             $errors.Add("Flutter $env:FLUTTER_VERSION does not publish an official ${{ matrix.platform }}-${{ matrix.arch }} desktop SDK archive on channel $env:FLUTTER_CHANNEL.")
           }
 
-          if ('${{ steps.flutter.outcome }}' -ne 'success') {
-            $errors.Add("subosito/flutter-action could not install Flutter $env:FLUTTER_VERSION on runner ${{ matrix.runner }}.")
+          if ($installOutcome -ne 'success') {
+            if ($installMethod -eq 'git-clone') {
+              $errors.Add("The git-clone Flutter bootstrap path did not finish successfully on runner ${{ matrix.runner }}.")
+            } else {
+              $errors.Add("subosito/flutter-action could not install Flutter $env:FLUTTER_VERSION on runner ${{ matrix.runner }}.")
+            }
           }
 
           if ('${{ inputs.run_desktop_build }}' -eq 'true') {

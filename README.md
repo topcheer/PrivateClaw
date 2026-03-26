@@ -471,10 +471,13 @@ This repository now also includes `.github/workflows/app-release.yml` for packag
 gh workflow run app-arm-probe.yml \
   -f flutter_version=3.38.6 \
   -f flutter_channel=stable \
+  -f flutter_install_method=flutter-action \
   -f build_mode=release \
   -f run_desktop_build=true \
   -f fail_on_probe_failure=false
 ```
+
+To test the clone-based workaround discussed in `subosito/flutter-action` issue `#345`, switch to `flutter_install_method=git-clone`. The probe workflow will shallow-clone Flutter from GitHub, add it to `PATH`, and bootstrap it with `flutter doctor` before attempting the desktop build.
 
 Keeping app releases on `app-v*` tags leaves the existing provider / relay npm publish flow on `v*` tags unchanged.
 

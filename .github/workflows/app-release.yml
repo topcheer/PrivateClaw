@@ -362,15 +362,26 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release-artifacts
+          IPA_ASSET="release-artifacts/PrivateClaw-${{ needs.prepare.outputs.version_slug }}-ios-unsigned.ipa"
+          ARCHIVE_ASSET="release-artifacts/PrivateClaw-${{ needs.prepare.outputs.version_slug }}-ios-archive.zip"
           IPA_PATH="$(find build/ios -type f -name '*.ipa' | head -n 1 || true)"
           ARCHIVE_PATH="$(find build/ios -type d -name '*.xcarchive' | head -n 1 || true)"
           if [ -n "${IPA_PATH}" ]; then
-            cp "${IPA_PATH}" \
-              "release-artifacts/PrivateClaw-${{ needs.prepare.outputs.version_slug }}-ios-unsigned.ipa"
+            cp "${IPA_PATH}" "${IPA_ASSET}"
+          elif [ -n "${ARCHIVE_PATH}" ]; then
+            APP_PATH="$(find "${ARCHIVE_PATH}/Products/Applications" -maxdepth 1 -type d -name '*.app' | head -n 1 || true)"
+            if [ -z "${APP_PATH}" ]; then
+              echo "::error::Unable to locate an iOS app bundle inside ${ARCHIVE_PATH}."
+              exit 1
+            fi
+            PAYLOAD_DIR="$(mktemp -d)"
+            mkdir -p "${PAYLOAD_DIR}/Payload"
+            cp -R "${APP_PATH}" "${PAYLOAD_DIR}/Payload/"
+            ditto -c -k --sequesterRsrc --keepParent "${PAYLOAD_DIR}/Payload" "${IPA_ASSET}"
           fi
           if [ -n "${ARCHIVE_PATH}" ]; then
             ditto -c -k --sequesterRsrc --keepParent "${ARCHIVE_PATH}" \
-              "release-artifacts/PrivateClaw-${{ needs.prepare.outputs.version_slug }}-ios-archive.zip"
+              "${ARCHIVE_ASSET}"
           fi
           if [ -z "$(find release-artifacts -maxdepth 1 -type f | head -n 1)" ]; then
             echo "::error::No iOS release artifacts were produced."

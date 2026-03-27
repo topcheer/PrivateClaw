@@ -1,5 +1,18 @@
 import 'package:flutter/material.dart';
 
+import '../services/privateclaw_platform_utils.dart';
+import 'composer_submit_shortcuts.dart';
+
+class FullscreenComposerResult {
+  const FullscreenComposerResult({
+    required this.text,
+    this.shouldSubmit = false,
+  });
+
+  final String text;
+  final bool shouldSubmit;
+}
+
 class FullscreenComposerPage extends StatefulWidget {
   const FullscreenComposerPage({
     required this.initialText,
@@ -27,9 +40,20 @@ class _FullscreenComposerPageState extends State<FullscreenComposerPage> {
     super.dispose();
   }
 
+  bool get _supportsSubmitShortcut =>
+      privateClawSupportsComposerSubmitShortcutForTargetPlatform(
+        privateClawTargetPlatformResolver(),
+      );
+
   Future<bool> _handleWillPop() async {
-    Navigator.of(context).pop(_controller.text);
+    Navigator.of(context).pop(FullscreenComposerResult(text: _controller.text));
     return false;
+  }
+
+  void _submitFromShortcut() {
+    Navigator.of(
+      context,
+    ).pop(FullscreenComposerResult(text: _controller.text, shouldSubmit: true));
   }
 
   @override
@@ -45,7 +69,9 @@ class _FullscreenComposerPageState extends State<FullscreenComposerPage> {
           actions: <Widget>[
             IconButton(
               onPressed: () {
-                Navigator.of(context).pop(_controller.text);
+                Navigator.of(
+                  context,
+                ).pop(FullscreenComposerResult(text: _controller.text));
               },
               icon: const Icon(Icons.check),
             ),
@@ -62,27 +88,31 @@ class _FullscreenComposerPageState extends State<FullscreenComposerPage> {
               ),
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-                child: TextField(
-                  key: const ValueKey<String>(
-                    'fullscreen-composer-input-field',
-                  ),
-                  controller: _controller,
-                  autofocus: true,
-                  keyboardType: TextInputType.multiline,
-                  textInputAction: TextInputAction.newline,
-                  textAlignVertical: TextAlignVertical.top,
-                  expands: true,
-                  minLines: null,
-                  maxLines: null,
-                  decoration: InputDecoration(
-                    hintText: widget.hintText,
-                    border: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                    disabledBorder: InputBorder.none,
-                    contentPadding: EdgeInsets.zero,
-                    isCollapsed: true,
-                    alignLabelWithHint: true,
+                child: PrivateClawComposerSubmitShortcuts(
+                  enabled: _supportsSubmitShortcut,
+                  onSubmit: _submitFromShortcut,
+                  child: TextField(
+                    key: const ValueKey<String>(
+                      'fullscreen-composer-input-field',
+                    ),
+                    controller: _controller,
+                    autofocus: true,
+                    keyboardType: TextInputType.multiline,
+                    textInputAction: TextInputAction.newline,
+                    textAlignVertical: TextAlignVertical.top,
+                    expands: true,
+                    minLines: null,
+                    maxLines: null,
+                    decoration: InputDecoration(
+                      hintText: widget.hintText,
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      disabledBorder: InputBorder.none,
+                      contentPadding: EdgeInsets.zero,
+                      isCollapsed: true,
+                      alignLabelWithHint: true,
+                    ),
                   ),
                 ),
               ),

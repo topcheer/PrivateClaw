@@ -38,6 +38,7 @@ import 'widgets/chat_message_bubble.dart';
 import 'widgets/common_emoji_sheet.dart';
 import 'widgets/composer_attachment_preview.dart';
 import 'widgets/composer_photo_tile.dart';
+import 'widgets/composer_submit_shortcuts.dart';
 import 'widgets/fullscreen_composer_page.dart';
 import 'widgets/invite_scanner_sheet.dart';
 import 'widgets/privateclaw_avatar.dart';
@@ -107,7 +108,6 @@ const List<String> _defaultEmoji = <String>[
   '📸',
   '💡',
 ];
-
 
 typedef PrivateClawUrlLauncher =
     Future<bool> Function(Uri url, {LaunchMode mode});
@@ -302,11 +302,13 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
   bool _isSlashCommandsSheetOpen = false;
   bool _hasInitializedQuickActions = false;
   Locale? _configuredQuickActionsLocale;
+  String _previousInviteInputText = '';
   String _previousComposerText = '';
   final PrivateClawDebugPendingInviteData? _debugPendingInvite =
       loadPrivateClawDebugPendingInviteFromEnvironment();
   AppLifecycleState _appLifecycleState = AppLifecycleState.resumed;
   Future<void>? _pendingRestoreSessionFuture;
+  String? _inFlightConnectInput;
 
   bool get _canSend => _sessionStatus == PrivateClawSessionStatus.active;
   bool get _hasPendingReply =>
@@ -337,6 +339,10 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       );
   bool get _supportsRecentPhotoTray =>
       privateClawSupportsRecentPhotoTrayForTargetPlatform(_targetPlatform);
+  bool get _supportsComposerSubmitShortcut =>
+      privateClawSupportsComposerSubmitShortcutForTargetPlatform(
+        _targetPlatform,
+      );
   bool get _supportsInviteScanner =>
       privateClawSupportsInviteScannerForTargetPlatform(_targetPlatform);
   bool get _hasLiveSessionContext =>
@@ -463,7 +469,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
         if (!mounted || pendingInvite == null) {
           return;
         }
-        _inviteController.text = pendingInvite.inviteInput;
+        _setInviteInputText(pendingInvite.inviteInput);
         unawaited(
           _connectFromInput(
             pendingInvite.inviteInput,
@@ -620,6 +626,71 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     }
   }
 
+  void _setInviteInputText(String value) {
+    _previousInviteInputText = value;
+    _inviteController.value = TextEditingValue(
+      text: value,
+      selection: TextSelection.collapsed(offset: value.length),
+    );
+  }
+
+  void _handleInviteInputChanged(String nextText) {
+    final String previousText = _previousInviteInputText;
+    _previousInviteInputText = nextText;
+    if (!_shouldAutoConnectInvitePaste(previousText, nextText)) {
+      return;
+    }
+    unawaited(_connectFromInput(nextText));
+  }
+
+  bool _shouldAutoConnectInvitePaste(String previousText, String nextText) {
+    if (_hasManagedSessionContext) {
+      return false;
+    }
+
+    final String trimmed = nextText.trim();
+    if (trimmed.isEmpty || nextText == previousText) {
+      return false;
+    }
+
+    final bool looksLikePaste =
+        _estimateInviteInputChangeSize(previousText, nextText) > 1;
+    if (!looksLikePaste) {
+      return false;
+    }
+
+    try {
+      PrivateClawInvite.fromScan(trimmed);
+      return true;
+    } on FormatException {
+      return false;
+    }
+  }
+
+  int _estimateInviteInputChangeSize(String previousText, String nextText) {
+    int prefixLength = 0;
+    final int maxPrefixLength = math.min(previousText.length, nextText.length);
+    while (prefixLength < maxPrefixLength &&
+        previousText.codeUnitAt(prefixLength) ==
+            nextText.codeUnitAt(prefixLength)) {
+      prefixLength += 1;
+    }
+
+    int previousSuffix = previousText.length;
+    int nextSuffix = nextText.length;
+    while (previousSuffix > prefixLength &&
+        nextSuffix > prefixLength &&
+        previousText.codeUnitAt(previousSuffix - 1) ==
+            nextText.codeUnitAt(nextSuffix - 1)) {
+      previousSuffix -= 1;
+      nextSuffix -= 1;
+    }
+
+    final int removedLength = previousSuffix - prefixLength;
+    final int insertedLength = nextSuffix - prefixLength;
+    return math.max(removedLength, insertedLength);
+  }
+
   void _applyPreview(PrivateClawPreviewData previewData) {
     _identity = previewData.identity;
     _invite = previewData.invite;
@@ -644,7 +715,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
             previewData.status == PrivateClawSessionStatus.active ||
             previewData.status == PrivateClawSessionStatus.reconnecting ||
             previewData.status == PrivateClawSessionStatus.relayAttached);
-    _inviteController.text = previewData.inviteInput;
+    _setInviteInputText(previewData.inviteInput);
     _messageController.value = TextEditingValue(
       text: previewData.composerDraftText,
       selection: TextSelection.collapsed(
@@ -710,6 +781,9 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
   }) async {
     final AppLocalizations l10n = AppLocalizations.of(context)!;
     final String trimmed = rawInvite.trim();
+    if (_inFlightConnectInput == trimmed && trimmed.isNotEmpty) {
+      return;
+    }
     if (trimmed.isEmpty) {
       setState(() {
         _sessionStatus = PrivateClawSessionStatus.error;
@@ -719,6 +793,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       return;
     }
 
+    _inFlightConnectInput = trimmed;
     try {
       final PrivateClawInvite invite = PrivateClawInvite.fromScan(trimmed);
       final bool shouldContinue = await _confirmRelayOverrideInvite(
@@ -742,6 +817,10 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
         _statusText = l10n.connectFailed(error.toString());
         _isPairingPanelCollapsed = false;
       });
+    } finally {
+      if (_inFlightConnectInput == trimmed) {
+        _inFlightConnectInput = null;
+      }
     }
   }
 
@@ -783,7 +862,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       }
       _sessionStatus = PrivateClawSessionStatus.connecting;
       _statusText = l10n.connectingRelay;
-      _inviteController.text = inviteInput;
+      _setInviteInputText(inviteInput);
       _isPairingPanelCollapsed = collapsePairingPanel;
       _isRenewingSession = false;
     });
@@ -1154,7 +1233,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
         return;
       }
 
-      _inviteController.text = scannedInvite;
+      _setInviteInputText(scannedInvite);
       await _connectFromInput(scannedInvite);
     } finally {
       _isScannerSheetOpen = false;
@@ -1774,7 +1853,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     setState(() {
       _hasConnectedSession = false;
       _invite = null;
-      _inviteController.clear();
+      _setInviteInputText('');
       _participants.clear();
       _messages.clear();
       _availableCommands.clear();
@@ -2891,6 +2970,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
                 TextField(
                   key: const ValueKey<String>('invite-input-field'),
                   controller: _inviteController,
+                  onChanged: _handleInviteInputChanged,
                   minLines: 2,
                   maxLines: 4,
                   decoration: InputDecoration(
@@ -3061,29 +3141,37 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
               child: Row(
                 children: <Widget>[
                   Expanded(
-                    child: TextField(
-                      key: const ValueKey<String>('composer-input-field'),
-                      controller: _messageController,
-                      focusNode: _composerFocusNode,
-                      enabled: _canSend,
-                      onTap: () {
-                        _hideEmojiPicker();
-                        _hidePhotoTray();
+                    child: PrivateClawComposerSubmitShortcuts(
+                      enabled: _supportsComposerSubmitShortcut,
+                      onSubmit: () {
+                        if (_canSend && _hasDraftContent) {
+                          unawaited(_sendMessage());
+                        }
                       },
-                      keyboardType: TextInputType.multiline,
-                      minLines: 1,
-                      maxLines: 4,
-                      textInputAction: TextInputAction.newline,
-                      decoration: InputDecoration(
-                        hintText: _canSend
-                            ? l10n.sendHintActive
-                            : l10n.sendHintInactive,
-                        border: InputBorder.none,
-                        enabledBorder: InputBorder.none,
-                        focusedBorder: InputBorder.none,
-                        disabledBorder: InputBorder.none,
-                        contentPadding: EdgeInsets.zero,
-                        isCollapsed: true,
+                      child: TextField(
+                        key: const ValueKey<String>('composer-input-field'),
+                        controller: _messageController,
+                        focusNode: _composerFocusNode,
+                        enabled: _canSend,
+                        onTap: () {
+                          _hideEmojiPicker();
+                          _hidePhotoTray();
+                        },
+                        keyboardType: TextInputType.multiline,
+                        minLines: 1,
+                        maxLines: 4,
+                        textInputAction: TextInputAction.newline,
+                        decoration: InputDecoration(
+                          hintText: _canSend
+                              ? l10n.sendHintActive
+                              : l10n.sendHintInactive,
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          disabledBorder: InputBorder.none,
+                          contentPadding: EdgeInsets.zero,
+                          isCollapsed: true,
+                        ),
                       ),
                     ),
                   ),
@@ -3384,26 +3472,33 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
 
   Future<void> _openFullscreenComposer() async {
     final AppLocalizations l10n = AppLocalizations.of(context)!;
-    final String? nextText = await Navigator.of(context).push<String>(
-      MaterialPageRoute<String>(
-        fullscreenDialog: true,
-        builder: (BuildContext context) {
-          return FullscreenComposerPage(
-            initialText: _messageController.text,
-            title: l10n.composerFullscreenTitle,
-            hintText: _canSend ? l10n.sendHintActive : l10n.sendHintInactive,
-          );
-        },
-      ),
-    );
-    if (!mounted || nextText == null) {
+    final FullscreenComposerResult? result = await Navigator.of(context)
+        .push<FullscreenComposerResult>(
+          MaterialPageRoute<FullscreenComposerResult>(
+            fullscreenDialog: true,
+            builder: (BuildContext context) {
+              return FullscreenComposerPage(
+                initialText: _messageController.text,
+                title: l10n.composerFullscreenTitle,
+                hintText: _canSend
+                    ? l10n.sendHintActive
+                    : l10n.sendHintInactive,
+              );
+            },
+          ),
+        );
+    if (!mounted || result == null) {
       return;
     }
+    final String nextText = result.text;
     _messageController.value = TextEditingValue(
       text: nextText,
       selection: TextSelection.collapsed(offset: nextText.length),
     );
     _composerFocusNode.requestFocus();
+    if (result.shouldSubmit) {
+      await _sendMessage();
+    }
   }
 
   String _formatVoiceRecordingElapsed() {
@@ -3450,4 +3545,3 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     return '$label-${DateTime.now().microsecondsSinceEpoch}';
   }
 }
-

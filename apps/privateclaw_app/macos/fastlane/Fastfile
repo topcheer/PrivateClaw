@@ -209,6 +209,7 @@ platform :mac do
       metadata_path: "./fastlane/metadata",
       screenshots_path: "./fastlane/screenshots",
       skip_screenshots: privateclaw_skip_macos_screenshots,
+      reject_if_possible: true,
       submit_for_review: true,
       automatic_release: ENV["PRIVATECLAW_AUTOMATIC_RELEASE"] == "true",
       force: true,

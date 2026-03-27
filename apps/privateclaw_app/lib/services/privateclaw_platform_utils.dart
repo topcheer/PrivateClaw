@@ -18,6 +18,14 @@ bool privateClawShouldKeepLiveSessionInBackgroundForTargetPlatform(
       platform == TargetPlatform.linux;
 }
 
+bool privateClawSupportsComposerSubmitShortcutForTargetPlatform(
+  TargetPlatform platform,
+) {
+  return platform == TargetPlatform.macOS ||
+      platform == TargetPlatform.windows ||
+      platform == TargetPlatform.linux;
+}
+
 bool privateClawShouldSuspendLiveSession({
   required TargetPlatform platform,
   required AppLifecycleState state,

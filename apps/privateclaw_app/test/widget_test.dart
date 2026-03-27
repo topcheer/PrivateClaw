@@ -1,9 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:privateclaw_app/main.dart';
+import 'package:privateclaw_app/models/chat_attachment.dart';
 import 'package:privateclaw_app/models/privateclaw_identity.dart';
 import 'package:privateclaw_app/models/privateclaw_invite.dart';
 import 'package:privateclaw_app/models/privateclaw_slash_command.dart';
+import 'package:privateclaw_app/services/privateclaw_active_session_store.dart';
+import 'package:privateclaw_app/services/privateclaw_identity_store.dart';
 import 'package:privateclaw_app/services/privateclaw_platform_utils.dart';
 import 'package:privateclaw_app/services/privateclaw_quick_actions.dart';
 import 'package:privateclaw_app/services/privateclaw_session_client.dart';
@@ -185,6 +191,18 @@ void main() {
       isTrue,
     );
     expect(
+      privateClawSupportsComposerSubmitShortcutForTargetPlatform(
+        TargetPlatform.macOS,
+      ),
+      isTrue,
+    );
+    expect(
+      privateClawSupportsComposerSubmitShortcutForTargetPlatform(
+        TargetPlatform.android,
+      ),
+      isFalse,
+    );
+    expect(
       privateClawShouldKeepLiveSessionInBackgroundForTargetPlatform(
         TargetPlatform.android,
       ),
@@ -270,6 +288,197 @@ void main() {
     },
   );
 
+  testWidgets('desktop composer sends the draft on Ctrl+Enter', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 3.0;
+    tester.view.physicalSize = const Size(1290, 4200);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final TargetPlatform Function() originalResolver =
+        privateClawTargetPlatformResolver;
+    final PrivateClawActiveSessionStoreFactory originalSessionStoreFactory =
+        privateClawActiveSessionStoreFactory;
+    final PrivateClawIdentityStoreFactory originalIdentityStoreFactory =
+        privateClawIdentityStoreFactory;
+    final PrivateClawSessionClientFactory originalSessionClientFactory =
+        privateClawSessionClientFactory;
+
+    privateClawTargetPlatformResolver = () => TargetPlatform.macOS;
+    final DateTime now = DateTime.now().toUtc();
+    final _TestIdentityStore identityStore = _TestIdentityStore(
+      identity: PrivateClawIdentity(
+        appId: 'pc-desktop-shortcut',
+        createdAt: now.subtract(const Duration(minutes: 1)),
+      ),
+    );
+    final List<_TrackingSessionClient> createdClients =
+        <_TrackingSessionClient>[];
+
+    privateClawActiveSessionStoreFactory = () => _TestActiveSessionStore();
+    privateClawIdentityStoreFactory = () => identityStore;
+    privateClawSessionClientFactory =
+        (
+          PrivateClawInvite invite, {
+          required PrivateClawIdentity identity,
+          PrivateClawPushTokenProvider? pushTokenProvider,
+        }) {
+          final _TrackingSessionClient client = _TrackingSessionClient(
+            invite,
+            identity: identity,
+            emitActiveOnConnect: true,
+          );
+          createdClients.add(client);
+          return client;
+        };
+
+    addTearDown(() {
+      privateClawTargetPlatformResolver = originalResolver;
+      privateClawActiveSessionStoreFactory = originalSessionStoreFactory;
+      privateClawIdentityStoreFactory = originalIdentityStoreFactory;
+      privateClawSessionClientFactory = originalSessionClientFactory;
+    });
+
+    final PrivateClawInvite invite = PrivateClawInvite(
+      version: 1,
+      sessionId: 'session-desktop-shortcut',
+      sessionKey: 'desktop-shortcut-session-key',
+      appWsUrl:
+          'wss://relay.privateclaw.us/ws/app?sessionId=session-desktop-shortcut',
+      expiresAt: now.add(const Duration(hours: 2)),
+    );
+
+    await tester.pumpWidget(
+      const PrivateClawApp(skipNotificationsInDebug: true),
+    );
+    await tester.pump();
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('invite-input-field')),
+      encodePrivateClawInviteUri(invite),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(createdClients, hasLength(1));
+
+    final Finder composerField = find.byKey(
+      const ValueKey<String>('composer-input-field'),
+    );
+    await tester.tap(composerField);
+    await tester.pump();
+    await tester.enterText(composerField, 'Send from keyboard shortcut');
+    await tester.pump();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.enter);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.enter);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pump();
+
+    expect(createdClients.single.sentMessages, <String>[
+      'Send from keyboard shortcut',
+    ]);
+    expect(tester.widget<TextField>(composerField).controller?.text, isEmpty);
+  });
+
+  testWidgets('desktop fullscreen composer sends the draft on Ctrl+Enter', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 3.0;
+    tester.view.physicalSize = const Size(1290, 4200);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final TargetPlatform Function() originalResolver =
+        privateClawTargetPlatformResolver;
+    final PrivateClawActiveSessionStoreFactory originalSessionStoreFactory =
+        privateClawActiveSessionStoreFactory;
+    final PrivateClawIdentityStoreFactory originalIdentityStoreFactory =
+        privateClawIdentityStoreFactory;
+    final PrivateClawSessionClientFactory originalSessionClientFactory =
+        privateClawSessionClientFactory;
+
+    privateClawTargetPlatformResolver = () => TargetPlatform.macOS;
+    final DateTime now = DateTime.now().toUtc();
+    final _TestIdentityStore identityStore = _TestIdentityStore(
+      identity: PrivateClawIdentity(
+        appId: 'pc-fullscreen-shortcut',
+        createdAt: now.subtract(const Duration(minutes: 1)),
+      ),
+    );
+    final List<_TrackingSessionClient> createdClients =
+        <_TrackingSessionClient>[];
+
+    privateClawActiveSessionStoreFactory = () => _TestActiveSessionStore();
+    privateClawIdentityStoreFactory = () => identityStore;
+    privateClawSessionClientFactory =
+        (
+          PrivateClawInvite invite, {
+          required PrivateClawIdentity identity,
+          PrivateClawPushTokenProvider? pushTokenProvider,
+        }) {
+          final _TrackingSessionClient client = _TrackingSessionClient(
+            invite,
+            identity: identity,
+            emitActiveOnConnect: true,
+          );
+          createdClients.add(client);
+          return client;
+        };
+
+    addTearDown(() {
+      privateClawTargetPlatformResolver = originalResolver;
+      privateClawActiveSessionStoreFactory = originalSessionStoreFactory;
+      privateClawIdentityStoreFactory = originalIdentityStoreFactory;
+      privateClawSessionClientFactory = originalSessionClientFactory;
+    });
+
+    final PrivateClawInvite invite = PrivateClawInvite(
+      version: 1,
+      sessionId: 'session-fullscreen-shortcut',
+      sessionKey: 'fullscreen-shortcut-session-key',
+      appWsUrl:
+          'wss://relay.privateclaw.us/ws/app?sessionId=session-fullscreen-shortcut',
+      expiresAt: now.add(const Duration(hours: 2)),
+    );
+
+    await tester.pumpWidget(
+      const PrivateClawApp(skipNotificationsInDebug: true),
+    );
+    await tester.pump();
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('invite-input-field')),
+      encodePrivateClawInviteUri(invite),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('composer-expand-button')),
+    );
+    await tester.pumpAndSettle();
+
+    final Finder fullscreenField = find.byKey(
+      const ValueKey<String>('fullscreen-composer-input-field'),
+    );
+    await tester.enterText(fullscreenField, 'Send from fullscreen shortcut');
+    await tester.pump();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.enter);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.enter);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+
+    expect(fullscreenField, findsNothing);
+    expect(createdClients.single.sentMessages, <String>[
+      'Send from fullscreen shortcut',
+    ]);
+  });
+
   testWidgets('desktop scan button falls back to manual invite entry', (
     WidgetTester tester,
   ) async {
@@ -305,6 +514,171 @@ void main() {
       ),
       findsOneWidget,
     );
+  });
+
+  testWidgets('pasting a valid invite auto-connects without tapping join', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 3.0;
+    tester.view.physicalSize = const Size(1290, 4200);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final PrivateClawActiveSessionStoreFactory originalSessionStoreFactory =
+        privateClawActiveSessionStoreFactory;
+    final PrivateClawIdentityStoreFactory originalIdentityStoreFactory =
+        privateClawIdentityStoreFactory;
+    final PrivateClawSessionClientFactory originalSessionClientFactory =
+        privateClawSessionClientFactory;
+
+    final DateTime now = DateTime.now().toUtc();
+    final _TestActiveSessionStore activeSessionStore =
+        _TestActiveSessionStore();
+    final _TestIdentityStore identityStore = _TestIdentityStore(
+      identity: PrivateClawIdentity(
+        appId: 'pc-auto-paste',
+        createdAt: now.subtract(const Duration(minutes: 1)),
+      ),
+    );
+    final List<_TrackingSessionClient> createdClients =
+        <_TrackingSessionClient>[];
+
+    privateClawActiveSessionStoreFactory = () => activeSessionStore;
+    privateClawIdentityStoreFactory = () => identityStore;
+    privateClawSessionClientFactory =
+        (
+          PrivateClawInvite invite, {
+          required PrivateClawIdentity identity,
+          PrivateClawPushTokenProvider? pushTokenProvider,
+        }) {
+          final _TrackingSessionClient client = _TrackingSessionClient(
+            invite,
+            identity: identity,
+          );
+          createdClients.add(client);
+          return client;
+        };
+
+    addTearDown(() {
+      privateClawActiveSessionStoreFactory = originalSessionStoreFactory;
+      privateClawIdentityStoreFactory = originalIdentityStoreFactory;
+      privateClawSessionClientFactory = originalSessionClientFactory;
+    });
+
+    final PrivateClawInvite invite = PrivateClawInvite(
+      version: 1,
+      sessionId: 'session-auto-paste',
+      sessionKey: 'session-auto-paste-key',
+      appWsUrl:
+          'wss://relay.privateclaw.us/ws/app?sessionId=session-auto-paste',
+      expiresAt: now.add(const Duration(hours: 2)),
+    );
+
+    await tester.pumpWidget(
+      const PrivateClawApp(skipNotificationsInDebug: true),
+    );
+    await tester.pump();
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('invite-input-field')),
+      encodePrivateClawInviteUri(invite),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(identityStore.loadOrCreateCalls, 1);
+    expect(createdClients, hasLength(1));
+    expect(createdClients.single.invite.sessionId, invite.sessionId);
+    expect(createdClients.single.connectCalls, 1);
+  });
+
+  testWidgets('typing an invite gradually still waits for join button', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 3.0;
+    tester.view.physicalSize = const Size(1290, 4200);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final PrivateClawActiveSessionStoreFactory originalSessionStoreFactory =
+        privateClawActiveSessionStoreFactory;
+    final PrivateClawIdentityStoreFactory originalIdentityStoreFactory =
+        privateClawIdentityStoreFactory;
+    final PrivateClawSessionClientFactory originalSessionClientFactory =
+        privateClawSessionClientFactory;
+
+    final DateTime now = DateTime.now().toUtc();
+    final _TestActiveSessionStore activeSessionStore =
+        _TestActiveSessionStore();
+    final _TestIdentityStore identityStore = _TestIdentityStore(
+      identity: PrivateClawIdentity(
+        appId: 'pc-gradual-type',
+        createdAt: now.subtract(const Duration(minutes: 1)),
+      ),
+    );
+    final List<_TrackingSessionClient> createdClients =
+        <_TrackingSessionClient>[];
+
+    privateClawActiveSessionStoreFactory = () => activeSessionStore;
+    privateClawIdentityStoreFactory = () => identityStore;
+    privateClawSessionClientFactory =
+        (
+          PrivateClawInvite invite, {
+          required PrivateClawIdentity identity,
+          PrivateClawPushTokenProvider? pushTokenProvider,
+        }) {
+          final _TrackingSessionClient client = _TrackingSessionClient(
+            invite,
+            identity: identity,
+          );
+          createdClients.add(client);
+          return client;
+        };
+
+    addTearDown(() {
+      privateClawActiveSessionStoreFactory = originalSessionStoreFactory;
+      privateClawIdentityStoreFactory = originalIdentityStoreFactory;
+      privateClawSessionClientFactory = originalSessionClientFactory;
+    });
+
+    final PrivateClawInvite invite = PrivateClawInvite(
+      version: 1,
+      sessionId: 'session-gradual-type',
+      sessionKey: 'session-gradual-type-key',
+      appWsUrl:
+          'wss://relay.privateclaw.us/ws/app?sessionId=session-gradual-type',
+      expiresAt: now.add(const Duration(hours: 2)),
+    );
+    final String inviteUri = encodePrivateClawInviteUri(invite);
+    final Finder inviteField = find.byKey(
+      const ValueKey<String>('invite-input-field'),
+    );
+
+    await tester.pumpWidget(
+      const PrivateClawApp(skipNotificationsInDebug: true),
+    );
+    await tester.pump();
+
+    String typedInvite = '';
+    for (final int codeUnit in inviteUri.codeUnits) {
+      typedInvite += String.fromCharCode(codeUnit);
+      await tester.enterText(inviteField, typedInvite);
+      await tester.pump();
+    }
+
+    expect(identityStore.loadOrCreateCalls, 0);
+    expect(createdClients, isEmpty);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('connect-session-button')),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(identityStore.loadOrCreateCalls, 1);
+    expect(createdClients, hasLength(1));
+    expect(createdClients.single.invite.sessionId, invite.sessionId);
+    expect(createdClients.single.connectCalls, 1);
   });
 
   testWidgets('windows voice button uses tap-to-record tooltip', (
@@ -864,4 +1238,93 @@ Open it before it expires.
       expect(find.textContaining('127.0.0.1:8787'), findsOneWidget);
     },
   );
+}
+
+class _TestActiveSessionStore extends PrivateClawActiveSessionStore {
+  final List<PrivateClawActiveSessionRecord> savedRecords =
+      <PrivateClawActiveSessionRecord>[];
+
+  @override
+  Future<PrivateClawActiveSessionRecord?> load() async => null;
+
+  @override
+  Future<void> save({
+    required PrivateClawInvite invite,
+    required PrivateClawIdentity identity,
+  }) async {
+    savedRecords.add(
+      PrivateClawActiveSessionRecord(
+        invite: invite,
+        identity: identity,
+        savedAt: DateTime.now().toUtc(),
+      ),
+    );
+  }
+
+  @override
+  Future<void> clear() async {}
+}
+
+class _TestIdentityStore extends PrivateClawIdentityStore {
+  _TestIdentityStore({required this.identity});
+
+  final PrivateClawIdentity identity;
+  int loadOrCreateCalls = 0;
+
+  @override
+  Future<PrivateClawIdentity> loadOrCreate() async {
+    loadOrCreateCalls += 1;
+    return identity;
+  }
+
+  @override
+  Future<void> save(PrivateClawIdentity identity) async {}
+}
+
+class _TrackingSessionClient extends PrivateClawSessionClient {
+  _TrackingSessionClient(
+    super.invite, {
+    required super.identity,
+    this.emitActiveOnConnect = false,
+  });
+
+  final StreamController<PrivateClawSessionEvent> _eventsController =
+      StreamController<PrivateClawSessionEvent>.broadcast();
+  final bool emitActiveOnConnect;
+  int connectCalls = 0;
+  final List<String> sentMessages = <String>[];
+
+  @override
+  Stream<PrivateClawSessionEvent> get events => _eventsController.stream;
+
+  @override
+  Future<void> connect() async {
+    connectCalls += 1;
+    if (emitActiveOnConnect) {
+      _eventsController.add(
+        const PrivateClawSessionEvent(
+          connectionStatus: PrivateClawSessionStatus.active,
+        ),
+      );
+    }
+  }
+
+  @override
+  Future<void> refreshPushRegistration() async {}
+
+  @override
+  Future<void> sendUserMessage(
+    String text, {
+    List<ChatAttachment> attachments = const <ChatAttachment>[],
+  }) async {
+    sentMessages.add(text.trim());
+  }
+
+  @override
+  Future<void> dispose({
+    String reason = 'client_closed',
+    bool notifyRemote = true,
+  }) async {
+    await _eventsController.close();
+  }
 }

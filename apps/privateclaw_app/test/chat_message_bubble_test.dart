@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:privateclaw_app/models/chat_attachment.dart';
 import 'package:privateclaw_app/models/chat_message.dart';
+import 'package:privateclaw_app/widgets/attachment_card.dart';
 import 'package:privateclaw_app/widgets/chat_message_bubble.dart';
 import 'package:privateclaw_app/widgets/privateclaw_avatar.dart';
 import 'package:url_launcher/url_launcher.dart';

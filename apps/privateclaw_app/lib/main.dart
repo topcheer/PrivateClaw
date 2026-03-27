@@ -29,13 +29,22 @@ import 'services/privateclaw_emoji_store.dart';
 import 'services/privateclaw_identity_store.dart';
 import 'services/privateclaw_firebase_options.dart';
 import 'services/privateclaw_notification_service.dart';
+import 'services/privateclaw_platform_utils.dart';
 import 'services/privateclaw_quick_actions.dart';
 import 'services/privateclaw_session_client.dart';
 import 'store_screenshot_preview.dart';
+import 'widgets/app_bar_icon.dart';
 import 'widgets/chat_message_bubble.dart';
+import 'widgets/common_emoji_sheet.dart';
+import 'widgets/composer_attachment_preview.dart';
+import 'widgets/composer_photo_tile.dart';
+import 'widgets/fullscreen_composer_page.dart';
 import 'widgets/invite_scanner_sheet.dart';
 import 'widgets/privateclaw_avatar.dart';
 import 'widgets/session_qr_sheet.dart';
+import 'widgets/slash_commands_sheet.dart';
+import 'widgets/voice_recording_action_badge.dart';
+import 'widgets/voice_waveform_bars.dart';
 
 const int _maxInlineAttachmentBytes = 5 * 1024 * 1024;
 const Duration _sessionRenewWarningThreshold = Duration(minutes: 30);
@@ -99,7 +108,6 @@ const List<String> _defaultEmoji = <String>[
   '💡',
 ];
 
-enum _EmojiPickerTab { frequent, defaults }
 
 typedef PrivateClawUrlLauncher =
     Future<bool> Function(Uri url, {LaunchMode mode});
@@ -168,70 +176,6 @@ Future<void> main() async {
     ),
   );
 }
-
-bool privateClawShouldSkipNotificationsInDebug({
-  required bool debugSkipNotifications,
-  required StoreScreenshotConfig screenshotConfig,
-}) {
-  return debugSkipNotifications || screenshotConfig.previewData != null;
-}
-
-bool privateClawShouldKeepLiveSessionInBackgroundForTargetPlatform(
-  TargetPlatform platform,
-) {
-  return platform == TargetPlatform.macOS ||
-      platform == TargetPlatform.windows ||
-      platform == TargetPlatform.linux;
-}
-
-bool privateClawShouldSuspendLiveSession({
-  required TargetPlatform platform,
-  required AppLifecycleState state,
-}) {
-  if (privateClawShouldKeepLiveSessionInBackgroundForTargetPlatform(platform)) {
-    return false;
-  }
-  return state == AppLifecycleState.paused ||
-      state == AppLifecycleState.hidden ||
-      state == AppLifecycleState.detached;
-}
-
-bool privateClawShouldShowLocalNotificationForLifecycleState({
-  required TargetPlatform platform,
-  required AppLifecycleState state,
-}) {
-  return platform == TargetPlatform.macOS && state != AppLifecycleState.resumed;
-}
-
-bool privateClawSupportsVoiceRecordingForTargetPlatform(
-  TargetPlatform platform,
-) {
-  return platform == TargetPlatform.android ||
-      platform == TargetPlatform.iOS ||
-      platform == TargetPlatform.macOS ||
-      platform == TargetPlatform.windows;
-}
-
-bool privateClawUsesTapToToggleVoiceRecordingForTargetPlatform(
-  TargetPlatform platform,
-) {
-  return platform == TargetPlatform.windows;
-}
-
-bool privateClawShouldAutoSendPickedAttachmentsForTargetPlatform(
-  TargetPlatform platform,
-) {
-  return platform == TargetPlatform.windows;
-}
-
-bool privateClawSupportsRecentPhotoTrayForTargetPlatform(
-  TargetPlatform platform,
-) {
-  return platform == TargetPlatform.android || platform == TargetPlatform.iOS;
-}
-
-TargetPlatform Function() privateClawTargetPlatformResolver = () =>
-    defaultTargetPlatform;
 
 typedef PrivateClawScannerSheetLauncher =
     Future<String?> Function(BuildContext context, Widget? previewOverride);
@@ -341,7 +285,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
   bool _isStoppingVoiceRecording = false;
   Future<void>? _voiceRecordingStartFuture;
   bool _isEmojiPickerVisible = false;
-  _EmojiPickerTab _emojiPickerTab = _EmojiPickerTab.frequent;
+  EmojiPickerTab _emojiPickerTab = EmojiPickerTab.frequent;
   bool _isPhotoTrayVisible = false;
   bool _isLoadingRecentPhotos = false;
   String _photoTrayStatusText = '';
@@ -1880,7 +1824,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
         useSafeArea: true,
         showDragHandle: true,
         builder: (BuildContext context) {
-          return _SlashCommandsSheet(commands: _availableCommands);
+          return SlashCommandsSheet(commands: _availableCommands);
         },
       );
     } finally {
@@ -2516,7 +2460,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       appBar: AppBar(
         automaticallyImplyLeading: false,
         centerTitle: true,
-        title: const _PrivateClawAppBarIcon(),
+        title: const PrivateClawAppBarIcon(),
       ),
       body: GestureDetector(
         onTap: () {
@@ -2604,7 +2548,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
                       ),
                     ),
                     const SizedBox(height: 20),
-                    _VoiceWaveformBars(
+                    VoiceWaveformBars(
                       samples: _buildVoiceWaveformSamples(),
                       activeColor: _isVoiceCancelArmed
                           ? colorScheme.error
@@ -2612,7 +2556,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
                       inactiveColor: colorScheme.surfaceContainerHighest,
                     ),
                     const Spacer(),
-                    _VoiceRecordingActionBadge(
+                    VoiceRecordingActionBadge(
                       key: const ValueKey<String>('voice-record-hint'),
                       icon: usesTapToToggle
                           ? Icons.send_rounded
@@ -3098,7 +3042,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
                   itemBuilder: (BuildContext context, int index) {
                     final ChatAttachment attachment =
                         _selectedAttachments[index];
-                    return _ComposerAttachmentPreview(
+                    return ComposerAttachmentPreview(
                       attachment: attachment,
                       onDeleted: () => _removeAttachment(attachment.id),
                     );
@@ -3221,11 +3165,11 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
             top: BorderSide(color: theme.colorScheme.outlineVariant),
           ),
         ),
-        child: _CommonEmojiSheet(
+        child: CommonEmojiSheet(
           frequentEmojis: _frequentEmoji,
           defaultEmojis: _defaultEmoji,
           selectedTab: _emojiPickerTab,
-          onTabChanged: (_EmojiPickerTab tab) {
+          onTabChanged: (EmojiPickerTab tab) {
             setState(() {
               _emojiPickerTab = tab;
             });
@@ -3295,7 +3239,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
                         separatorBuilder: (_, __) => const SizedBox(width: 12),
                         itemBuilder: (BuildContext context, int index) {
                           final AssetEntity asset = _recentPhotoAssets[index];
-                          return _ComposerPhotoTile(
+                          return ComposerPhotoTile(
                             assetId: asset.id,
                             thumbnailFuture: _thumbnailFutureForAsset(asset),
                             isSelected: _photoAttachmentIdsByAssetId
@@ -3444,7 +3388,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       MaterialPageRoute<String>(
         fullscreenDialog: true,
         builder: (BuildContext context) {
-          return _FullscreenComposerPage(
+          return FullscreenComposerPage(
             initialText: _messageController.text,
             title: l10n.composerFullscreenTitle,
             hintText: _canSend ? l10n.sendHintActive : l10n.sendHintInactive,
@@ -3507,554 +3451,3 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
   }
 }
 
-class _PrivateClawAppBarIcon extends StatelessWidget {
-  const _PrivateClawAppBarIcon();
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      key: const ValueKey<String>('app-bar-icon'),
-      borderRadius: BorderRadius.circular(8),
-      child: Image.asset(
-        privateClawAppIconAsset,
-        width: 28,
-        height: 28,
-        fit: BoxFit.cover,
-      ),
-    );
-  }
-}
-
-class _CommonEmojiSheet extends StatelessWidget {
-  const _CommonEmojiSheet({
-    required this.frequentEmojis,
-    required this.defaultEmojis,
-    required this.selectedTab,
-    required this.onTabChanged,
-    required this.onSelected,
-  });
-
-  final List<String> frequentEmojis;
-  final List<String> defaultEmojis;
-  final _EmojiPickerTab selectedTab;
-  final ValueChanged<_EmojiPickerTab> onTabChanged;
-  final ValueChanged<String> onSelected;
-
-  List<String> get _visibleEmojis =>
-      selectedTab == _EmojiPickerTab.frequent ? frequentEmojis : defaultEmojis;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final AppLocalizations l10n = AppLocalizations.of(context)!;
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Row(
-              children: <Widget>[
-                Text(l10n.emojiPickerTitle, style: theme.textTheme.titleMedium),
-                const SizedBox(width: 12),
-                ChoiceChip(
-                  label: Text(l10n.emojiPickerFrequentTab),
-                  selected: selectedTab == _EmojiPickerTab.frequent,
-                  onSelected: (_) {
-                    onTabChanged(_EmojiPickerTab.frequent);
-                  },
-                ),
-                const SizedBox(width: 8),
-                ChoiceChip(
-                  label: Text(l10n.emojiPickerDefaultTab),
-                  selected: selectedTab == _EmojiPickerTab.defaults,
-                  onSelected: (_) {
-                    onTabChanged(_EmojiPickerTab.defaults);
-                  },
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            SingleChildScrollView(
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: _visibleEmojis
-                    .map(
-                      (String emoji) => TextButton(
-                        onPressed: () => onSelected(emoji),
-                        style: TextButton.styleFrom(
-                          minimumSize: const Size(48, 48),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
-                        ),
-                        child: Text(
-                          emoji,
-                          style: theme.textTheme.headlineSmall,
-                        ),
-                      ),
-                    )
-                    .toList(growable: false),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ComposerAttachmentPreview extends StatelessWidget {
-  const _ComposerAttachmentPreview({
-    required this.attachment,
-    required this.onDeleted,
-  });
-
-  final ChatAttachment attachment;
-  final VoidCallback onDeleted;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final Uint8List? imageBytes = attachment.isImage
-        ? attachment.decodeBytes()
-        : null;
-    final bool showsImage = imageBytes != null && imageBytes.isNotEmpty;
-    final double width = showsImage ? 72 : 188;
-    return SizedBox(
-      width: width,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: <Widget>[
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: theme.colorScheme.outlineVariant),
-              ),
-              child: showsImage
-                  ? ClipRRect(
-                      borderRadius: BorderRadius.circular(17),
-                      child: Image.memory(imageBytes, fit: BoxFit.cover),
-                    )
-                  : Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Row(
-                        children: <Widget>[
-                          Icon(_attachmentIconForPreview(attachment)),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              attachment.name,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-            ),
-          ),
-          Positioned(
-            top: -6,
-            right: -6,
-            child: Material(
-              color: theme.colorScheme.surface,
-              shape: const CircleBorder(),
-              elevation: 2,
-              child: InkWell(
-                onTap: onDeleted,
-                customBorder: const CircleBorder(),
-                child: const Padding(
-                  padding: EdgeInsets.all(4),
-                  child: Icon(Icons.close, size: 16),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ComposerPhotoTile extends StatelessWidget {
-  const _ComposerPhotoTile({
-    required this.assetId,
-    required this.thumbnailFuture,
-    required this.isSelected,
-    required this.isLoading,
-    required this.onTap,
-  });
-
-  final String assetId;
-  final Future<Uint8List?> thumbnailFuture;
-  final bool isSelected;
-  final bool isLoading;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        key: ValueKey<String>('photo-tray-tile-$assetId'),
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
-        child: Ink(
-          width: 120,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: isSelected
-                  ? theme.colorScheme.primary
-                  : theme.colorScheme.outlineVariant,
-              width: isSelected ? 2 : 1,
-            ),
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(19),
-            child: Stack(
-              fit: StackFit.expand,
-              children: <Widget>[
-                FutureBuilder<Uint8List?>(
-                  future: thumbnailFuture,
-                  builder:
-                      (
-                        BuildContext context,
-                        AsyncSnapshot<Uint8List?> snapshot,
-                      ) {
-                        final Uint8List? bytes = snapshot.data;
-                        if (bytes == null || bytes.isEmpty) {
-                          return DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: theme.colorScheme.surfaceContainerHighest,
-                            ),
-                            child: const Center(
-                              child: Icon(Icons.photo_outlined),
-                            ),
-                          );
-                        }
-                        return Image.memory(bytes, fit: BoxFit.cover);
-                      },
-                ),
-                if (isSelected)
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.primary.withValues(alpha: 0.2),
-                    ),
-                  ),
-                if (isLoading) const Center(child: CircularProgressIndicator()),
-                Positioned(
-                  top: 8,
-                  right: 8,
-                  child: AnimatedOpacity(
-                    duration: const Duration(milliseconds: 120),
-                    opacity: isSelected ? 1 : 0,
-                    child: Container(
-                      width: 24,
-                      height: 24,
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.primary,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.check,
-                        size: 16,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _VoiceWaveformBars extends StatelessWidget {
-  const _VoiceWaveformBars({
-    required this.samples,
-    required this.activeColor,
-    required this.inactiveColor,
-  });
-
-  final List<double> samples;
-  final Color activeColor;
-  final Color inactiveColor;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 64,
-      child: Row(
-        children: samples
-            .map(
-              (double sample) => Expanded(
-                child: Align(
-                  alignment: Alignment.center,
-                  child: Container(
-                    width: 4,
-                    height: 16 + (sample * 40),
-                    decoration: BoxDecoration(
-                      color: Color.lerp(inactiveColor, activeColor, sample),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                  ),
-                ),
-              ),
-            )
-            .toList(growable: false),
-      ),
-    );
-  }
-}
-
-class _VoiceRecordingActionBadge extends StatelessWidget {
-  const _VoiceRecordingActionBadge({
-    required this.icon,
-    required this.label,
-    required this.backgroundColor,
-    required this.foregroundColor,
-    super.key,
-  });
-
-  final IconData icon;
-  final String label;
-  final Color backgroundColor;
-  final Color foregroundColor;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: backgroundColor,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Icon(icon, color: foregroundColor),
-            const SizedBox(width: 8),
-            Text(
-              label,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color: foregroundColor,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _FullscreenComposerPage extends StatefulWidget {
-  const _FullscreenComposerPage({
-    required this.initialText,
-    required this.title,
-    required this.hintText,
-  });
-
-  final String initialText;
-  final String title;
-  final String hintText;
-
-  @override
-  State<_FullscreenComposerPage> createState() =>
-      _FullscreenComposerPageState();
-}
-
-class _FullscreenComposerPageState extends State<_FullscreenComposerPage> {
-  late final TextEditingController _controller = TextEditingController(
-    text: widget.initialText,
-  );
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  Future<bool> _handleWillPop() async {
-    Navigator.of(context).pop(_controller.text);
-    return false;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final Color composerControlColor = Theme.of(
-      context,
-    ).colorScheme.surfaceContainerHighest;
-    return WillPopScope(
-      onWillPop: _handleWillPop,
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text(widget.title),
-          actions: <Widget>[
-            IconButton(
-              onPressed: () {
-                Navigator.of(context).pop(_controller.text);
-              },
-              icon: const Icon(Icons.check),
-            ),
-          ],
-        ),
-        body: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: DecoratedBox(
-              key: const ValueKey<String>('fullscreen-composer-shell'),
-              decoration: BoxDecoration(
-                color: composerControlColor,
-                borderRadius: BorderRadius.circular(24),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-                child: TextField(
-                  key: const ValueKey<String>(
-                    'fullscreen-composer-input-field',
-                  ),
-                  controller: _controller,
-                  autofocus: true,
-                  keyboardType: TextInputType.multiline,
-                  textInputAction: TextInputAction.newline,
-                  textAlignVertical: TextAlignVertical.top,
-                  expands: true,
-                  minLines: null,
-                  maxLines: null,
-                  decoration: InputDecoration(
-                    hintText: widget.hintText,
-                    border: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                    disabledBorder: InputBorder.none,
-                    contentPadding: EdgeInsets.zero,
-                    isCollapsed: true,
-                    alignLabelWithHint: true,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-IconData _attachmentIconForPreview(ChatAttachment attachment) {
-  if (attachment.isImage) {
-    return Icons.image_outlined;
-  }
-  if (attachment.isAudio) {
-    return Icons.mic_none;
-  }
-  if (attachment.isVideo) {
-    return Icons.videocam_outlined;
-  }
-  return Icons.attach_file;
-}
-
-class _SlashCommandsSheet extends StatefulWidget {
-  const _SlashCommandsSheet({required this.commands});
-
-  final List<PrivateClawSlashCommand> commands;
-
-  @override
-  State<_SlashCommandsSheet> createState() => _SlashCommandsSheetState();
-}
-
-class _SlashCommandsSheetState extends State<_SlashCommandsSheet> {
-  final TextEditingController _searchController = TextEditingController();
-
-  List<PrivateClawSlashCommand> get _filteredCommands {
-    final String query = _searchController.text.trim().toLowerCase();
-    if (query.isEmpty) {
-      return widget.commands;
-    }
-    return widget.commands
-        .where((PrivateClawSlashCommand command) {
-          final String haystack = '${command.slash} ${command.description}'
-              .toLowerCase();
-          return haystack.contains(query);
-        })
-        .toList(growable: false);
-  }
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final List<PrivateClawSlashCommand> commands = _filteredCommands;
-    final double keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
-    final double screenHeight = MediaQuery.sizeOf(context).height;
-    final double sheetHeight = screenHeight > 700 ? 520 : screenHeight * 0.72;
-    return AnimatedPadding(
-      duration: const Duration(milliseconds: 180),
-      curve: Curves.easeOut,
-      padding: EdgeInsets.only(bottom: keyboardInset),
-      child: SizedBox(
-        height: sheetHeight,
-        child: Column(
-          children: <Widget>[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: TextField(
-                key: const ValueKey<String>('slash-command-search'),
-                controller: _searchController,
-                autofocus: true,
-                onChanged: (_) {
-                  setState(() {});
-                },
-                decoration: InputDecoration(
-                  prefixIcon: const Icon(Icons.search),
-                  hintText: MaterialLocalizations.of(context).searchFieldLabel,
-                  border: const OutlineInputBorder(),
-                ),
-              ),
-            ),
-            Expanded(
-              child: commands.isEmpty
-                  ? const Center(child: Icon(Icons.search_off))
-                  : ListView.separated(
-                      padding: const EdgeInsets.only(bottom: 16),
-                      itemCount: commands.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
-                      itemBuilder: (BuildContext context, int index) {
-                        final PrivateClawSlashCommand item = commands[index];
-                        return ListTile(
-                          leading: const Icon(Icons.terminal),
-                          title: Text(item.slash),
-                          subtitle: Text(item.description),
-                          trailing: item.acceptsArgs
-                              ? const Icon(Icons.edit_outlined)
-                              : null,
-                          onTap: () {
-                            Navigator.of(context).pop(item);
-                          },
-                        );
-                      },
-                    ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}

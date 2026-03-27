@@ -1,6 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:privateclaw_app/main.dart';
+import 'package:privateclaw_app/services/privateclaw_platform_utils.dart';
 
 void main() {
   test(

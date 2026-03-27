@@ -335,7 +335,17 @@ export async function runPairSession({
       }
       break;
     }
-    await provider.dispose();
+    const forceExitHandler = (): never => {
+      process.exit(130);
+    };
+    process.once("SIGINT", forceExitHandler);
+    process.once("SIGTERM", forceExitHandler);
+    try {
+      await provider.dispose();
+    } finally {
+      process.removeListener("SIGINT", forceExitHandler);
+      process.removeListener("SIGTERM", forceExitHandler);
+    }
     return bundle;
   } catch (error) {
     await provider.dispose();

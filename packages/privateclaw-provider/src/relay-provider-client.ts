@@ -464,7 +464,19 @@ export class RelayProviderClient {
     }
 
     await new Promise<void>((resolve) => {
-      socket.once("close", () => resolve());
+      const forceCloseTimer = setTimeout(() => {
+        socket.removeAllListeners("close");
+        try {
+          socket.terminate();
+        } catch {
+          // already closed
+        }
+        resolve();
+      }, 3_000);
+      socket.once("close", () => {
+        clearTimeout(forceCloseTimer);
+        resolve();
+      });
       socket.close(1000, "provider_shutdown");
     });
   }

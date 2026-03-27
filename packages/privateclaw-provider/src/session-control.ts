@@ -702,12 +702,14 @@ export class PrivateClawSessionControlServer {
 
   async stop(): Promise<void> {
     if (this.server) {
-      await new Promise<void>((resolve, reject) => {
+      await new Promise<void>((resolve) => {
+        const forceCloseTimer = setTimeout(() => {
+          this.server?.closeAllConnections?.();
+          resolve();
+        }, 3_000);
         this.server!.close((error) => {
-          if (error) {
-            reject(error);
-            return;
-          }
+          clearTimeout(forceCloseTimer);
+          void error;
           resolve();
         });
       });

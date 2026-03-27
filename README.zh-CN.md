@@ -451,7 +451,7 @@ docker run --rm \
 
 ```bash
 gh workflow run app-arm-probe.yml \
-  -f flutter_version=3.38.6 \
+  -f flutter_version=3.41.6 \
   -f flutter_channel=stable \
   -f flutter_install_method=flutter-action \
   -f build_mode=release \
@@ -463,7 +463,7 @@ gh workflow run app-arm-probe.yml \
 
 这样 app 发布使用 `app-v*` tag，而 provider / relay 现有的 npm 发布流程仍继续使用 `v*` tag，互不干扰。
 
-当前仓库仍固定使用 Flutter `3.38.6`，而它的官方 release manifest 只提供 Linux / Windows 的 `x64` 桌面 SDK 归档。为了依然产出 Linux / Windows 的 `arm64` 桌面包，GitHub 的 app release workflow 现在会在 `ubuntu-24.04-arm` 和 `windows-11-arm` 上使用已经验证过的 clone-and-bootstrap 方案：浅克隆 Flutter `3.38.6` 仓库、加入 `PATH`，并在桌面构建前先跑一次 `flutter doctor`。macOS 双架构仍继续走正常的预构建 SDK 路径。
+当前仓库现在固定使用 Flutter `3.41.6`，而它的官方 release manifest 仍然只提供 Linux / Windows 的 `x64` 桌面 SDK 归档。为了依然产出 Linux / Windows 的 `arm64` 桌面包，GitHub 的 app release workflow 会在 `ubuntu-24.04-arm` 和 `windows-11-arm` 上使用已经验证过的 clone-and-bootstrap 方案：浅克隆 Flutter `3.41.6` 仓库、加入 `PATH`，并在桌面构建前先跑一次 `flutter doctor`。macOS 双架构仍继续走正常的预构建 SDK 路径。
 
 ### 发布到 npm 的 relay 包
 

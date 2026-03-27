@@ -176,6 +176,7 @@ private final class PrivateClawLocalNotificationsBridge: NSObject,
   ) {
     DispatchQueue.main.async {
       if response.notification.request.identifier.hasPrefix("privateclaw.") {
+        NSApplication.shared.unhide(nil)
         NSApplication.shared.activate(ignoringOtherApps: true)
         self.window?.makeKeyAndOrderFront(nil)
         self.window?.orderFrontRegardless()
@@ -417,7 +418,7 @@ private final class PrivateClawAudioRecorderBridge: NSObject {
   }
 }
 
-class MainFlutterWindow: NSWindow {
+class MainFlutterWindow: NSWindow, NSWindowDelegate {
   private var audioRecorderBridge: PrivateClawAudioRecorderBridge?
   private var localNotificationsBridge: PrivateClawLocalNotificationsBridge?
 
@@ -440,5 +441,18 @@ class MainFlutterWindow: NSWindow {
     )
 
     super.awakeFromNib()
+    delegate = self
+    (NSApp.delegate as? AppDelegate)?.ensureStatusItem()
+  }
+
+  func windowShouldClose(_ sender: NSWindow) -> Bool {
+    guard let appDelegate = NSApp.delegate as? AppDelegate else {
+      return true
+    }
+    if appDelegate.shouldAllowMainWindowClose {
+      return true
+    }
+    appDelegate.hideMainWindow()
+    return false
   }
 }

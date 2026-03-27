@@ -6,7 +6,7 @@ on:
       flutter_version:
         description: Flutter version to probe on ARM desktop runners
         required: true
-        default: '3.38.6'
+        default: '3.41.6'
         type: string
       flutter_channel:
         description: Flutter channel used for manifest lookup and setup

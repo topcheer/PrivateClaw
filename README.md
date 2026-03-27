@@ -469,7 +469,7 @@ This repository now also includes `.github/workflows/app-release.yml` for packag
 
 ```bash
 gh workflow run app-arm-probe.yml \
-  -f flutter_version=3.38.6 \
+  -f flutter_version=3.41.6 \
   -f flutter_channel=stable \
   -f flutter_install_method=flutter-action \
   -f build_mode=release \
@@ -481,7 +481,7 @@ To test the clone-based workaround discussed in `subosito/flutter-action` issue 
 
 Keeping app releases on `app-v*` tags leaves the existing provider / relay npm publish flow on `v*` tags unchanged.
 
-This repo still pins Flutter `3.38.6`, whose official release manifests only provide `x64` desktop SDK archives for Linux and Windows. To keep `arm64` desktop artifacts enabled anyway, the GitHub app release workflow now uses the validated clone-and-bootstrap workaround on `ubuntu-24.04-arm` and `windows-11-arm`: it shallow-clones the `3.38.6` Flutter repo, adds it to `PATH`, and runs `flutter doctor` before the desktop build. macOS continues to use the normal prebuilt SDK path for both `x64` and `arm64`.
+This repo now pins Flutter `3.41.6`, whose official release manifests still only provide `x64` desktop SDK archives for Linux and Windows. To keep `arm64` desktop artifacts enabled anyway, the GitHub app release workflow uses the validated clone-and-bootstrap workaround on `ubuntu-24.04-arm` and `windows-11-arm`: it shallow-clones the `3.41.6` Flutter repo, adds it to `PATH`, and runs `flutter doctor` before the desktop build. macOS continues to use the normal prebuilt SDK path for both `x64` and `arm64`.
 
 ### Published relay npm package
 

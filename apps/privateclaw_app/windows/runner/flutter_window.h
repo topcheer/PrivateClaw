@@ -24,12 +24,21 @@ class FlutterWindow : public Win32Window {
                          LPARAM const lparam) noexcept override;
 
  private:
+  void AddTrayIcon();
+  void RemoveTrayIcon(HWND window);
+  void HideToTray();
+  void RestoreFromTray();
+  void ShowTrayMenu();
+
   // The project to run.
   flutter::DartProject project_;
 
   // The Flutter instance hosted by this window.
   std::unique_ptr<flutter::FlutterViewController> flutter_controller_;
   std::unique_ptr<PrivateClawAudioRecorder> audio_recorder_;
+  bool allow_window_close_ = false;
+  bool tray_icon_added_ = false;
+  HMENU tray_menu_ = nullptr;
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

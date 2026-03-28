@@ -54,7 +54,7 @@ If `openclaw` is already installed on the current machine, the quickest standalo
 npx -y @privateclaw/privateclaw@latest
 ```
 
-That `npx` setup wizard checks local OpenClaw, installs or updates the plugin, enables it, restarts the gateway, and then immediately starts pairing. It prompts for single vs group chat and for one of these session-duration presets: `30m`, `2h`, `4h`, `8h`, `24h`, `1w`, `1mo`, `1y`, or `permanent` (`100 years`).
+That `npx` setup wizard checks local OpenClaw, installs or updates the plugin, enables it, restarts the gateway, and then immediately starts pairing. It prompts for single vs group chat and for one of these session-duration presets: `30m`, `2h`, `4h`, `8h`, `24h`, `1w`, `1mo`, `1y`, or `permanent` (`100 years`). Because it downloads the npm package directly, it is also the fastest way to pick up a newer npm patch before the matching ClawHub package is updated.
 
 The production default relay for this package is:
 
@@ -62,7 +62,7 @@ The production default relay for this package is:
 https://relay.privateclaw.us
 ```
 
-Recent OpenClaw builds try ClawHub first for bare npm specs. Until the PrivateClaw ClawHub listing is fully available everywhere, the reliable manual production path is to pack the npm package locally and install the generated archive:
+Recent OpenClaw builds try ClawHub first for bare npm specs. That means `openclaw plugins install @privateclaw/privateclaw` follows the newest version currently published on ClawHub, which can lag the newest npm patch. If you want to force the newest npm package immediately, pack it locally and install the generated archive instead:
 
 ```bash
 npm pack @privateclaw/privateclaw@latest

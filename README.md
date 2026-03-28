@@ -126,7 +126,7 @@ openclaw plugins install ./privateclaw-privateclaw-*.tgz
 openclaw plugins enable privateclaw
 ```
 
-Recent OpenClaw builds try ClawHub first for bare npm specs. Until the PrivateClaw ClawHub listing is fully available everywhere, the reliable manual production path is to pack the npm package locally and install the generated archive.
+Recent OpenClaw builds try ClawHub first for bare npm specs. That means `openclaw plugins install @privateclaw/privateclaw` follows the newest version currently published on ClawHub, which can lag the newest npm patch. If you want to force the newest npm package immediately, pack it locally and install the generated archive instead.
 
 If you are using the default public relay at `https://relay.privateclaw.us`, the `relayBaseUrl` config step is optional and can be skipped. Only run `openclaw config set plugins.entries.privateclaw.config.relayBaseUrl ...` when you want to change the default relay for the whole plugin. For one-off invites, you can now override the relay per command instead of changing persistent config.
 
@@ -152,7 +152,7 @@ If `openclaw` is already installed on the current machine, the fastest local boo
 npx -y @privateclaw/privateclaw@latest
 ```
 
-That standalone `npx` flow checks local OpenClaw, installs or updates the plugin, enables it, restarts the gateway, and then immediately starts pairing. It prompts for single vs group mode and for one of these session-duration presets: `30m`, `2h`, `4h`, `8h`, `24h`, `1w`, `1mo`, `1y`, or `permanent` (`100 years`).
+That standalone `npx` flow checks local OpenClaw, installs or updates the plugin, enables it, restarts the gateway, and then immediately starts pairing. It prompts for single vs group mode and for one of these session-duration presets: `30m`, `2h`, `4h`, `8h`, `24h`, `1w`, `1mo`, `1y`, or `permanent` (`100 years`). Because it downloads the npm package directly, it is also the fastest way to pick up a newer npm patch before the matching ClawHub package is updated.
 
 For repeatable non-interactive runs, you can preselect the same choices:
 
@@ -217,7 +217,7 @@ For cross-channel safety, keep the invite URI in the announcement text even when
 
 #### Path B: local pairing directly from the OpenClaw CLI
 
-If you want to start a session without another chat app, the easiest path is now `npx -y @privateclaw/privateclaw@latest` on a machine that already has OpenClaw installed locally. That standalone wizard bootstraps the local plugin install and then starts pairing for you.
+If you want to start a session without another chat app, the easiest path is now `npx -y @privateclaw/privateclaw@latest` on a machine that already has OpenClaw installed locally. That standalone wizard bootstraps the local plugin install and then starts pairing for you. It also follows npm directly, so it can pick up a newer patch before `openclaw plugins install @privateclaw/privateclaw` does.
 
 Once the plugin is installed and enabled, restart the running OpenClaw gateway/service so it reloads the extension. After that restart, the gateway now brings up the internal PrivateClaw `plugin-service` eagerly, so `openclaw privateclaw pair` no longer depends on first warming the plugin through `/privateclaw` on another chat surface. Then use the provider CLI that it adds to OpenClaw for the shared session-management commands below. The same shared commands also exist on the standalone npm binary as `privateclaw-provider <subcommand>`:
 

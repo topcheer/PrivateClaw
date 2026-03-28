@@ -105,7 +105,7 @@ openclaw plugins install ./privateclaw-privateclaw-*.tgz
 openclaw plugins enable privateclaw
 ```
 
-最近的 OpenClaw 对裸 npm spec 会先查 ClawHub。由于 PrivateClaw 的 ClawHub 条目还没有在所有环境里稳定可用，当前更可靠的生产安装路径是先把 npm 包打成本地归档，再把生成的 `.tgz` 装进 OpenClaw。
+最近的 OpenClaw 对裸 npm spec 会先查 ClawHub。这意味着 `openclaw plugins install @privateclaw/privateclaw` 实际跟随的是 ClawHub 当前发布的最新版，它可能会比 npm 上最新的 patch 版本慢一步。如果你想立刻强制使用 npm 上最新的包，就先把 npm 包打成本地归档，再把生成的 `.tgz` 装进 OpenClaw。
 
 如果你直接使用默认公共 relay `https://relay.privateclaw.us`，那么 `relayBaseUrl` 这一步是可选的，可以跳过。只有在你想把 PrivateClaw 的默认 relay 改成自己的部署时，才需要额外执行 `openclaw config set plugins.entries.privateclaw.config.relayBaseUrl ...`。如果只是某一次邀请想临时改 relay，现在也可以直接在命令里覆盖，而不用改持久配置。
 
@@ -131,7 +131,7 @@ openclaw plugins enable privateclaw
 npx -y @privateclaw/privateclaw@latest
 ```
 
-这个 `npx` 独立流程会检查本机 OpenClaw、自动安装或更新插件、启用插件、重启 gateway，然后立刻开始配对。过程中会提示你选择单聊还是群聊，以及这些会话时长预设之一：`30m`、`2h`、`4h`、`8h`、`24h`、`1w`、`1mo`、`1y`、`permanent`（实际表示 `100 年`）。
+这个 `npx` 独立流程会检查本机 OpenClaw、自动安装或更新插件、启用插件、重启 gateway，然后立刻开始配对。过程中会提示你选择单聊还是群聊，以及这些会话时长预设之一：`30m`、`2h`、`4h`、`8h`、`24h`、`1w`、`1mo`、`1y`、`permanent`（实际表示 `100 年`）。由于它直接使用 npm 包本身，所以如果 npm 上已经有比 ClawHub 更新的 patch，它也是最快拿到最新 patch 的方式。
 
 如果你想把这些选择提前写死，也可以这样运行：
 
@@ -187,7 +187,7 @@ openclaw channels add --channel telegram --token <token>
 
 #### 方式 B：直接用 OpenClaw CLI 本地起配对会话
 
-如果你不想借助另一个聊天工具，现在最省事的路径是直接在已经装好 OpenClaw 的机器上运行 `npx -y @privateclaw/privateclaw@latest`。这个独立向导会先把本地插件安装/启用好，再替你开始配对。
+如果你不想借助另一个聊天工具，现在最省事的路径是直接在已经装好 OpenClaw 的机器上运行 `npx -y @privateclaw/privateclaw@latest`。这个独立向导会先把本地插件安装/启用好，再替你开始配对。它也直接跟随 npm，所以往往会比 `openclaw plugins install @privateclaw/privateclaw` 更早拿到新的 patch。
 
 当插件已经安装并启用后，先重启正在运行的 OpenClaw gateway / service，让它重新加载扩展。重启完成后，gateway 现在会主动拉起内部的 PrivateClaw `plugin-service`，因此 `openclaw privateclaw pair` 不再依赖“先去别的聊天渠道里跑一次 `/privateclaw` 预热插件”。随后，下面这些共享的会话管理命令会出现在 `openclaw privateclaw` 里；独立 npm 二进制 `privateclaw-provider <subcommand>` 也提供同一组共享命令：
 

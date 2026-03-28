@@ -224,8 +224,18 @@ jobs:
         run: >
           flutter build windows
           --release
+          --target-platform windows-${{ matrix.arch }}
           --build-name "${{ needs.prepare.outputs.version_name }}"
           --build-number "${{ needs.prepare.outputs.build_number }}"
+
+      - name: Build Windows Store MSIX package
+        if: matrix.platform == 'windows'
+        working-directory: apps/privateclaw_app
+        shell: pwsh
+        env:
+          PRIVATECLAW_BUILD_NAME: ${{ needs.prepare.outputs.version_name }}
+          PRIVATECLAW_BUILD_NUMBER: ${{ needs.prepare.outputs.build_number }}
+        run: node ../../scripts/build-windows-store-package.mjs --skip-build --architecture ${{ matrix.arch }}
 
       - id: package-linux
         if: matrix.platform == 'linux'
@@ -303,6 +313,59 @@ jobs:
         with:
           name: ${{ steps.package-windows.outputs.artifact }}
           path: apps/privateclaw_app/${{ steps.package-windows.outputs.artifact }}
+          if-no-files-found: error
+
+      - name: Upload Windows Store package
+        if: matrix.platform == 'windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-store-msix-${{ matrix.arch }}
+          path: apps/privateclaw_app/builds/windows-store/PrivateClaw-${{ needs.prepare.outputs.version_slug }}-windows-store-${{ matrix.arch }}.msix
+          if-no-files-found: error
+
+  windows-store-bundle:
+    name: Build Windows Store bundle
+    if: >
+      always() &&
+      needs.prepare.result == 'success' &&
+      needs.validate-app.result == 'success' &&
+      needs.desktop.result == 'success'
+    needs:
+      - prepare
+      - validate-app
+      - desktop
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Download Windows Store MSIX inputs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: windows-store-msix-*
+          path: apps/privateclaw_app/builds/windows-store/input
+          merge-multiple: true
+
+      - name: List Windows Store MSIX inputs
+        shell: pwsh
+        run: Get-ChildItem -Recurse apps/privateclaw_app/builds/windows-store/input
+
+      - name: Build Windows Store bundle
+        working-directory: apps/privateclaw_app
+        shell: pwsh
+        env:
+          PRIVATECLAW_BUILD_NAME: ${{ needs.prepare.outputs.version_name }}
+          PRIVATECLAW_BUILD_NUMBER: ${{ needs.prepare.outputs.build_number }}
+        run: node ../../scripts/build-windows-store-bundle.mjs --input-dir builds/windows-store/input
+
+      - name: Upload Windows Store bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: PrivateClaw-${{ needs.prepare.outputs.version_slug }}-windows-store.msixbundle
+          path: apps/privateclaw_app/builds/windows-store/PrivateClaw-${{ needs.prepare.outputs.version_slug }}-windows-store.msixbundle
           if-no-files-found: error
 
   android:
@@ -440,12 +503,14 @@ jobs:
       needs.prepare.result == 'success' &&
       needs.validate-app.result == 'success' &&
       needs.desktop.result == 'success' &&
+      needs.windows-store-bundle.result == 'success' &&
       (needs.android.result == 'success' || needs.android.result == 'skipped') &&
       (needs.ios.result == 'success' || needs.ios.result == 'skipped')
     needs:
       - prepare
       - validate-app
       - desktop
+      - windows-store-bundle
       - android
       - ios
     runs-on: ubuntu-24.04
@@ -454,6 +519,9 @@ jobs:
         with:
           path: release-assets
           merge-multiple: true
+
+      - name: Drop intermediate Windows Store MSIX packages
+        run: find release-assets -maxdepth 1 -type f -name 'PrivateClaw-*-windows-store-*.msix' -delete
 
       - name: List release assets
         run: ls -R release-assets

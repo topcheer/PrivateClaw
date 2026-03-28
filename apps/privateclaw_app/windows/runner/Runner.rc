@@ -89,11 +89,11 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "gg.ai" "\0"
+            VALUE "CompanyName", "GuangGuang AI Studio" "\0"
             VALUE "FileDescription", "PrivateClaw" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "PrivateClaw" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 gg.ai. All rights reserved." "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 GuangGuang AI Studio. All rights reserved." "\0"
             VALUE "OriginalFilename", "PrivateClaw.exe" "\0"
             VALUE "ProductName", "PrivateClaw" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"

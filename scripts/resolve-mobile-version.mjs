@@ -1,10 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(scriptDir, "..");
-const pubspecPath = path.join(repoRoot, "apps", "privateclaw_app", "pubspec.yaml");
+export const repoRoot = path.resolve(scriptDir, "..");
+export const pubspecPath = path.join(repoRoot, "apps", "privateclaw_app", "pubspec.yaml");
 const buildEpochSeconds = Math.floor(Date.UTC(2024, 0, 1, 0, 0, 0) / 1000);
 
 function parseArgs(argv) {
@@ -31,7 +31,7 @@ function shellEscape(value) {
   return `'${String(value).replace(/'/g, `'\"'\"'`)}'`;
 }
 
-function readPubspecVersion(filePath) {
+export function readPubspecVersion(filePath) {
   const source = fs.readFileSync(filePath, "utf8");
   const match = source.match(/^version:\s*([0-9]+\.[0-9]+\.[0-9]+)(?:\+([0-9]+))?\s*$/m);
 
@@ -45,7 +45,7 @@ function readPubspecVersion(filePath) {
   };
 }
 
-function resolveMobileVersion() {
+export function resolveMobileVersion() {
   const pubspecVersion = readPubspecVersion(pubspecPath);
   const overrideBuildName = process.env.PRIVATECLAW_BUILD_NAME?.trim();
   const overrideBuildNumber = process.env.PRIVATECLAW_BUILD_NUMBER?.trim();
@@ -84,13 +84,23 @@ function renderShell(version) {
   ].join("\n");
 }
 
-const { format } = parseArgs(process.argv.slice(2));
-const version = resolveMobileVersion();
+function isMainModule() {
+  if (!process.argv[1]) {
+    return false;
+  }
 
-if (format === "json") {
-  console.log(JSON.stringify(version));
-} else if (format === "shell") {
-  console.log(renderShell(version));
-} else {
-  console.log(renderText(version));
+  return pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url;
+}
+
+if (isMainModule()) {
+  const { format } = parseArgs(process.argv.slice(2));
+  const version = resolveMobileVersion();
+
+  if (format === "json") {
+    console.log(JSON.stringify(version));
+  } else if (format === "shell") {
+    console.log(renderShell(version));
+  } else {
+    console.log(renderText(version));
+  }
 }

@@ -458,8 +458,8 @@ This repository now also includes `.github/workflows/app-release.yml` for packag
 - Push an `app-v*` tag (for example `app-v0.1.12`) to build and publish a GitHub release automatically.
 - Or run the workflow manually with `workflow_dispatch` to build artifacts without creating a release, optionally overriding the resolved build name / build number.
 - Desktop artifacts are emitted as:
-  - Windows: `.zip` (validated `x64`; GitHub-hosted `arm64` is not currently published)
-  - Windows Store: validated unsigned `.msix` (`x64`) for manual Partner Center upload
+  - Windows: `.zip`
+  - Windows Store: validated unsigned `.msix` for manual Partner Center upload
   - macOS: `.dmg` (`x64`, `arm64`)
   - Linux: `.tar.gz` (validated `x64`, `arm64`)
 - Mobile artifacts are emitted as:
@@ -482,7 +482,7 @@ To test the clone-based workaround discussed in `subosito/flutter-action` issue 
 
 Keeping app releases on `app-v*` tags leaves the existing provider / relay npm publish flow on `v*` tags unchanged.
 
-This repo now pins Flutter `3.41.6`, whose official release manifests still only provide `x64` desktop SDK archives for Linux and Windows. On `ubuntu-24.04-arm`, the GitHub app release workflow uses a validated clone-and-bootstrap workaround and continues to publish real Linux `arm64` artifacts. On `windows-11-arm`, current Flutter toolchains still fall back to `windows-x64` output, so Windows `arm64` desktop artifacts are not currently published and the validated Windows Store upload path remains the x64 package. macOS continues to use the normal prebuilt SDK path for both `x64` and `arm64`.
+This repo now pins Flutter `3.41.6`. The GitHub app release workflow publishes Windows desktop ZIPs and unsigned Windows Store MSIX packages for manual Partner Center upload, while macOS and Linux desktop artifacts continue to ship for both `x64` and `arm64`. Linux `arm64` uses the validated clone-and-bootstrap path on `ubuntu-24.04-arm`, and macOS continues to use the normal prebuilt SDK path for both `x64` and `arm64`.
 
 ### Published relay npm package
 

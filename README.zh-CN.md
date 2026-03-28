@@ -440,8 +440,8 @@ docker run --rm \
 - 推送 `app-v*` tag（例如 `app-v0.1.12`）时，会自动构建产物并发布一个 GitHub Release。
 - 也可以手动触发这个 workflow，只构建产物而不发布 Release，并且可选覆盖自动解析出来的 `build name` / `build number`。
 - 桌面端产物格式：
-  - Windows：`.zip`（已验证 `x64`；GitHub-hosted `arm64` 当前暂不发布）
-  - Windows Store：用于手工上传到 Partner Center 的已验证未签名 `.msix`（`x64`）
+  - Windows：`.zip`
+  - Windows Store：用于手工上传到 Partner Center 的已验证未签名 `.msix`
   - macOS：`.dmg`（`x64`、`arm64`）
   - Linux：`.tar.gz`（已验证 `x64`、`arm64`）
 - 移动端产物格式：
@@ -464,7 +464,7 @@ gh workflow run app-arm-probe.yml \
 
 这样 app 发布使用 `app-v*` tag，而 provider / relay 现有的 npm 发布流程仍继续使用 `v*` tag，互不干扰。
 
-当前仓库固定使用 Flutter `3.41.6`，而它的官方 release manifest 仍然只提供 Linux / Windows 的 `x64` 桌面 SDK 归档。在 `ubuntu-24.04-arm` 上，GitHub 的 app release workflow 会使用已经验证过的 clone-and-bootstrap 方案，并继续发布真实的 Linux `arm64` 产物；但在 `windows-11-arm` 上，当前 Flutter 工具链仍会回退到 `windows-x64` 输出，所以 Windows `arm64` 桌面产物当前暂不发布，已验证可上传的 Windows Store 路径也仍然是 x64 包。macOS 双架构仍继续走正常的预构建 SDK 路径。
+当前仓库固定使用 Flutter `3.41.6`。GitHub 的 app release workflow 会发布 Windows 桌面 ZIP 和用于手工上传到 Partner Center 的未签名 Windows Store MSIX，同时继续发布 macOS / Linux 的 `x64` 与 `arm64` 桌面产物。Linux `arm64` 使用已经验证过的 `ubuntu-24.04-arm` clone-and-bootstrap 路径，macOS 双架构仍继续走正常的预构建 SDK 路径。
 
 ### 发布到 npm 的 relay 包
 

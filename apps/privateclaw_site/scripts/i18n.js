@@ -111,15 +111,15 @@ const BUNDLES = {
       desktopDownloadsKicker: "Desktop downloads",
       desktopDownloadsTitle: "Download the desktop builds from GitHub for now.",
       desktopDownloadsBody:
-        "Until the desktop store listings are ready, the current GitHub downloads cover Windows x64, macOS x64/arm64, and Linux x64/arm64.",
+        "Until the desktop store listings are ready, the current Windows, macOS, and Linux builds are published here as direct GitHub release assets.",
       desktopDownloadsBadge: "GitHub desktop downloads",
-      desktopDownloadWindowsX64: "Windows x64 ZIP",
+      desktopDownloadWindowsX64: "Windows ZIP",
       desktopDownloadMacosArm64: "macOS Apple Silicon DMG",
       desktopDownloadMacosX64: "macOS Intel DMG",
       desktopDownloadLinuxX64: "Linux x64 tar.gz",
       desktopDownloadLinuxArm64: "Linux ARM64 tar.gz",
       desktopDownloadsNote:
-        "These links point to the latest published GitHub desktop release assets. Windows ARM64 is intentionally omitted until we have a verified native build, and Windows Store uploads currently use the x64 package.",
+        "These links point to the latest published GitHub desktop release assets. We can switch the site over to native store links later.",
       setupKicker: "Simple install",
       setupTitle: "Start with one command. Keep the manual path as backup.",
       setupBody:
@@ -408,15 +408,15 @@ const BUNDLES = {
       desktopDownloadsKicker: "桌面下载",
       desktopDownloadsTitle: "桌面版本现在先从 GitHub 直接下载。",
       desktopDownloadsBody:
-        "在桌面应用商店版本就绪之前，这里先提供当前可下载的 GitHub 桌面构建：Windows x64、macOS x64/arm64，以及 Linux x64/arm64。",
+        "在桌面应用商店版本就绪之前，当前 Windows、macOS 和 Linux 构建会先以 GitHub release 资产的形式直接发布在这里。",
       desktopDownloadsBadge: "GitHub 桌面下载",
-      desktopDownloadWindowsX64: "Windows x64 ZIP",
+      desktopDownloadWindowsX64: "Windows ZIP",
       desktopDownloadMacosArm64: "macOS Apple Silicon DMG",
       desktopDownloadMacosX64: "macOS Intel DMG",
       desktopDownloadLinuxX64: "Linux x64 tar.gz",
       desktopDownloadLinuxArm64: "Linux ARM64 tar.gz",
       desktopDownloadsNote:
-        "这些链接当前都直接指向最新一次公开的 GitHub 桌面 release 资产。Windows ARM64 会等到有经过验证的原生构建后再重新放出；Windows Store 目前也仍以 x64 包为准。",
+        "这些链接当前都直接指向最新一次公开的 GitHub 桌面 release 资产。后面如果上了桌面应用商店，再把这里切过去。",
       setupKicker: "简单安装",
       setupTitle: "先用一条命令跑起来，复杂安装留作备用。",
       setupBody:
@@ -693,15 +693,15 @@ const BUNDLES = {
       desktopDownloadsKicker: "桌面下載",
       desktopDownloadsTitle: "桌面版本現在先從 GitHub 直接下載。",
       desktopDownloadsBody:
-        "在桌面應用商店版本就緒之前，這裡先提供目前可下載的 GitHub 桌面構建：Windows x64、macOS x64/arm64，以及 Linux x64/arm64。",
+        "在桌面應用商店版本就緒之前，當前 Windows、macOS 和 Linux 構建會先以 GitHub release 資產的形式直接發布在這裡。",
       desktopDownloadsBadge: "GitHub 桌面下載",
-      desktopDownloadWindowsX64: "Windows x64 ZIP",
+      desktopDownloadWindowsX64: "Windows ZIP",
       desktopDownloadMacosArm64: "macOS Apple Silicon DMG",
       desktopDownloadMacosX64: "macOS Intel DMG",
       desktopDownloadLinuxX64: "Linux x64 tar.gz",
       desktopDownloadLinuxArm64: "Linux ARM64 tar.gz",
       desktopDownloadsNote:
-        "這些連結目前都直接指向最新一次公開的 GitHub 桌面 release 資產。Windows ARM64 會等到有經過驗證的原生構建後再重新放出；Windows Store 目前也仍以 x64 包為準。",
+        "這些連結目前都直接指向最新一次公開的 GitHub 桌面 release 資產。後面如果上了桌面應用商店，再把這裡切過去。",
       setupKicker: "簡單安裝",
       setupTitle: "先用一條命令跑起來，複雜安裝留作備用。",
       setupBody:

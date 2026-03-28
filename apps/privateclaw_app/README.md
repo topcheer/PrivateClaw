@@ -95,13 +95,12 @@ Build the other desktop targets on their matching host OS:
 - Play closed testing promote: `cd android && fastlane promote_closed`
 - Play internal -> closed testing pipeline: `cd android && fastlane closed`
 - Play metadata only: `cd android && fastlane metadata`
-- Windows Store bundle helper (currently blocked by hosted Windows arm64 fallback): `npm run windows:store:bundle`
 
 By default, both the iOS and macOS `fastlane release` / `upload_release` lanes now submit for review and automatically release the approved build. Set `PRIVATECLAW_AUTOMATIC_RELEASE=false` when you want to keep the approved build for manual release in App Store Connect.
 
-The Windows Store packaging commands must run on Windows. The currently validated manual-upload artifact is an unsigned x64 `.msix` under `apps/privateclaw_app/builds/windows-store/`, using the Partner Center identity `GuangGuangAIStudio.PrivateClaw` / `CN=C2C7AF54-16DE-44AC-9393-7EA6D433CCD2`. The helper scripts pack the app semver into the first 16-bit Appx version field, split the large mobile build number across the next two fields, and keep the revision at `0` because Microsoft Store rejects non-zero revision numbers.
+The Windows Store packaging commands must run on Windows. The current manual-upload artifact is an unsigned `.msix` under `apps/privateclaw_app/builds/windows-store/`, using the Partner Center identity `GuangGuangAIStudio.PrivateClaw` / `CN=C2C7AF54-16DE-44AC-9393-7EA6D433CCD2`. The helper scripts pack the app semver into the first 16-bit Appx version field, split the large mobile build number across the next two fields, and keep the revision at `0` because Microsoft Store rejects non-zero revision numbers.
 
-`npm run windows:store:package` and `npm run windows:store:package:x64` build the validated x64 `.msix`. `npm run windows:store:package:arm64` and `npm run windows:store:bundle` are currently blocked on hosted Windows ARM runners: Flutter still falls back to `windows-x64` output, so a true `x64` + `arm64` Store bundle is not yet available. This does not affect the validated Linux `arm64` desktop GitHub release artifacts.
+`npm run windows:store:package` and `npm run windows:store:package:x64` build the current manual-upload `.msix`. `npm run windows:store:version` prints the Store-specific Appx version mapping used by those packages.
 
 Expect a `runFullTrust` warning in Partner Center for this packaged Flutter/Win32 desktop app. That warning is normal for full-trust desktop packages; be ready to explain why the app needs packaged Win32 capabilities on the first Store submission.
 
@@ -111,10 +110,8 @@ You can also run the same lanes from the repository root:
 - `npm run store:version:shell`
 - `npm run store:check`
 - `npm run windows:store:version`
-- `npm run windows:store:bundle`
 - `npm run windows:store:package`
 - `npm run windows:store:package:x64`
-- `npm run windows:store:package:arm64`
 - `npm run ios:testflight`
 - `npm run ios:testflight:upload`
 - `npm run ios:testflight:external`

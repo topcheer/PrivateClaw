@@ -95,6 +95,8 @@ Build the other desktop targets on their matching host OS:
 - Play internal -> closed testing pipeline: `cd android && fastlane closed`
 - Play metadata only: `cd android && fastlane metadata`
 
+By default, both the iOS and macOS `fastlane release` / `upload_release` lanes now submit for review and automatically release the approved build. Set `PRIVATECLAW_AUTOMATIC_RELEASE=false` when you want to keep the approved build for manual release in App Store Connect.
+
 You can also run the same lanes from the repository root:
 
 - `npm run store:version`

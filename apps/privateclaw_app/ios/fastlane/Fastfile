@@ -79,6 +79,11 @@ platform :ios do
     value.nil? || value.empty? ? nil : value
   end
 
+  def privateclaw_automatic_release
+    value = privateclaw_optional_env("PRIVATECLAW_AUTOMATIC_RELEASE")
+    value.nil? ? true : value == "true"
+  end
+
   def privateclaw_optional_file_env(name)
     path = privateclaw_optional_env(name)
     return nil if path.nil?
@@ -193,7 +198,7 @@ platform :ios do
       skip_screenshots: false,
       reject_if_possible: true,
       submit_for_review: true,
-      automatic_release: ENV["PRIVATECLAW_AUTOMATIC_RELEASE"] == "true",
+      automatic_release: privateclaw_automatic_release,
       force: true,
       precheck_include_in_app_purchases: false,
       submission_information: {

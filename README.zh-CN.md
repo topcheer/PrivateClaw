@@ -441,6 +441,7 @@ docker run --rm \
 - 也可以手动触发这个 workflow，只构建产物而不发布 Release，并且可选覆盖自动解析出来的 `build name` / `build number`。
 - 桌面端产物格式：
   - Windows：`.zip`（`x64`、`arm64`）
+  - Windows Store：用于手工上传到 Partner Center 的未签名 `.msix`（`x64`）
   - macOS：`.dmg`（`x64`、`arm64`）
   - Linux：`.tar.gz`（`x64`、`arm64`）
 - 移动端产物格式：

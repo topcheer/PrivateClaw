@@ -459,6 +459,7 @@ This repository now also includes `.github/workflows/app-release.yml` for packag
 - Or run the workflow manually with `workflow_dispatch` to build artifacts without creating a release, optionally overriding the resolved build name / build number.
 - Desktop artifacts are emitted as:
   - Windows: `.zip` (`x64`, `arm64`)
+  - Windows Store: unsigned `.msix` (`x64`) for manual Partner Center upload
   - macOS: `.dmg` (`x64`, `arm64`)
   - Linux: `.tar.gz` (`x64`, `arm64`)
 - Mobile artifacts are emitted as:

@@ -83,6 +83,7 @@ Build the other desktop targets on their matching host OS:
 
 - Windows: `flutter build windows`
 - Linux: `flutter build linux`
+- Windows Store package (manual upload, Windows host): `npm run windows:store:package`
 
 ## Store delivery
 
@@ -94,14 +95,19 @@ Build the other desktop targets on their matching host OS:
 - Play closed testing promote: `cd android && fastlane promote_closed`
 - Play internal -> closed testing pipeline: `cd android && fastlane closed`
 - Play metadata only: `cd android && fastlane metadata`
+- Windows Store package for manual upload: `npm run windows:store:package`
 
 By default, both the iOS and macOS `fastlane release` / `upload_release` lanes now submit for review and automatically release the approved build. Set `PRIVATECLAW_AUTOMATIC_RELEASE=false` when you want to keep the approved build for manual release in App Store Connect.
+
+The Windows Store package command must run on Windows. It builds an unsigned Store-ready `.msix` under `apps/privateclaw_app/builds/windows-store/`, using the Partner Center identity `GuangGuangAIStudio.PrivateClaw` / `CN=C2C7AF54-16DE-44AC-9393-7EA6D433CCD2`. The helper script also maps the app's semver plus large mobile build number into a valid four-part MSIX version so Store uploads do not overflow the 16-bit Appx version fields.
 
 You can also run the same lanes from the repository root:
 
 - `npm run store:version`
 - `npm run store:version:shell`
 - `npm run store:check`
+- `npm run windows:store:version`
+- `npm run windows:store:package`
 - `npm run ios:testflight`
 - `npm run ios:testflight:upload`
 - `npm run ios:testflight:external`

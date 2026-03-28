@@ -36,6 +36,7 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   flutter_test:
     sdk: flutter
+  msix: ^3.16.13
 
 dependency_overrides:
   # Keep the vendored pre-objective_c PathProvider implementation, but disable
@@ -59,3 +60,16 @@ flutter_launcher_icons:
   adaptive_icon_foreground: assets/branding/privateclaw_app_icon_foreground.png
   remove_alpha_ios: true
   min_sdk_android: 21
+
+msix_config:
+  display_name: PrivateClaw
+  publisher_display_name: GuangGuang AI Studio
+  identity_name: GuangGuangAIStudio.PrivateClaw
+  publisher: CN=C2C7AF54-16DE-44AC-9393-7EA6D433CCD2
+  logo_path: assets/branding/privateclaw_app_icon.png
+  capabilities: internetClient,microphone
+  languages: en-us,zh-cn,zh-tw
+  store: true
+  sign_msix: false
+  install_certificate: false
+  output_path: builds/windows-store

@@ -13,7 +13,7 @@ import {
 import { resolveMobileVersion } from "./resolve-mobile-version.mjs";
 import { resolveWindowsStoreVersion } from "./resolve-windows-store-version.mjs";
 
-const requiredArchitectures = ["x64", "arm64"];
+const requiredArchitectures = ["x64"];
 
 function parseArgs(argv) {
   const options = {

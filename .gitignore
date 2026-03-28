@@ -24,6 +24,7 @@ apps/privateclaw_app/ios/Runner/GoogleService-Info.plist
 services/relay-server/.env
 packages/privateclaw-provider/.env
 apps/privateclaw_app/fastlane.env
+apps/privateclaw_app/windows-store.env
 apps/privateclaw_app/android/key.properties
 apps/privateclaw_app/android/fastlane/README.md
 apps/privateclaw_app/ios/fastlane/report.xml

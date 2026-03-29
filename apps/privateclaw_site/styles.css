@@ -362,6 +362,9 @@ img {
 .store-button-rich .store-button-label {
   font-weight: 600;
   line-height: 1.18;
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
 }
 
 .store-button:not(.store-button-live) {

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true">
+  <defs>
+    <linearGradient id="appStoreBg" x1="4" x2="20" y1="4" y2="20" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4ccfff"/>
+      <stop offset="1" stop-color="#8f7dff"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="20" height="20" rx="6" fill="url(#appStoreBg)"/>
+  <path d="M9.1 6.9 14.9 17.2" stroke="#f7fbff" stroke-linecap="round" stroke-width="2.1"/>
+  <path d="M7.3 16.2h9.4" stroke="#f7fbff" stroke-linecap="round" stroke-width="2.1"/>
+  <path d="M14.8 6.9 9.4 16.2" stroke="#f7fbff" stroke-linecap="round" stroke-width="2.1"/>
+</svg>

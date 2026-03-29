@@ -1,0 +1,50 @@
+=== Store Listing: English (en-us) ===
+
+[Short Title]
+PrivateClaw
+
+[Voice Title]
+Private Claw
+
+[Short Description]
+Leave public chat behind. PrivateClaw creates a private, end-to-end encrypted channel between you and your AI assistant. Scan a one-time QR invite, and the relay never sees your messages. Secure, lightweight, no account needed.
+
+[Description]
+PrivateClaw creates a private, end-to-end encrypted path between you and a self-hosted or cloud OpenClaw AI deployment.
+
+Use a one-time QR invite to join a session, keep the relay blind to message contents, and move sensitive conversations away from public chat surfaces like Telegram, Discord, or QQ.
+
+All messages are encrypted with AES-256-GCM before leaving your device. The session key stays local — the relay server only routes ciphertext and never has access to your plaintext. No account registration is required, and there are no ads or tracking SDKs.
+
+Whether you run your own server or connect to a cloud relay, PrivateClaw gives you full control over your private AI conversations.
+
+[Features]
+End-to-end AES-256-GCM encryption for all messages
+Zero-knowledge relay — server never sees plaintext
+Scan QR code or paste invite link to connect instantly
+No account registration required
+Group chat with multiple encrypted participants
+Markdown rendering with Mermaid diagram support
+Send and receive images, audio, video, and files
+Encrypted file uploads alongside text messages
+Voice messaging with provider-side transcription
+Automatic session renewal before expiry
+Slash commands: /renew-session, /mute-bot, /unmute-bot
+Works with self-hosted or cloud relays
+Deterministic participant avatars for easy identification
+Persistent app identity across reconnects
+Join/leave system notices in group sessions
+Multi-language UI with bilingual system notices
+No advertising SDKs or analytics tracking
+Lightweight and fast — minimal resource usage
+Cross-platform: Windows, macOS, Linux, iOS, Android
+Session keys stay local — you own your privacy
+
+[Privacy Policy URL]
+https://privateclaw.us/privacy/
+
+[Website]
+https://privateclaw.us
+
+[Support Contact]
+msstore@liop.dev

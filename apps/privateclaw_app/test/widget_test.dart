@@ -1255,15 +1255,25 @@ Open it before it expires.
 class _TestActiveSessionStore extends PrivateClawActiveSessionStore {
   final List<PrivateClawActiveSessionRecord> savedRecords =
       <PrivateClawActiveSessionRecord>[];
+  String? currentSessionId;
 
   @override
   Future<PrivateClawActiveSessionRecord?> load() async => null;
+
+  @override
+  Future<List<PrivateClawActiveSessionRecord>> loadAll() async {
+    return List<PrivateClawActiveSessionRecord>.from(savedRecords);
+  }
 
   @override
   Future<void> save({
     required PrivateClawInvite invite,
     required PrivateClawIdentity identity,
   }) async {
+    savedRecords.removeWhere(
+      (PrivateClawActiveSessionRecord record) =>
+          record.invite.sessionId == invite.sessionId,
+    );
     savedRecords.add(
       PrivateClawActiveSessionRecord(
         invite: invite,
@@ -1271,10 +1281,30 @@ class _TestActiveSessionStore extends PrivateClawActiveSessionStore {
         savedAt: DateTime.now().toUtc(),
       ),
     );
+    currentSessionId = invite.sessionId;
   }
 
   @override
-  Future<void> clear() async {}
+  Future<void> clearCurrent() async {
+    currentSessionId = null;
+  }
+
+  @override
+  Future<void> remove(String sessionId) async {
+    savedRecords.removeWhere(
+      (PrivateClawActiveSessionRecord record) =>
+          record.invite.sessionId == sessionId,
+    );
+    if (currentSessionId == sessionId) {
+      currentSessionId = null;
+    }
+  }
+
+  @override
+  Future<void> clear() async {
+    savedRecords.clear();
+    currentSessionId = null;
+  }
 }
 
 class _TestIdentityStore extends PrivateClawIdentityStore {

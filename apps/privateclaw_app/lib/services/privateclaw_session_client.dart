@@ -51,6 +51,7 @@ class PrivateClawSessionEvent {
     this.message,
     this.notice,
     this.details,
+    this.reasonCode,
     this.connectionStatus,
     this.updatedInvite,
     this.commands,
@@ -63,6 +64,7 @@ class PrivateClawSessionEvent {
   final ChatMessage? message;
   final PrivateClawSessionNotice? notice;
   final String? details;
+  final String? reasonCode;
   final PrivateClawSessionStatus? connectionStatus;
   final PrivateClawInvite? updatedInvite;
   final List<PrivateClawSlashCommand>? commands;
@@ -277,6 +279,7 @@ class PrivateClawSessionClient {
           PrivateClawSessionEvent(
             notice: PrivateClawSessionNotice.relayError,
             details: (message ?? errorCode).toString(),
+            reasonCode: errorCode,
             connectionStatus: isTerminalRelayError
                 ? PrivateClawSessionStatus.closed
                 : PrivateClawSessionStatus.error,
@@ -291,6 +294,7 @@ class PrivateClawSessionClient {
           PrivateClawSessionEvent(
             notice: PrivateClawSessionNotice.sessionClosed,
             details: (reason ?? 'unknown_reason').toString(),
+            reasonCode: (reason ?? 'unknown_reason').toString(),
             connectionStatus: PrivateClawSessionStatus.closed,
           ),
         );

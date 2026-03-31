@@ -33,6 +33,15 @@ class AppLocalizationsFr extends AppLocalizations {
   String get showSessionQrButton => 'Show current QR';
 
   @override
+  String get savedSessionsButton => 'Saved sessions';
+
+  @override
+  String get savedSessionsTitle => 'Saved sessions';
+
+  @override
+  String get savedSessionsEmpty => 'No saved sessions yet.';
+
+  @override
   String get sessionLabel => 'Session';
 
   @override

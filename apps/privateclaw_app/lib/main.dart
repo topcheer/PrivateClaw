@@ -264,6 +264,8 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
   final List<PrivateClawSlashCommand> _availableCommands =
       <PrivateClawSlashCommand>[];
   final List<PrivateClawParticipant> _participants = <PrivateClawParticipant>[];
+  final List<PrivateClawActiveSessionRecord> _savedSessionRecords =
+      <PrivateClawActiveSessionRecord>[];
   final List<AssetEntity> _recentPhotoAssets = <AssetEntity>[];
   final Map<String, Future<Uint8List?>> _photoThumbnailFutures =
       <String, Future<Uint8List?>>{};
@@ -351,6 +353,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
           _sessionStatus == PrivateClawSessionStatus.active ||
           _sessionStatus == PrivateClawSessionStatus.reconnecting ||
           _sessionStatus == PrivateClawSessionStatus.relayAttached);
+  bool get _hasSavedSessions => _savedSessionRecords.isNotEmpty;
   List<String> get _frequentEmoji {
     final List<String> seeded = _defaultEmoji.take(_maxFrequentEmoji).toList();
     final List<MapEntry<String, int>> ranked = _emojiUsage.entries.toList()
@@ -439,6 +442,203 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     );
   }
 
+  List<PrivateClawActiveSessionRecord> _savedSessionsForDisplay() {
+    final String? activeSessionId = _invite?.sessionId;
+    final List<PrivateClawActiveSessionRecord> records =
+        List<PrivateClawActiveSessionRecord>.from(_savedSessionRecords);
+    records.sort((
+      PrivateClawActiveSessionRecord left,
+      PrivateClawActiveSessionRecord right,
+    ) {
+      final bool leftIsCurrent = left.invite.sessionId == activeSessionId;
+      final bool rightIsCurrent = right.invite.sessionId == activeSessionId;
+      if (leftIsCurrent != rightIsCurrent) {
+        return leftIsCurrent ? -1 : 1;
+      }
+      return right.savedAt.compareTo(left.savedAt);
+    });
+    return records;
+  }
+
+  Future<void> _refreshSavedSessionRecords() async {
+    if (_isPreviewMode) {
+      return;
+    }
+    final List<PrivateClawActiveSessionRecord> records =
+        await _activeSessionStore.loadAll();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _savedSessionRecords
+        ..clear()
+        ..addAll(records);
+    });
+  }
+
+  Future<void> _showSavedSessionsSheet() async {
+    await _refreshSavedSessionRecords();
+    if (!mounted) {
+      return;
+    }
+    final AppLocalizations l10n = AppLocalizations.of(context)!;
+    final List<PrivateClawActiveSessionRecord> records =
+        _savedSessionsForDisplay();
+    final PrivateClawActiveSessionRecord?
+    selectedRecord = await showModalBottomSheet<PrivateClawActiveSessionRecord>(
+      context: context,
+      showDragHandle: true,
+      useSafeArea: true,
+      builder: (BuildContext bottomSheetContext) {
+        final ThemeData theme = Theme.of(bottomSheetContext);
+        return SafeArea(
+          child: SizedBox(
+            key: const ValueKey<String>('saved-sessions-sheet'),
+            height: math.min(
+              MediaQuery.sizeOf(bottomSheetContext).height * 0.72,
+              420,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+                  child: Text(
+                    l10n.savedSessionsTitle,
+                    style: theme.textTheme.titleLarge,
+                  ),
+                ),
+                Expanded(
+                  child: records.isEmpty
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 24),
+                            child: Text(
+                              l10n.savedSessionsEmpty,
+                              textAlign: TextAlign.center,
+                              style: theme.textTheme.bodyMedium,
+                            ),
+                          ),
+                        )
+                      : ListView.separated(
+                          itemCount: records.length,
+                          separatorBuilder: (_, __) => const Divider(height: 1),
+                          itemBuilder: (BuildContext context, int index) {
+                            final PrivateClawActiveSessionRecord record =
+                                records[index];
+                            final String sessionId = record.invite.sessionId;
+                            final String? relayLabel =
+                                record.invite.relayDisplayLabel;
+                            final List<String> subtitleParts = <String>[
+                              if (record.invite.groupMode) l10n.groupModeLabel,
+                              '${l10n.expiresLabel}: '
+                                  '${_formatDateTime(record.invite.expiresAt)}',
+                              if (relayLabel != null && relayLabel.isNotEmpty)
+                                relayLabel,
+                            ];
+                            final bool isCurrentSession =
+                                sessionId == _invite?.sessionId;
+                            return ListTile(
+                              key: ValueKey<String>('saved-session-$sessionId'),
+                              leading: Icon(
+                                record.invite.groupMode
+                                    ? Icons.groups_2_outlined
+                                    : Icons.chat_bubble_outline,
+                              ),
+                              title: Text(
+                                sessionId,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              subtitle: Text(
+                                subtitleParts.join(' • '),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              trailing: Icon(
+                                isCurrentSession
+                                    ? Icons.radio_button_checked
+                                    : Icons.chevron_right,
+                              ),
+                              onTap: () {
+                                Navigator.of(bottomSheetContext).pop(record);
+                              },
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (selectedRecord == null) {
+      return;
+    }
+    await _connectToSavedSession(selectedRecord);
+  }
+
+  Future<void> _connectToSavedSession(
+    PrivateClawActiveSessionRecord record,
+  ) async {
+    final AppLocalizations l10n = AppLocalizations.of(context)!;
+    if (!record.invite.expiresAt.isAfter(DateTime.now().toUtc())) {
+      await _activeSessionStore.remove(record.invite.sessionId);
+      await _refreshSavedSessionRecords();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _sessionStatus = PrivateClawSessionStatus.error;
+        _statusText = l10n.relaySessionClosedWithReason('session_expired');
+        _isPairingPanelCollapsed = false;
+      });
+      return;
+    }
+
+    if (_client != null && _invite?.sessionId == record.invite.sessionId) {
+      return;
+    }
+
+    try {
+      await _disposeClient(reason: 'switch_session');
+      await _connectToInvite(
+        invite: record.invite,
+        identity: record.identity,
+        inviteInput: encodePrivateClawInviteUri(record.invite),
+        collapsePairingPanel: _hasManagedSessionContext,
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _sessionStatus = PrivateClawSessionStatus.error;
+        _statusText = l10n.connectFailed(error.toString());
+        _isPairingPanelCollapsed = false;
+      });
+    }
+  }
+
+  bool _shouldForgetCurrentSessionForEvent(PrivateClawSessionEvent event) {
+    final String? reasonCode = event.reasonCode?.trim().toLowerCase();
+    if (reasonCode == 'unknown_session' || reasonCode == 'session_expired') {
+      return true;
+    }
+    final String details = event.details?.trim().toLowerCase() ?? '';
+    return details == 'unknown_session' || details == 'session_expired';
+  }
+
+  Future<void> _forgetCurrentSavedSessionIfAvailable() async {
+    final String? sessionId = _invite?.sessionId;
+    if (sessionId == null || sessionId.isEmpty) {
+      return;
+    }
+    await _activeSessionStore.remove(sessionId);
+    await _refreshSavedSessionRecords();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -453,6 +653,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     });
     if (!_isPreviewMode) {
       unawaited(_initializeQuickActions());
+      unawaited(_refreshSavedSessionRecords());
     }
     unawaited(_loadEmojiUsage());
     final PrivateClawPreviewData? previewData = widget.previewData;
@@ -804,7 +1005,6 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
         return;
       }
       await _disposeClient(reason: 'switch_session');
-      await _activeSessionStore.clear();
       final PrivateClawIdentity identity = await _ensureIdentity();
       await _connectToInvite(
         invite: invite,
@@ -915,7 +1115,8 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       return;
     }
     if (record.invite.expiresAt.isBefore(DateTime.now().toUtc())) {
-      await _activeSessionStore.clear();
+      await _activeSessionStore.remove(record.invite.sessionId);
+      await _refreshSavedSessionRecords();
       return;
     }
 
@@ -1002,6 +1203,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       return;
     }
     await _activeSessionStore.save(invite: invite, identity: identity);
+    await _refreshSavedSessionRecords();
   }
 
   void _handleClientEvent(PrivateClawSessionEvent event) {
@@ -1083,9 +1285,12 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     if (event.updatedInvite != null || event.assignedIdentity != null) {
       unawaited(_persistActiveSessionIfAvailable());
     }
-    if (event.connectionStatus == PrivateClawSessionStatus.closed ||
+    if (_shouldForgetCurrentSessionForEvent(event)) {
+      unawaited(_forgetCurrentSavedSessionIfAvailable());
+    } else if (event.connectionStatus == PrivateClawSessionStatus.closed ||
         event.connectionStatus == PrivateClawSessionStatus.idle) {
-      unawaited(_activeSessionStore.clear());
+      unawaited(_activeSessionStore.clearCurrent());
+      unawaited(_refreshSavedSessionRecords());
     }
     if (event.connectionStatus != null &&
         event.connectionStatus != PrivateClawSessionStatus.active &&
@@ -1846,7 +2051,8 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       await client.unregisterPushRegistration();
     }
     await _disposeClient(reason: 'user_disconnect');
-    await _activeSessionStore.clear();
+    await _activeSessionStore.clearCurrent();
+    await _refreshSavedSessionRecords();
     if (!mounted) {
       return;
     }
@@ -2371,6 +2577,15 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     );
   }
 
+  Widget _buildSavedSessionsTrigger(AppLocalizations l10n) {
+    return FilledButton.tonalIcon(
+      key: const ValueKey<String>('saved-sessions-trigger'),
+      onPressed: _showSavedSessionsSheet,
+      icon: const Icon(Icons.history),
+      label: Text(l10n.savedSessionsButton),
+    );
+  }
+
   Widget _buildSessionRenewPrompt(BuildContext context, AppLocalizations l10n) {
     final Duration? remaining = _sessionRemainingDuration;
     if (remaining == null || _sessionRenewCommand == null) {
@@ -2825,6 +3040,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
                         icon: const Icon(Icons.qr_code_2),
                         label: Text(l10n.showSessionQrButton),
                       ),
+                    if (_hasSavedSessions) _buildSavedSessionsTrigger(l10n),
                   ],
                 ),
                 if (_invite != null) ...<Widget>[
@@ -3013,6 +3229,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
                       icon: const Icon(Icons.qr_code_2),
                       label: Text(l10n.showSessionQrButton),
                     ),
+                  if (_hasSavedSessions) _buildSavedSessionsTrigger(l10n),
                 ],
               ),
               if (_invite != null) ...<Widget>[

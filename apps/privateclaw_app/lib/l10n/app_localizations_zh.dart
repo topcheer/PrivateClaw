@@ -33,6 +33,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get showSessionQrButton => '显示当前二维码';
 
   @override
+  String get savedSessionsButton => '历史会话';
+
+  @override
+  String get savedSessionsTitle => '历史会话';
+
+  @override
+  String get savedSessionsEmpty => '暂时还没有可切换的历史会话。';
+
+  @override
   String get sessionLabel => '会话';
 
   @override
@@ -335,6 +344,15 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get showSessionQrButton => '顯示目前 QR Code';
+
+  @override
+  String get savedSessionsButton => '歷史會話';
+
+  @override
+  String get savedSessionsTitle => '歷史會話';
+
+  @override
+  String get savedSessionsEmpty => '暫時還沒有可切換的歷史會話。';
 
   @override
   String get sessionLabel => '會話';

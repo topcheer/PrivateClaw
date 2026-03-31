@@ -166,6 +166,24 @@ abstract class AppLocalizations {
   /// **'Show current QR'**
   String get showSessionQrButton;
 
+  /// No description provided for @savedSessionsButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved sessions'**
+  String get savedSessionsButton;
+
+  /// No description provided for @savedSessionsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved sessions'**
+  String get savedSessionsTitle;
+
+  /// No description provided for @savedSessionsEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No saved sessions yet.'**
+  String get savedSessionsEmpty;
+
   /// No description provided for @sessionLabel.
   ///
   /// In en, this message translates to:

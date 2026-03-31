@@ -296,6 +296,12 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get assistantMessageAiGeneratedLabel => 'AI生成';
+
+  @override
+  String get assistantMessageReportInappropriateContent => '报告不合适内容';
+
+  @override
   String get voiceRecordingSlideUpToCancel => '松开发送，上滑取消';
 
   @override
@@ -568,6 +574,12 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
   String attachmentOpenFailed(String name) {
     return '無法打開 $name。';
   }
+
+  @override
+  String get assistantMessageAiGeneratedLabel => 'AI生成';
+
+  @override
+  String get assistantMessageReportInappropriateContent => '報告不合適內容';
 
   @override
   String get voiceRecordingSlideUpToCancel => '鬆開傳送，上滑取消';

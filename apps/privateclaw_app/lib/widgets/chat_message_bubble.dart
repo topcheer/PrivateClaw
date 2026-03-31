@@ -1,11 +1,33 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import '../l10n/app_localizations.dart';
 import '../models/chat_attachment.dart';
 import '../models/chat_message.dart';
+import '../services/privateclaw_platform_utils.dart';
 import 'attachment_card.dart';
 import 'chat_content_segments.dart';
 import 'privateclaw_avatar.dart';
 import 'thinking_trace_card.dart';
+
+const String _assistantReportInappropriateContentUrl =
+    'https://groups.google.com/g/gg-studio-ai-products';
+
+typedef ChatMessageBubbleReportLauncher =
+    Future<bool> Function(Uri url, {LaunchMode mode});
+
+Future<bool> _defaultChatMessageBubbleReportLauncher(
+  Uri url, {
+  LaunchMode mode = LaunchMode.platformDefault,
+}) {
+  return launchUrl(url, mode: mode);
+}
+
+ChatMessageBubbleReportLauncher chatMessageBubbleReportLauncher =
+    _defaultChatMessageBubbleReportLauncher;
 
 class ChatMessageBubble extends StatelessWidget {
   const ChatMessageBubble({required this.message, super.key});
@@ -18,6 +40,16 @@ class ChatMessageBubble extends StatelessWidget {
     final bool isOwnUserMessage = isUser && message.isOwnMessage;
     final bool isPeerUserMessage = isUser && !message.isOwnMessage;
     final bool isSystem = message.sender == ChatSender.system;
+    final bool hasTextContent = message.text.trim().isNotEmpty;
+    final bool hasAttachments = message.attachments.isNotEmpty;
+    final bool showAssistantDisclaimer =
+        message.sender == ChatSender.assistant &&
+        !message.isPending &&
+        !message.isThinkingTrace &&
+        (hasTextContent || hasAttachments) &&
+        privateClawShowsAssistantDisclaimerForTargetPlatform(
+          privateClawTargetPlatformResolver(),
+        );
     final Color bubbleColor;
     final Alignment alignment;
 
@@ -69,11 +101,9 @@ class ChatMessageBubble extends StatelessWidget {
                   const PendingBubbleIndicator(),
                   const SizedBox(height: 8),
                 ],
-                if (message.text.trim().isNotEmpty)
-                  ..._buildTextContent(context),
-                if (message.attachments.isNotEmpty) ...<Widget>[
-                  if (message.text.trim().isNotEmpty)
-                    const SizedBox(height: 12),
+                if (hasTextContent) ..._buildTextContent(context),
+                if (hasAttachments) ...<Widget>[
+                  if (hasTextContent) const SizedBox(height: 12),
                   ...message.attachments.map(
                     (ChatAttachment attachment) => Padding(
                       key: ValueKey<String>('attachment-${attachment.id}'),
@@ -85,9 +115,13 @@ class ChatMessageBubble extends StatelessWidget {
                     ),
                   ),
                 ],
+                if (showAssistantDisclaimer) ...<Widget>[
+                  if (hasTextContent || hasAttachments)
+                    const SizedBox(height: 12),
+                  _AssistantMessageDisclaimer(messageId: message.id),
+                ],
                 if (message.isPending && isUser) ...<Widget>[
-                  if (message.text.trim().isNotEmpty ||
-                      message.attachments.isNotEmpty)
+                  if (hasTextContent || hasAttachments)
                     const SizedBox(height: 8),
                   const PendingBubbleIndicator(),
                 ],
@@ -181,5 +215,81 @@ class ChatMessageBubble extends StatelessWidget {
   String _formatMessageTimestamp(BuildContext context, DateTime value) {
     final Locale locale = Localizations.localeOf(context);
     return DateFormat.yMd(locale.toString()).add_jm().format(value.toLocal());
+  }
+}
+
+class _AssistantMessageDisclaimer extends StatelessWidget {
+  const _AssistantMessageDisclaimer({required this.messageId});
+
+  final String messageId;
+
+  Future<void> _openReportLink(BuildContext context) async {
+    final bool launched = await chatMessageBubbleReportLauncher(
+      Uri.parse(_assistantReportInappropriateContentUrl),
+      mode: LaunchMode.externalApplication,
+    );
+    if (launched || !context.mounted) {
+      return;
+    }
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      const SnackBar(content: Text(_assistantReportInappropriateContentUrl)),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final AppLocalizations localizations = AppLocalizations.of(context)!;
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme colorScheme = theme.colorScheme;
+    final TextStyle baseStyle = (theme.textTheme.bodySmall ?? const TextStyle())
+        .copyWith(color: colorScheme.onSurfaceVariant);
+    final TextStyle linkStyle = baseStyle.copyWith(
+      color: colorScheme.primary,
+      fontWeight: FontWeight.w600,
+      decoration: TextDecoration.underline,
+      decorationColor: colorScheme.primary,
+    );
+
+    return DecoratedBox(
+      key: ValueKey<String>('assistant-disclaimer-$messageId'),
+      decoration: BoxDecoration(
+        border: Border(
+          top: BorderSide(
+            color: colorScheme.outlineVariant.withValues(alpha: 0.7),
+          ),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.only(top: 10),
+        child: Wrap(
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 6,
+          runSpacing: 6,
+          children: <Widget>[
+            Text(
+              localizations.assistantMessageAiGeneratedLabel,
+              style: baseStyle,
+            ),
+            Text('·', style: baseStyle),
+            TextButton(
+              key: ValueKey<String>('assistant-disclaimer-report-$messageId'),
+              onPressed: () {
+                unawaited(_openReportLink(context));
+              },
+              style: TextButton.styleFrom(
+                padding: EdgeInsets.zero,
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+              ),
+              child: Text(
+                localizations.assistantMessageReportInappropriateContent,
+                style: linkStyle,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

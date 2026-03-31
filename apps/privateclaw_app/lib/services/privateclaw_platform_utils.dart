@@ -26,6 +26,14 @@ bool privateClawSupportsComposerSubmitShortcutForTargetPlatform(
       platform == TargetPlatform.linux;
 }
 
+bool privateClawShowsAssistantDisclaimerForTargetPlatform(
+  TargetPlatform platform,
+) {
+  return platform == TargetPlatform.macOS ||
+      platform == TargetPlatform.windows ||
+      platform == TargetPlatform.linux;
+}
+
 bool privateClawShouldSuspendLiveSession({
   required TargetPlatform platform,
   required AppLifecycleState state,

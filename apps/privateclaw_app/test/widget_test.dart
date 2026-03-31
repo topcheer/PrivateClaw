@@ -203,6 +203,18 @@ void main() {
       isFalse,
     );
     expect(
+      privateClawShowsAssistantDisclaimerForTargetPlatform(
+        TargetPlatform.macOS,
+      ),
+      isTrue,
+    );
+    expect(
+      privateClawShowsAssistantDisclaimerForTargetPlatform(
+        TargetPlatform.android,
+      ),
+      isFalse,
+    );
+    expect(
       privateClawShouldKeepLiveSessionInBackgroundForTargetPlatform(
         TargetPlatform.android,
       ),

@@ -1,14 +1,26 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:privateclaw_app/l10n/app_localizations.dart';
 import 'package:privateclaw_app/models/chat_attachment.dart';
 import 'package:privateclaw_app/models/chat_message.dart';
+import 'package:privateclaw_app/services/privateclaw_platform_utils.dart';
 import 'package:privateclaw_app/widgets/attachment_card.dart';
 import 'package:privateclaw_app/widgets/chat_message_bubble.dart';
 import 'package:privateclaw_app/widgets/privateclaw_avatar.dart';
 import 'package:url_launcher/url_launcher.dart';
+
+Widget _bubbleTestHost(Widget child, {Locale? locale}) {
+  return MaterialApp(
+    locale: locale,
+    localizationsDelegates: AppLocalizations.localizationsDelegates,
+    supportedLocales: AppLocalizations.supportedLocales,
+    home: Scaffold(body: child),
+  );
+}
 
 void main() {
   tearDown(() {
@@ -20,23 +32,26 @@ void main() {
         ({required ChatAttachment attachment, required Uri source}) async {
           return false;
         };
+    chatMessageBubbleReportLauncher =
+        (Uri url, {LaunchMode mode = LaunchMode.platformDefault}) {
+          return launchUrl(url, mode: mode);
+        };
+    privateClawTargetPlatformResolver = () => defaultTargetPlatform;
   });
 
   testWidgets('ChatMessageBubble shows a pending assistant indicator', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: ChatMessageBubble(
-            message: ChatMessage(
-              id: 'pending-1',
-              sender: ChatSender.assistant,
-              text: '',
-              sentAt: DateTime.utc(2026, 1, 1),
-              isPending: true,
-              replyTo: 'user-1',
-            ),
+      _bubbleTestHost(
+        ChatMessageBubble(
+          message: ChatMessage(
+            id: 'pending-1',
+            sender: ChatSender.assistant,
+            text: '',
+            sentAt: DateTime.utc(2026, 1, 1),
+            isPending: true,
+            replyTo: 'user-1',
           ),
         ),
       ),
@@ -49,17 +64,15 @@ void main() {
     'ChatMessageBubble keeps own pending text visible with inline wait indicator',
     (WidgetTester tester) async {
       await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: ChatMessageBubble(
-              message: ChatMessage(
-                id: 'user-pending-1',
-                sender: ChatSender.user,
-                text: '正在发送这条消息',
-                sentAt: DateTime.utc(2026, 1, 1),
-                isPending: true,
-                isOwnMessage: true,
-              ),
+        _bubbleTestHost(
+          ChatMessageBubble(
+            message: ChatMessage(
+              id: 'user-pending-1',
+              sender: ChatSender.user,
+              text: '正在发送这条消息',
+              sentAt: DateTime.utc(2026, 1, 1),
+              isPending: true,
+              isOwnMessage: true,
             ),
           ),
         ),
@@ -80,24 +93,22 @@ void main() {
     );
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: ChatMessageBubble(
-            message: ChatMessage(
-              id: 'assistant-1',
-              sender: ChatSender.assistant,
-              text: '**Bold reply**',
-              sentAt: DateTime.utc(2026, 1, 1),
-              attachments: <ChatAttachment>[
-                ChatAttachment(
-                  id: 'attachment-1',
-                  name: 'pixel.png',
-                  mimeType: 'image/png',
-                  sizeBytes: imageBytes.length,
-                  dataBase64: base64Encode(imageBytes),
-                ),
-              ],
-            ),
+      _bubbleTestHost(
+        ChatMessageBubble(
+          message: ChatMessage(
+            id: 'assistant-1',
+            sender: ChatSender.assistant,
+            text: '**Bold reply**',
+            sentAt: DateTime.utc(2026, 1, 1),
+            attachments: <ChatAttachment>[
+              ChatAttachment(
+                id: 'attachment-1',
+                name: 'pixel.png',
+                mimeType: 'image/png',
+                sizeBytes: imageBytes.length,
+                dataBase64: base64Encode(imageBytes),
+              ),
+            ],
           ),
         ),
       ),
@@ -113,6 +124,138 @@ void main() {
   });
 
   testWidgets(
+    'ChatMessageBubble shows the desktop AI disclaimer for final assistant replies',
+    (WidgetTester tester) async {
+      privateClawTargetPlatformResolver = () => TargetPlatform.macOS;
+
+      await tester.pumpWidget(
+        _bubbleTestHost(
+          ChatMessageBubble(
+            message: ChatMessage(
+              id: 'assistant-disclaimer-1',
+              sender: ChatSender.assistant,
+              text: 'Final answer',
+              sentAt: DateTime.utc(2026, 1, 1),
+            ),
+          ),
+          locale: const Locale('zh'),
+        ),
+      );
+
+      expect(
+        find.byKey(
+          const ValueKey<String>('assistant-disclaimer-assistant-disclaimer-1'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('AI生成'), findsOneWidget);
+      expect(find.text('报告不合适内容'), findsOneWidget);
+    },
+  );
+
+  testWidgets('ChatMessageBubble opens the desktop AI disclaimer report link', (
+    WidgetTester tester,
+  ) async {
+    privateClawTargetPlatformResolver = () => TargetPlatform.macOS;
+    Uri? launchedUri;
+    LaunchMode? launchedMode;
+    chatMessageBubbleReportLauncher =
+        (Uri url, {LaunchMode mode = LaunchMode.platformDefault}) async {
+          launchedUri = url;
+          launchedMode = mode;
+          return true;
+        };
+
+    await tester.pumpWidget(
+      _bubbleTestHost(
+        ChatMessageBubble(
+          message: ChatMessage(
+            id: 'assistant-disclaimer-link-1',
+            sender: ChatSender.assistant,
+            text: 'Final answer',
+            sentAt: DateTime.utc(2026, 1, 1),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>(
+          'assistant-disclaimer-report-assistant-disclaimer-link-1',
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      launchedUri,
+      Uri.parse('https://groups.google.com/g/gg-studio-ai-products'),
+    );
+    expect(launchedMode, LaunchMode.externalApplication);
+  });
+
+  testWidgets(
+    'ChatMessageBubble hides the desktop AI disclaimer for pending replies',
+    (WidgetTester tester) async {
+      privateClawTargetPlatformResolver = () => TargetPlatform.macOS;
+
+      await tester.pumpWidget(
+        _bubbleTestHost(
+          ChatMessageBubble(
+            message: ChatMessage(
+              id: 'assistant-disclaimer-pending-1',
+              sender: ChatSender.assistant,
+              text: '',
+              sentAt: DateTime.utc(2026, 1, 1),
+              isPending: true,
+              replyTo: 'user-1',
+            ),
+          ),
+        ),
+      );
+
+      expect(
+        find.byKey(
+          const ValueKey<String>(
+            'assistant-disclaimer-assistant-disclaimer-pending-1',
+          ),
+        ),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets(
+    'ChatMessageBubble hides the desktop AI disclaimer on mobile platforms',
+    (WidgetTester tester) async {
+      privateClawTargetPlatformResolver = () => TargetPlatform.android;
+
+      await tester.pumpWidget(
+        _bubbleTestHost(
+          ChatMessageBubble(
+            message: ChatMessage(
+              id: 'assistant-disclaimer-mobile-1',
+              sender: ChatSender.assistant,
+              text: 'Final answer',
+              sentAt: DateTime.utc(2026, 1, 1),
+            ),
+          ),
+        ),
+      );
+
+      expect(
+        find.byKey(
+          const ValueKey<String>(
+            'assistant-disclaimer-assistant-disclaimer-mobile-1',
+          ),
+        ),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets(
     'ChatMessageBubble opens image attachments in a fullscreen viewer',
     (WidgetTester tester) async {
       final Uint8List imageBytes = Uint8List.fromList(
@@ -122,24 +265,22 @@ void main() {
       );
 
       await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: ChatMessageBubble(
-              message: ChatMessage(
-                id: 'assistant-image-viewer-1',
-                sender: ChatSender.assistant,
-                text: '',
-                sentAt: DateTime.utc(2026, 1, 1),
-                attachments: <ChatAttachment>[
-                  ChatAttachment(
-                    id: 'attachment-image-viewer-1',
-                    name: 'pixel.png',
-                    mimeType: 'image/png',
-                    sizeBytes: imageBytes.length,
-                    dataBase64: base64Encode(imageBytes),
-                  ),
-                ],
-              ),
+        _bubbleTestHost(
+          ChatMessageBubble(
+            message: ChatMessage(
+              id: 'assistant-image-viewer-1',
+              sender: ChatSender.assistant,
+              text: '',
+              sentAt: DateTime.utc(2026, 1, 1),
+              attachments: <ChatAttachment>[
+                ChatAttachment(
+                  id: 'attachment-image-viewer-1',
+                  name: 'pixel.png',
+                  mimeType: 'image/png',
+                  sizeBytes: imageBytes.length,
+                  dataBase64: base64Encode(imageBytes),
+                ),
+              ],
             ),
           ),
         ),
@@ -181,24 +322,22 @@ void main() {
           };
 
       await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: ChatMessageBubble(
-              message: ChatMessage(
-                id: 'assistant-file-1',
-                sender: ChatSender.assistant,
-                text: '',
-                sentAt: DateTime.utc(2026, 1, 1),
-                attachments: <ChatAttachment>[
-                  ChatAttachment(
-                    id: 'attachment-file-open-1',
-                    name: 'notes.txt',
-                    mimeType: 'text/plain',
-                    sizeBytes: 5,
-                    uri: 'https://example.com/notes.txt',
-                  ),
-                ],
-              ),
+        _bubbleTestHost(
+          ChatMessageBubble(
+            message: ChatMessage(
+              id: 'assistant-file-1',
+              sender: ChatSender.assistant,
+              text: '',
+              sentAt: DateTime.utc(2026, 1, 1),
+              attachments: <ChatAttachment>[
+                ChatAttachment(
+                  id: 'attachment-file-open-1',
+                  name: 'notes.txt',
+                  mimeType: 'text/plain',
+                  sizeBytes: 5,
+                  uri: 'https://example.com/notes.txt',
+                ),
+              ],
             ),
           ),
         ),
@@ -233,35 +372,36 @@ void main() {
           presentedSource = source;
           return true;
         };
+
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: ChatMessageBubble(
-            message: ChatMessage(
-              id: 'assistant-file-local-1',
-              sender: ChatSender.assistant,
-              text: '',
-              sentAt: DateTime.utc(2026, 1, 1),
-              attachments: <ChatAttachment>[
-                ChatAttachment(
-                  id: 'attachment-file-local-open-1',
-                  name: 'notes.txt',
-                  mimeType: 'text/plain',
-                  sizeBytes: 5,
-                  uri: 'file:///tmp/notes.txt',
-                ),
-              ],
-            ),
+      _bubbleTestHost(
+        ChatMessageBubble(
+          message: ChatMessage(
+            id: 'assistant-file-local-1',
+            sender: ChatSender.assistant,
+            text: '',
+            sentAt: DateTime.utc(2026, 1, 1),
+            attachments: <ChatAttachment>[
+              ChatAttachment(
+                id: 'attachment-file-local-open-1',
+                name: 'notes.txt',
+                mimeType: 'text/plain',
+                sizeBytes: 5,
+                uri: 'file:///tmp/notes.txt',
+              ),
+            ],
           ),
         ),
       ),
     );
+
     await tester.tap(
       find.byKey(
         const ValueKey<String>('attachment-open-attachment-file-local-open-1'),
       ),
     );
     await tester.pumpAndSettle();
+
     expect(launcherCalled, isFalse);
     expect(presentedAttachment, isNotNull);
     expect(presentedAttachment!.id, 'attachment-file-local-open-1');
@@ -277,9 +417,7 @@ void main() {
 
     Future<ImageProvider<Object>> pumpMessage(ChatMessage message) async {
       await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(body: ChatMessageBubble(message: message)),
-        ),
+        _bubbleTestHost(ChatMessageBubble(message: message)),
       );
       await tester.pump();
       return tester
@@ -362,9 +500,7 @@ void main() {
     );
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(body: ChatMessageBubble(message: streamingMessage)),
-      ),
+      _bubbleTestHost(ChatMessageBubble(message: streamingMessage)),
     );
 
     expect(find.text('Tool • read'), findsOneWidget);
@@ -377,12 +513,10 @@ void main() {
     expect(find.text('Plan the answer structure'), findsOneWidget);
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: ChatMessageBubble(
-            message: streamingMessage.copyWith(
-              thinkingStatus: ChatThinkingStatus.completed,
-            ),
+      _bubbleTestHost(
+        ChatMessageBubble(
+          message: streamingMessage.copyWith(
+            thinkingStatus: ChatThinkingStatus.completed,
           ),
         ),
       ),
@@ -396,17 +530,15 @@ void main() {
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: ChatMessageBubble(
-            message: ChatMessage(
-              id: 'participant-1',
-              sender: ChatSender.user,
-              text: 'Hello team',
-              sentAt: DateTime.utc(2026, 1, 1),
-              senderId: 'app-2',
-              senderLabel: '流萤狐',
-            ),
+      _bubbleTestHost(
+        ChatMessageBubble(
+          message: ChatMessage(
+            id: 'participant-1',
+            sender: ChatSender.user,
+            text: 'Hello team',
+            sentAt: DateTime.utc(2026, 1, 1),
+            senderId: 'app-2',
+            senderLabel: '流萤狐',
           ),
         ),
       ),
@@ -429,15 +561,13 @@ void main() {
     'ChatMessageBubble uses the app icon avatar for assistant messages',
     (WidgetTester tester) async {
       await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: ChatMessageBubble(
-              message: ChatMessage(
-                id: 'assistant-avatar-1',
-                sender: ChatSender.assistant,
-                text: 'Hello from the assistant',
-                sentAt: DateTime.utc(2026, 1, 1),
-              ),
+        _bubbleTestHost(
+          ChatMessageBubble(
+            message: ChatMessage(
+              id: 'assistant-avatar-1',
+              sender: ChatSender.assistant,
+              text: 'Hello from the assistant',
+              sentAt: DateTime.utc(2026, 1, 1),
             ),
           ),
         ),

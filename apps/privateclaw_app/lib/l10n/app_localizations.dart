@@ -634,6 +634,18 @@ abstract class AppLocalizations {
   /// **'Couldn\'t open {name}.'**
   String attachmentOpenFailed(String name);
 
+  /// Small disclosure shown under final desktop assistant replies.
+  ///
+  /// In en, this message translates to:
+  /// **'AI-generated'**
+  String get assistantMessageAiGeneratedLabel;
+
+  /// Link text for reporting inappropriate AI-generated assistant replies.
+  ///
+  /// In en, this message translates to:
+  /// **'Report inappropriate content'**
+  String get assistantMessageReportInappropriateContent;
+
   /// Hint shown while voice recording is active and can still be cancelled by sliding up.
   ///
   /// In en, this message translates to:

@@ -202,6 +202,14 @@
       }
     }
   },
+  "assistantMessageAiGeneratedLabel": "AI-generated",
+  "@assistantMessageAiGeneratedLabel": {
+    "description": "Small disclosure shown under final desktop assistant replies."
+  },
+  "assistantMessageReportInappropriateContent": "Report inappropriate content",
+  "@assistantMessageReportInappropriateContent": {
+    "description": "Link text for reporting inappropriate AI-generated assistant replies."
+  },
   "voiceRecordingSlideUpToCancel": "Release to send · slide up to cancel",
   "voiceRecordingReleaseToCancel": "Release to cancel",
   "@composerExpandTooltip": {

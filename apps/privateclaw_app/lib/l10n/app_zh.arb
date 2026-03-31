@@ -202,6 +202,14 @@
       }
     }
   },
+  "assistantMessageAiGeneratedLabel": "AI生成",
+  "@assistantMessageAiGeneratedLabel": {
+    "description": "桌面端最终助手回复下方显示的 AI 生成提示。"
+  },
+  "assistantMessageReportInappropriateContent": "报告不合适内容",
+  "@assistantMessageReportInappropriateContent": {
+    "description": "点击后打开外部举报页面的链接文案。"
+  },
   "voiceRecordingSlideUpToCancel": "松开发送，上滑取消",
   "voiceRecordingReleaseToCancel": "松开取消发送"
 }

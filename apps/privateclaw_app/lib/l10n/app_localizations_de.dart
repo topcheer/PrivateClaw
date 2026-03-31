@@ -316,6 +316,13 @@ class AppLocalizationsDe extends AppLocalizations {
   }
 
   @override
+  String get assistantMessageAiGeneratedLabel => 'AI-generated';
+
+  @override
+  String get assistantMessageReportInappropriateContent =>
+      'Report inappropriate content';
+
+  @override
   String get voiceRecordingSlideUpToCancel =>
       'Release to send · slide up to cancel';
 

@@ -187,6 +187,14 @@
       }
     }
   },
+  "assistantMessageAiGeneratedLabel": "AI生成",
+  "@assistantMessageAiGeneratedLabel": {
+    "description": "桌面端最終助理回覆下方顯示的 AI 生成提示。"
+  },
+  "assistantMessageReportInappropriateContent": "報告不合適內容",
+  "@assistantMessageReportInappropriateContent": {
+    "description": "點擊後打開外部檢舉頁面的連結文案。"
+  },
   "voiceRecordingSlideUpToCancel": "鬆開傳送，上滑取消",
   "voiceRecordingReleaseToCancel": "鬆開取消傳送"
 }

@@ -137,14 +137,14 @@ const BUNDLES = {
         {
           step: "Backup",
           title: "Manually install the plugin if you prefer",
-          body: "Choose this path only when you want to manage OpenClaw yourself or point at your own relay before pairing. Recent OpenClaw builds resolve bare npm specs through ClawHub first, so `openclaw plugins install @privateclaw/privateclaw` follows the newest ClawHub release, which can lag the newest npm patch. If you want the newest npm package immediately, pack it locally and install the generated archive.",
+          body: "Choose this path only when you want to manage OpenClaw yourself or point at your own relay before pairing. Keep `--dangerously-force-unsafe-install` on every manual install path. If you already have a local package directory, prefer installing that directory directly because OpenClaw 2026.3.31 can drop the unsafe-install override on archive installs.",
           commands: [
-            "npm pack @privateclaw/privateclaw@latest",
-            "openclaw plugins install ./privateclaw-privateclaw-*.tgz",
+            "openclaw plugins install --dangerously-force-unsafe-install @privateclaw/privateclaw@latest",
+            "openclaw plugins install --dangerously-force-unsafe-install ./packages/privateclaw-provider",
             "openclaw plugins enable privateclaw",
             "openclaw config set plugins.entries.privateclaw.config.relayBaseUrl https://your-relay.example.com",
           ],
-          note: "Skip the relay command if you are happy with the default public relay at https://relay.privateclaw.us. The generated archive will be named like `privateclaw-privateclaw-0.x.y.tgz`.",
+          note: "Skip the relay command if you are happy with the default public relay at https://relay.privateclaw.us. If you intentionally install from ClawHub, also keep the flag: `openclaw plugins install --dangerously-force-unsafe-install clawhub:@privateclaw/privateclaw@latest`.",
           variant: "fallback",
         },
         {
@@ -434,14 +434,14 @@ const BUNDLES = {
         {
           step: "备用",
           title: "如果你想自己掌控，就手动安装",
-          body: "只有在你想手工管理插件，或想一开始就指向自己的 relay 时，才使用这条路径。最近的 OpenClaw 对裸 npm spec 会先查 ClawHub，所以 `openclaw plugins install @privateclaw/privateclaw` 实际跟随的是 ClawHub 当前发布的最新版，它可能会比 npm 上最新的 patch 慢一步。如果你想立刻强制使用 npm 上最新的包，就先把 npm 包打成本地归档，再安装生成的 `.tgz`。",
+          body: "只有在你想手工管理插件，或想一开始就指向自己的 relay 时，才使用这条路径。所有手工安装路径都请保留 `--dangerously-force-unsafe-install`。如果你手边已经有本地 package 目录，优先直接安装这个目录，因为 OpenClaw 2026.3.31 的 archive 安装分支会把 unsafe-install override 丢掉。",
           commands: [
-            "npm pack @privateclaw/privateclaw@latest",
-            "openclaw plugins install ./privateclaw-privateclaw-*.tgz",
+            "openclaw plugins install --dangerously-force-unsafe-install @privateclaw/privateclaw@latest",
+            "openclaw plugins install --dangerously-force-unsafe-install ./packages/privateclaw-provider",
             "openclaw plugins enable privateclaw",
             "openclaw config set plugins.entries.privateclaw.config.relayBaseUrl https://your-relay.example.com",
           ],
-          note: "如果你直接使用默认公共 relay `https://relay.privateclaw.us`，第四条可以跳过。生成的归档名会类似 `privateclaw-privateclaw-0.x.y.tgz`。",
+          note: "如果你直接使用默认公共 relay `https://relay.privateclaw.us`，第四条可以跳过。如果你明确要走 ClawHub，也同样带上这个 flag：`openclaw plugins install --dangerously-force-unsafe-install clawhub:@privateclaw/privateclaw@latest`。",
           variant: "fallback",
         },
         {
@@ -719,14 +719,14 @@ const BUNDLES = {
         {
           step: "備用",
           title: "如果你想自己掌控，就手動安裝",
-          body: "只有在你想手動管理外掛，或想一開始就指向自己的 relay 時，才使用這條路徑。最近的 OpenClaw 對裸 npm spec 會先查 ClawHub，所以 `openclaw plugins install @privateclaw/privateclaw` 實際跟隨的是 ClawHub 目前發布的最新版，它可能會比 npm 上最新的 patch 慢一步。如果你想立刻強制使用 npm 上最新的套件，就先把 npm 套件打成本地封存，再安裝產生的 `.tgz`。",
+          body: "只有在你想手動管理外掛，或想一開始就指向自己的 relay 時，才使用這條路徑。所有手動安裝路徑都請保留 `--dangerously-force-unsafe-install`。如果你手邊已經有本地 package 目錄，優先直接安裝這個目錄，因為 OpenClaw 2026.3.31 的 archive 安裝分支會把 unsafe-install override 丟掉。",
           commands: [
-            "npm pack @privateclaw/privateclaw@latest",
-            "openclaw plugins install ./privateclaw-privateclaw-*.tgz",
+            "openclaw plugins install --dangerously-force-unsafe-install @privateclaw/privateclaw@latest",
+            "openclaw plugins install --dangerously-force-unsafe-install ./packages/privateclaw-provider",
             "openclaw plugins enable privateclaw",
             "openclaw config set plugins.entries.privateclaw.config.relayBaseUrl https://your-relay.example.com",
           ],
-          note: "如果你直接使用預設公共 relay `https://relay.privateclaw.us`，第四條可以略過。產生的封存檔名會類似 `privateclaw-privateclaw-0.x.y.tgz`。",
+          note: "如果你直接使用預設公共 relay `https://relay.privateclaw.us`，第四條可以略過。如果你明確要走 ClawHub，也同樣帶上這個 flag：`openclaw plugins install --dangerously-force-unsafe-install clawhub:@privateclaw/privateclaw@latest`。",
           variant: "fallback",
         },
         {

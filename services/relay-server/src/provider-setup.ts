@@ -1,19 +1,28 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdtemp, rm } from "node:fs/promises";
-import os from "node:os";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
+import { fileURLToPath } from "node:url";
 import { RelayCliUserError } from "./cli-error.js";
+
+interface RelayProviderSetupCommandCandidate {
+  label: string;
+  command: string;
+  args: string[];
+  display: string;
+  env?: NodeJS.ProcessEnv;
+}
 
 export interface RelayProviderSetupStep {
   title: string;
   command: string;
   args: string[];
   display: string;
-  kind?: "command" | "npm-pack-install";
-  packageSpec?: string;
+  env?: NodeJS.ProcessEnv;
+  kind?: "command" | "install-candidates";
+  candidates?: readonly RelayProviderSetupCommandCandidate[];
 }
 
 export interface LocalOpenClawStatus {
@@ -36,13 +45,19 @@ export interface RelayProviderSetupPlan {
 type OneShotCommandRunner = (
   command: string,
   args: string[],
+  options?: {
+    env?: NodeJS.ProcessEnv;
+  },
 ) => Promise<RunOneShotCommandResult>;
 
-const PRIVATECLAW_VERIFICATION_COMMAND = "openclaw privateclaw pair --help";
+const OPENCLAW_UNSAFE_INSTALL_FLAG = "--dangerously-force-unsafe-install";
 
 interface OfferRelayProviderSetupOptions {
   relayBaseUrl: string;
   webChatUrl?: string;
+  openClawConfigPath?: string;
+  packageRoot?: string;
+  packageSpec?: string;
   onLog?: (line: string) => void;
   isInteractive?: boolean;
   detectLocalOpenClawStatus?: () => Promise<LocalOpenClawStatus>;
@@ -67,7 +82,7 @@ function createStep(
   command: string,
   args: string[],
   display: string,
-  extra?: Pick<RelayProviderSetupStep, "kind" | "packageSpec">,
+  extra?: Pick<RelayProviderSetupStep, "kind" | "env" | "candidates">,
 ): RelayProviderSetupStep {
   return {
     title,
@@ -98,11 +113,113 @@ function delay(ms: number): Promise<void> {
   });
 }
 
+function shellEscape(value: string): string {
+  if (/^[A-Za-z0-9_./:@%+=,-]+$/u.test(value)) {
+    return value;
+  }
+  return `'${value.replace(/'/gu, `'\"'\"'`)}'`;
+}
+
+function buildCommandDisplay(command: string, args: string[]): string {
+  return [command, ...args].map(shellEscape).join(" ");
+}
+
+function buildOpenClawCommandEnv(configPath: string): NodeJS.ProcessEnv {
+  const resolvedConfigPath = path.resolve(configPath);
+  const stateDir = path.dirname(resolvedConfigPath);
+  return {
+    ...process.env,
+    OPENCLAW_STATE_DIR: stateDir,
+    OPENCLAW_CONFIG_PATH: resolvedConfigPath,
+  };
+}
+
+function buildOpenClawDisplayPrefix(configPath?: string): string | undefined {
+  if (!configPath) {
+    return undefined;
+  }
+  const resolvedConfigPath = path.resolve(configPath);
+  const stateDir = path.dirname(resolvedConfigPath);
+  return `OPENCLAW_STATE_DIR=${shellEscape(stateDir)} OPENCLAW_CONFIG_PATH=${shellEscape(resolvedConfigPath)}`;
+}
+
+function buildDisplayWithOptionalPrefix(
+  command: string,
+  args: string[],
+  prefix?: string,
+): string {
+  const commandDisplay = buildCommandDisplay(command, args);
+  return prefix ? `${prefix} ${commandDisplay}` : commandDisplay;
+}
+
+function createOpenClawStep(
+  title: string,
+  args: string[],
+  configPath?: string,
+): RelayProviderSetupStep {
+  const env = configPath ? buildOpenClawCommandEnv(configPath) : undefined;
+  return createStep(
+    title,
+    "openclaw",
+    args,
+    buildDisplayWithOptionalPrefix(
+      "openclaw",
+      args,
+      buildOpenClawDisplayPrefix(configPath),
+    ),
+    {
+      ...(env ? { env } : {}),
+    },
+  );
+}
+
+function createNpmExecOpenClawStep(
+  title: string,
+  args: string[],
+  configPath?: string,
+): RelayProviderSetupStep {
+  const command = resolveNpmCommand();
+  const fullArgs = ["exec", "-y", "openclaw@latest", "--", ...args];
+  const env = configPath ? buildOpenClawCommandEnv(configPath) : undefined;
+  return createStep(
+    title,
+    command,
+    fullArgs,
+    buildDisplayWithOptionalPrefix(
+      command,
+      fullArgs,
+      buildOpenClawDisplayPrefix(configPath),
+    ),
+    {
+      ...(env ? { env } : {}),
+    },
+  );
+}
+
+function createOpenClawOneShotRunner(configPath?: string): OneShotCommandRunner {
+  if (!configPath) {
+    return runOneShotCommand;
+  }
+  const env = buildOpenClawCommandEnv(configPath);
+  return (command, args, options) =>
+    runOneShotCommand(command, args, {
+      ...(options ?? {}),
+      env: {
+        ...env,
+        ...(options?.env ?? {}),
+      },
+    });
+}
+
 async function runOneShotCommand(
   command: string,
   args: string[],
+  options?: {
+    env?: NodeJS.ProcessEnv;
+  },
 ): Promise<RunOneShotCommandResult> {
   const child = spawn(command, args, {
+    ...(options?.env ? { env: options.env } : {}),
     stdio: ["ignore", "pipe", "pipe"],
   });
   let stdoutText = "";
@@ -146,8 +263,12 @@ async function runOneShotCommand(
 async function runStreamingCommand(
   command: string,
   args: string[],
+  options?: {
+    env?: NodeJS.ProcessEnv;
+  },
 ): Promise<RunOneShotCommandResult> {
   const child = spawn(command, args, {
+    ...(options?.env ? { env: options.env } : {}),
     stdio: ["ignore", "pipe", "pipe"],
   });
   let stdoutText = "";
@@ -199,93 +320,144 @@ function resolveNpmCommand(): string {
   return process.platform === "win32" ? "npm.cmd" : "npm";
 }
 
-function isExactSemverVersion(value: string): boolean {
-  return /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u.test(
-    value.trim(),
+function resolveLocalPrivateClawPackageRoot(): string | undefined {
+  const candidates = [
+    fileURLToPath(new URL("../../../packages/privateclaw-provider/", import.meta.url)),
+    path.join(process.cwd(), "packages/privateclaw-provider"),
+  ];
+  return candidates.find((candidate) => existsSync(path.join(candidate, "package.json")));
+}
+
+function resolveLocalPrivateClawPackageSpec(packageRoot?: string): string {
+  if (packageRoot) {
+    try {
+      const packageJson = JSON.parse(
+        readFileSync(path.join(packageRoot, "package.json"), "utf8"),
+      ) as { name?: unknown; version?: unknown };
+      if (
+        typeof packageJson.name === "string" &&
+        packageJson.name.trim() !== "" &&
+        typeof packageJson.version === "string" &&
+        packageJson.version.trim() !== ""
+      ) {
+        return `${packageJson.name.trim()}@${packageJson.version.trim()}`;
+      }
+    } catch {
+      // Fall back to the published npm tag below.
+    }
+  }
+  return "@privateclaw/privateclaw@latest";
+}
+
+function buildRelayPrivateClawVerificationDisplay(configPath?: string): string {
+  return buildDisplayWithOptionalPrefix(
+    "openclaw",
+    ["privateclaw", "pair", "--help"],
+    buildOpenClawDisplayPrefix(configPath),
   );
 }
 
-function buildPackedArchiveHint(packageSpec: string): string {
-  const normalizedSpec = packageSpec.trim();
-  const lastAt = normalizedSpec.lastIndexOf("@");
-  const hasSelector = lastAt > 0;
-  const packageName = hasSelector ? normalizedSpec.slice(0, lastAt) : normalizedSpec;
-  const selector = hasSelector ? normalizedSpec.slice(lastAt + 1) : "";
-  const sanitizedName = packageName.replace(/^@/u, "").replace(/\//gu, "-");
-  if (selector && isExactSemverVersion(selector)) {
-    return `${sanitizedName}-${selector.replace(/^v/iu, "")}.tgz`;
+function createRelayOpenClawInstallCandidates(params: {
+  packageRoot?: string;
+  packageSpec: string;
+  configPath?: string;
+}): RelayProviderSetupCommandCandidate[] {
+  const candidates: RelayProviderSetupCommandCandidate[] = [];
+  if (params.packageRoot) {
+    const normalizedPackageRoot = path.resolve(params.packageRoot);
+    const installArgs = [
+      "plugins",
+      "install",
+      OPENCLAW_UNSAFE_INSTALL_FLAG,
+      normalizedPackageRoot,
+    ];
+    const openClawLocalStep = createOpenClawStep(
+      "Install the local PrivateClaw package directory into OpenClaw",
+      installArgs,
+      params.configPath,
+    );
+    const npmExecFallbackStep = createNpmExecOpenClawStep(
+      "Install the local PrivateClaw package directory via npm exec openclaw",
+      installArgs,
+      params.configPath,
+    );
+    candidates.push(
+      {
+        label: "openclaw (local package directory)",
+        command: openClawLocalStep.command,
+        args: openClawLocalStep.args,
+        display: openClawLocalStep.display,
+        ...(openClawLocalStep.env ? { env: openClawLocalStep.env } : {}),
+      },
+      {
+        label: "npm exec fallback (local package directory)",
+        command: npmExecFallbackStep.command,
+        args: npmExecFallbackStep.args,
+        display: npmExecFallbackStep.display,
+        ...(npmExecFallbackStep.env ? { env: npmExecFallbackStep.env } : {}),
+      },
+    );
   }
-  return `${sanitizedName}-*.tgz`;
+
+  const exactSpecArgs = [
+    "plugins",
+    "install",
+    OPENCLAW_UNSAFE_INSTALL_FLAG,
+    params.packageSpec,
+  ];
+  const exactVersionStep = createOpenClawStep(
+    params.packageRoot
+      ? "Install the published PrivateClaw package with the exact npm spec"
+      : "Install the published PrivateClaw package",
+    exactSpecArgs,
+    params.configPath,
+  );
+  candidates.push({
+    label: params.packageRoot
+      ? "openclaw (exact version fallback)"
+      : "openclaw (published package)",
+    command: exactVersionStep.command,
+    args: exactVersionStep.args,
+    display: exactVersionStep.display,
+    ...(exactVersionStep.env ? { env: exactVersionStep.env } : {}),
+  });
+  return candidates;
 }
 
-function createNpmPackInstallStep(packageSpec: string): RelayProviderSetupStep {
+function createRelayOpenClawInstallStep(params: {
+  packageRoot?: string;
+  packageSpec: string;
+  configPath?: string;
+}): RelayProviderSetupStep {
+  const candidates = createRelayOpenClawInstallCandidates(params);
+  const [firstCandidate] = candidates;
+  if (!firstCandidate) {
+    throw new RelayCliUserError("Missing OpenClaw install candidates.");
+  }
   return createStep(
-    "Pack the PrivateClaw npm package locally, then install the generated archive into OpenClaw",
-    resolveNpmCommand(),
-    ["pack", packageSpec],
-    `npm pack ${packageSpec} && openclaw plugins install ./${buildPackedArchiveHint(packageSpec)}`,
+    "Install the PrivateClaw package into OpenClaw",
+    firstCandidate.command,
+    firstCandidate.args,
+    firstCandidate.display,
     {
-      kind: "npm-pack-install",
-      packageSpec,
+      kind: "install-candidates",
+      candidates,
+      ...(firstCandidate.env ? { env: firstCandidate.env } : {}),
     },
   );
 }
 
-function createManualNpmArchiveInstallSteps(
-  packageSpec: string,
-): [RelayProviderSetupStep, RelayProviderSetupStep] {
-  const archiveHint = buildPackedArchiveHint(packageSpec);
-  return [
-    createStep(
-      "Pack the PrivateClaw plugin from npm into a local archive",
-      resolveNpmCommand(),
-      ["pack", packageSpec],
-      `npm pack ${packageSpec}`,
-    ),
-    createStep(
-      "Install the generated PrivateClaw plugin archive into OpenClaw",
-      "openclaw",
-      ["plugins", "install", `./${archiveHint}`],
-      `openclaw plugins install ./${archiveHint}`,
-    ),
-  ];
-}
-
-async function runRelayNpmPackInstallStep(
-  step: RelayProviderSetupStep,
-): Promise<void> {
-  if (!step.packageSpec) {
-    throw new RelayCliUserError("Missing packageSpec for npm-pack-install step.");
-  }
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), "privateclaw-relay-install-"));
-  try {
-    const packResult = await runOneShotCommand(resolveNpmCommand(), [
-      "pack",
-      step.packageSpec,
-      "--json",
-      "--ignore-scripts",
-      "--pack-destination",
-      tempDir,
-    ]);
-    const packOutput = packResult.stdout.trim() || packResult.combined.trim();
-    const parsed = JSON.parse(packOutput) as Array<{ filename?: unknown }>;
-    const archiveFileName =
-      typeof parsed[0]?.filename === "string" && parsed[0].filename.trim() !== ""
-        ? parsed[0].filename.trim()
-        : undefined;
-    if (!archiveFileName) {
-      throw new RelayCliUserError(
-        `Could not determine the generated archive for ${step.packageSpec}.`,
-      );
-    }
-    await runStreamingCommand("openclaw", [
-      "plugins",
-      "install",
-      path.join(tempDir, archiveFileName),
-    ]);
-  } finally {
-    await rm(tempDir, { recursive: true, force: true });
-  }
+function createManualRelayOpenClawInstallSteps(params: {
+  packageRoot?: string;
+  packageSpec: string;
+  configPath?: string;
+}): RelayProviderSetupStep[] {
+  const candidates = createRelayOpenClawInstallCandidates(params);
+  return candidates.map((candidate) =>
+    createStep(candidate.label, candidate.command, candidate.args, candidate.display, {
+      ...(candidate.env ? { env: candidate.env } : {}),
+    }),
+  );
 }
 
 async function commandExists(
@@ -366,48 +538,80 @@ export async function detectLocalOpenClawStatus(
 export function buildRelayProviderSetupPlan(params: {
   relayBaseUrl: string;
   status: LocalOpenClawStatus;
+  packageRoot?: string;
+  packageSpec?: string;
+  openClawConfigPath?: string;
 }): RelayProviderSetupPlan {
-  const installStep = createNpmPackInstallStep("@privateclaw/privateclaw@latest");
-  const manualInstallSteps = createManualNpmArchiveInstallSteps(
-    "@privateclaw/privateclaw@latest",
-  );
-  const updateStep = createStep(
+  const packageSpec =
+    params.packageSpec ?? resolveLocalPrivateClawPackageSpec(params.packageRoot);
+  const installStep = createRelayOpenClawInstallStep({
+    packageSpec,
+    ...(params.packageRoot ? { packageRoot: params.packageRoot } : {}),
+    ...(params.openClawConfigPath
+      ? { configPath: params.openClawConfigPath }
+      : {}),
+  });
+  const manualInstallSteps = createManualRelayOpenClawInstallSteps({
+    packageSpec,
+    ...(params.packageRoot ? { packageRoot: params.packageRoot } : {}),
+    ...(params.openClawConfigPath
+      ? { configPath: params.openClawConfigPath }
+      : {}),
+  });
+  const updateStep = createOpenClawStep(
     "Update the existing PrivateClaw OpenClaw plugin",
-    "openclaw",
     ["plugins", "update", "privateclaw"],
-    "openclaw plugins update privateclaw",
+    params.openClawConfigPath,
   );
-  const enableStep = createStep(
+  const enableStep = createOpenClawStep(
     "Enable the PrivateClaw OpenClaw plugin",
-    "openclaw",
     ["plugins", "enable", "privateclaw"],
-    "openclaw plugins enable privateclaw",
+    params.openClawConfigPath,
   );
-  const configStep = createStep(
+  const configStep = createOpenClawStep(
     "Point PrivateClaw at the public relay URL",
-    "openclaw",
     [
       "config",
       "set",
       "plugins.entries.privateclaw.config.relayBaseUrl",
       params.relayBaseUrl,
     ],
-    `openclaw config set plugins.entries.privateclaw.config.relayBaseUrl ${params.relayBaseUrl}`,
+    params.openClawConfigPath,
   );
-  const restartStep = createStep(
+  const gatewayModeStep = params.openClawConfigPath
+    ? createOpenClawStep(
+        "Mark this isolated OpenClaw config as a local gateway",
+        ["config", "set", "gateway.mode", "local"],
+        params.openClawConfigPath,
+      )
+    : undefined;
+  const restartStep = createOpenClawStep(
     "Restart the OpenClaw gateway so the plugin + relay config are reloaded",
-    "openclaw",
     ["gateway", "restart"],
-    "openclaw gateway restart",
+    params.openClawConfigPath,
   );
-  const pairingCommand = createStep(
+  const startStep = createOpenClawStep(
+    "Start the OpenClaw gateway with this config",
+    ["gateway", "run"],
+    params.openClawConfigPath,
+  );
+  const startupStep = params.openClawConfigPath ? startStep : restartStep;
+  const pairingCommand = createOpenClawStep(
     "Start a group pairing request",
-    "openclaw",
     ["privateclaw", "pair", "--group", "--relay", params.relayBaseUrl],
-    `openclaw privateclaw pair --group --relay ${params.relayBaseUrl}`,
+    params.openClawConfigPath,
   );
   const verificationNotes = [
-    `[privateclaw-relay] After restart, verify the command registration with: ${PRIVATECLAW_VERIFICATION_COMMAND}`,
+    ...(params.openClawConfigPath
+      ? [
+          `[privateclaw-relay] Start the isolated OpenClaw instance with: ${startStep.display}`,
+        ]
+      : []),
+    `[privateclaw-relay] ${
+      params.openClawConfigPath
+        ? "Verify the command registration for this isolated config with:"
+        : "After restart, verify the command registration with:"
+    } ${buildRelayPrivateClawVerificationDisplay(params.openClawConfigPath)}`,
     `[privateclaw-relay] When the provider is ready, start a group pairing with: ${pairingCommand.display}`,
   ];
 
@@ -419,7 +623,13 @@ export function buildRelayProviderSetupPlan(params: {
       introduction:
         "[privateclaw-relay] To connect an OpenClaw machine to this relay, run these commands on the machine where `openclaw` is installed:",
       automaticSteps: [],
-      manualSteps: [...manualInstallSteps, enableStep, configStep, restartStep],
+      manualSteps: [
+        ...manualInstallSteps,
+        enableStep,
+        configStep,
+        ...(gatewayModeStep ? [gatewayModeStep] : []),
+        startupStep,
+      ],
       verificationNotes,
       pairingCommand,
     };
@@ -432,8 +642,12 @@ export function buildRelayProviderSetupPlan(params: {
       privateClawCommandAvailable: true,
       introduction:
         "[privateclaw-relay] OpenClaw + PrivateClaw are already available locally. Point the provider at this relay with:",
-      automaticSteps: [configStep, restartStep],
-      manualSteps: [configStep, restartStep],
+      automaticSteps: [
+        configStep,
+        ...(gatewayModeStep ? [gatewayModeStep] : []),
+        ...(params.openClawConfigPath ? [] : [restartStep]),
+      ],
+      manualSteps: [configStep, ...(gatewayModeStep ? [gatewayModeStep] : []), startupStep],
       verificationNotes,
       pairingCommand,
     };
@@ -451,13 +665,15 @@ export function buildRelayProviderSetupPlan(params: {
       ...(params.status.privateClawPluginPresent ? [updateStep] : [installStep]),
       enableStep,
       configStep,
-      restartStep,
+      ...(gatewayModeStep ? [gatewayModeStep] : []),
+      ...(params.openClawConfigPath ? [] : [restartStep]),
     ],
     manualSteps: [
       ...(params.status.privateClawPluginPresent ? [updateStep] : [installStep]),
       enableStep,
       configStep,
-      restartStep,
+      ...(gatewayModeStep ? [gatewayModeStep] : []),
+      startupStep,
     ],
     verificationNotes,
     pairingCommand,
@@ -492,11 +708,25 @@ async function promptForConfirmation(question: string): Promise<boolean> {
 async function runRelayProviderSetupStep(
   step: RelayProviderSetupStep,
 ): Promise<void> {
-  if (step.kind === "npm-pack-install") {
-    await runRelayNpmPackInstallStep(step);
-    return;
+  if (step.kind === "install-candidates") {
+    let lastError: unknown;
+    for (const candidate of step.candidates ?? []) {
+      try {
+        await runStreamingCommand(candidate.command, candidate.args, {
+          ...(candidate.env ? { env: candidate.env } : {}),
+        });
+        return;
+      } catch (error) {
+        lastError = error;
+        console.warn(
+          `[privateclaw-relay] Install attempt failed (${candidate.label}): ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+    throw lastError ?? new RelayCliUserError("Missing OpenClaw install candidates.");
   }
   const child = spawn(step.command, step.args, {
+    ...(step.env ? { env: step.env } : {}),
     stdio: "inherit",
   });
   const childError = once(child, "error").then(([error]) => {
@@ -561,11 +791,20 @@ export async function offerRelayProviderSetup(
   options: OfferRelayProviderSetupOptions,
 ): Promise<void> {
   const detectStatus =
-    options.detectLocalOpenClawStatus ?? detectLocalOpenClawStatus;
+    options.detectLocalOpenClawStatus ??
+    (() =>
+      detectLocalOpenClawStatus(
+        createOpenClawOneShotRunner(options.openClawConfigPath),
+      ));
   const status = await detectStatus();
   const plan = buildRelayProviderSetupPlan({
     relayBaseUrl: options.relayBaseUrl,
     status,
+    ...(options.packageRoot ? { packageRoot: options.packageRoot } : {}),
+    ...(options.packageSpec ? { packageSpec: options.packageSpec } : {}),
+    ...(options.openClawConfigPath
+      ? { openClawConfigPath: options.openClawConfigPath }
+      : {}),
   });
   const guidance = renderRelayProviderSetupGuidance(plan);
 
@@ -585,7 +824,9 @@ export async function offerRelayProviderSetup(
   const promptToContinue = options.promptToContinue ?? promptForConfirmation;
   const runStep = options.runStep ?? runRelayProviderSetupStep;
   const runPairingCommand = options.runPairingCommand ?? ((step) =>
-    runStreamingCommand(step.command, step.args));
+    runStreamingCommand(step.command, step.args, {
+      ...(step.env ? { env: step.env } : {}),
+    }));
   const openBrowser = options.openBrowser ?? openBrowserTarget;
   const verificationTimeoutMs = options.verificationTimeoutMs ?? 15_000;
   const verificationPollMs = options.verificationPollMs ?? 1_000;
@@ -619,11 +860,11 @@ export async function offerRelayProviderSetup(
   );
   if (!refreshedStatus.privateClawCommandAvailable) {
     throw new RelayCliUserError(
-      `OpenClaw restarted, but \`privateclaw\` still does not respond to \`${PRIVATECLAW_VERIFICATION_COMMAND}\`. Confirm the gateway finished restarting cleanly, then rerun \`privateclaw-relay\`.`,
+      `The PrivateClaw install/config steps completed, but \`privateclaw\` still does not respond to \`${buildRelayPrivateClawVerificationDisplay(options.openClawConfigPath)}\`. Confirm the current OpenClaw config loaded cleanly, then rerun \`privateclaw-relay\`.`,
     );
   }
   options.onLog?.(
-    `[privateclaw-relay] Verified \`privateclaw\` is now available via \`${PRIVATECLAW_VERIFICATION_COMMAND}\`.`,
+    `[privateclaw-relay] Verified \`privateclaw\` is now available via \`${buildRelayPrivateClawVerificationDisplay(options.openClawConfigPath)}\`.`,
   );
   for (const line of plan.verificationNotes) {
     options.onLog?.(line);

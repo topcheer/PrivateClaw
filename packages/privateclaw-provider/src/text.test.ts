@@ -4,6 +4,7 @@ import {
   appendPrivateClawAppInstallFooter,
   buildPrivateClawCommandErrorMessage,
   PRIVATECLAW_APP_INSTALL_FOOTER_LINES,
+  PRIVATECLAW_DESKTOP_GITHUB_RELEASES_URL,
 } from "./text.js";
 
 test("appendPrivateClawAppInstallFooter appends concise store links", () => {
@@ -11,9 +12,11 @@ test("appendPrivateClawAppInstallFooter appends concise store links", () => {
   assert.match(text, /App Store/i);
   assert.match(text, /Google Play/i);
   assert.match(text, /Google Group/i);
+  assert.match(text, /GitHub Releases/i);
+  assert.ok(text.includes(PRIVATECLAW_DESKTOP_GITHUB_RELEASES_URL));
   assert.ok(
     text.endsWith(PRIVATECLAW_APP_INSTALL_FOOTER_LINES.at(-1) ?? ""),
-    "footer should end with the Google Group note",
+    "footer should end with the desktop GitHub Releases note",
   );
 });
 
@@ -23,4 +26,6 @@ test("buildPrivateClawCommandErrorMessage also appends store links", () => {
   assert.match(text, /App Store/i);
   assert.match(text, /Google Play/i);
   assert.match(text, /Google Group/i);
+  assert.match(text, /GitHub Releases/i);
+  assert.ok(text.includes(PRIVATECLAW_DESKTOP_GITHUB_RELEASES_URL));
 });

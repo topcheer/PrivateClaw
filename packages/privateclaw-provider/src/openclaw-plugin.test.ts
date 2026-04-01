@@ -841,6 +841,7 @@ test("privateclaw command writes QR media into the OpenClaw state media director
   assert.match(reply.text, /App Store/i);
   assert.match(reply.text, /Google Play/i);
   assert.match(reply.text, /Google Group/i);
+  assert.match(reply.text, /GitHub Releases/i);
 
   const inviteUri = reply.text.match(/privateclaw:\/\/connect\?payload=\S+/)?.[0];
   assert.ok(inviteUri, "reply text should include a PrivateClaw invite URI");
@@ -915,6 +916,7 @@ test("privateclaw command embeds qqimg tags for QQ channel replies", async (t) =
   assert.match(reply.text, /App Store/i);
   assert.match(reply.text, /Google Play/i);
   assert.match(reply.text, /Google Group/i);
+  assert.match(reply.text, /GitHub Releases/i);
 
   const inviteUri = reply.text.match(/privateclaw:\/\/connect\?payload=\S+/)?.[0];
   assert.ok(inviteUri, "reply text should include a PrivateClaw invite URI");

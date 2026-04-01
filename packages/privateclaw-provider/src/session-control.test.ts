@@ -541,6 +541,7 @@ test("session control reports append app install footer", () => {
   assert.match(report, /App Store/i);
   assert.match(report, /Google Play/i);
   assert.match(report, /Google Group/i);
+  assert.match(report, /GitHub Releases/i);
 });
 
 test("session control can terminate a managed session", async (t) => {
@@ -828,7 +829,7 @@ test("session control falls back to the saved QR PNG when an older host lacks th
       result,
       notifyParticipants: true,
     }).join("\n"),
-    /App Store|Google Play|Google Group/u,
+    /App Store|Google Play|Google Group|GitHub Releases/u,
   );
 });
 

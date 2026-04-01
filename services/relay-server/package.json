@@ -1,6 +1,6 @@
 {
   "name": "@privateclaw/privateclaw-relay",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "description": "Blind WebSocket relay for PrivateClaw encrypted sessions with local CLI startup and optional Tailscale Funnel or Cloudflare Tunnel exposure",
   "type": "module",
   "main": "./dist/index.js",

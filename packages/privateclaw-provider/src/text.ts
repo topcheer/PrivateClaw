@@ -15,6 +15,8 @@ export const PRIVATECLAW_ANDROID_CLOSED_TESTING_PLAY_URL =
   "https://play.google.com/store/apps/details?id=gg.ai.privateclaw";
 export const PRIVATECLAW_ANDROID_CLOSED_TESTING_GROUP_URL =
   "https://groups.google.com/g/gg-studio-ai-products";
+export const PRIVATECLAW_DESKTOP_GITHUB_RELEASES_URL =
+  "https://github.com/topcheer/PrivateClaw/releases";
 
 export const PRIVATECLAW_APP_INSTALL_FOOTER_LINES = [
   formatBilingualInline(
@@ -28,6 +30,10 @@ export const PRIVATECLAW_APP_INSTALL_FOOTER_LINES = [
   formatBilingualInline(
     `Android 需先加入 Google Group：${PRIVATECLAW_ANDROID_CLOSED_TESTING_GROUP_URL}`,
     `Join the Google Group first for Android closed testing: ${PRIVATECLAW_ANDROID_CLOSED_TESTING_GROUP_URL}`,
+  ),
+  formatBilingualInline(
+    `桌面版 GitHub Releases（Windows / macOS / Linux，请选择 app-v*）：${PRIVATECLAW_DESKTOP_GITHUB_RELEASES_URL}`,
+    `Desktop GitHub Releases (Windows / macOS / Linux, look for app-v*): ${PRIVATECLAW_DESKTOP_GITHUB_RELEASES_URL}`,
   ),
 ];
 
@@ -140,6 +146,11 @@ export const PRIVATECLAW_CLI_LABEL_OPTION_DESCRIPTION = formatBilingualInline(
 export const PRIVATECLAW_CLI_RELAY_OPTION_DESCRIPTION = formatBilingualInline(
   "临时覆盖本次命令使用的 relay base URL。",
   "Temporarily override the relay base URL for this command.",
+);
+
+export const PRIVATECLAW_CLI_CONFIG_OPTION_DESCRIPTION = formatBilingualInline(
+  "临时指定 OpenClaw 配置文件路径；setup 里的 OpenClaw 子命令会自动同步 state dir。",
+  "Temporarily point setup at a specific OpenClaw config file; the OpenClaw subcommands also inherit the matching state dir automatically.",
 );
 
 export const PRIVATECLAW_CLI_GROUP_OPTION_DESCRIPTION = formatBilingualInline(

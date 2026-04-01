@@ -47,6 +47,7 @@ import {
 } from "./setup.js";
 import {
   appendPrivateClawAppInstallFooter,
+  PRIVATECLAW_CLI_CONFIG_OPTION_DESCRIPTION,
   buildPrivateClawBackgroundDaemonReminder,
   formatBilingualInline,
   PRIVATECLAW_CLI_DURATION_OPTION_DESCRIPTION,
@@ -338,7 +339,7 @@ async function readHandoffState(
 function printHelp(): void {
   console.log(`privateclaw-provider <setup|pair|sessions|kick|killall>
 
-setup [--group|--single] [--duration <preset>] [--ttl-ms <ms>] [--label <label>] [--relay <url>] [--open] [--foreground] [--verbose]
+setup [--group|--single] [--duration <preset>] [--ttl-ms <ms>] [--label <label>] [--relay <url>] [--config <path>] [--open] [--foreground] [--verbose]
 pair [--ttl-ms <ms>] [--label <label>] [--relay <url>] [--group] [--print-only] [--open] [--foreground] [--verbose]
 sessions
 sessions follow <sessionId>
@@ -349,6 +350,7 @@ killall
 kick <sessionId> <appId>`);
   console.log(`\nsetup: ${PRIVATECLAW_CLI_SETUP_DESCRIPTION}`);
   console.log(`\n--relay <url>: ${PRIVATECLAW_CLI_RELAY_OPTION_DESCRIPTION}`);
+  console.log(`--config <path>: ${PRIVATECLAW_CLI_CONFIG_OPTION_DESCRIPTION}`);
   console.log(`--duration <preset>: ${PRIVATECLAW_CLI_DURATION_OPTION_DESCRIPTION}`);
   console.log(`--single: ${PRIVATECLAW_CLI_SINGLE_OPTION_DESCRIPTION}`);
   console.log(`--verbose: ${PRIVATECLAW_CLI_VERBOSE_OPTION_DESCRIPTION}`);
@@ -378,6 +380,7 @@ async function runSetupCommand(args: string[]): Promise<void> {
       "ttl-ms": { type: "string" },
       label: { type: "string" },
       relay: { type: "string", short: "r" },
+      config: { type: "string" },
       open: { type: "boolean", default: parseBooleanFlag(process.env.PRIVATECLAW_OPEN_QR) },
       foreground: { type: "boolean", default: false },
       verbose: { type: "boolean", default: parseBooleanFlag(process.env.PRIVATECLAW_VERBOSE) },
@@ -432,6 +435,9 @@ async function runSetupCommand(args: string[]): Promise<void> {
     ...(durationPreset ? { durationPreset } : {}),
     ...(parsed.values.relay?.trim()
       ? { relayBaseUrl: parsed.values.relay.trim() }
+      : {}),
+    ...(parsed.values.config?.trim()
+      ? { configPath: parsed.values.config.trim() }
       : {}),
     ...(parsed.values.label?.trim() ? { label: parsed.values.label.trim() } : {}),
     ...(parsed.values.open ? { openInBrowser: true } : {}),

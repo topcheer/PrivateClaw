@@ -1,11 +1,14 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import os from "node:os";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
-import { formatBilingualInline } from "./text.js";
+import { fileURLToPath } from "node:url";
+import {
+  appendPrivateClawAppInstallFooter,
+  formatBilingualInline,
+} from "./text.js";
 
 export interface LocalOpenClawStatus {
   openClawAvailable: boolean;
@@ -13,13 +16,22 @@ export interface LocalOpenClawStatus {
   privateClawPluginPresent?: boolean;
 }
 
+interface PrivateClawSetupCommandCandidate {
+  label: string;
+  command: string;
+  args: string[];
+  display: string;
+  env?: NodeJS.ProcessEnv;
+}
+
 export interface PrivateClawSetupStep {
   title: string;
   command: string;
   args: string[];
   display: string;
-  kind?: "command" | "npm-pack-install";
-  packageSpec?: string;
+  env?: NodeJS.ProcessEnv;
+  kind?: "command" | "install-candidates";
+  candidates?: readonly PrivateClawSetupCommandCandidate[];
 }
 
 export interface PrivateClawSetupChoice {
@@ -61,11 +73,17 @@ interface RunOneShotCommandResult {
 type OneShotCommandRunner = (
   command: string,
   args: string[],
+  options?: {
+    cwd?: string;
+    env?: NodeJS.ProcessEnv;
+  },
 ) => Promise<RunOneShotCommandResult>;
 
 export interface RunPrivateClawSetupOptions {
   packageSpec?: string;
+  packageRoot?: string;
   relayBaseUrl?: string;
+  configPath?: string;
   label?: string;
   foreground?: boolean;
   openInBrowser?: boolean;
@@ -90,8 +108,8 @@ export interface RunPrivateClawSetupOptions {
 }
 
 const PRIVATECLAW_PACKAGE_NAME = "@privateclaw/privateclaw";
-const PRIVATECLAW_VERIFICATION_COMMAND = "openclaw privateclaw pair --help";
 const PRIVATECLAW_PLUGIN_ID = "privateclaw";
+const OPENCLAW_UNSAFE_INSTALL_FLAG = "--dangerously-force-unsafe-install";
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
@@ -176,7 +194,7 @@ function createStep(
   command: string,
   args: string[],
   display: string,
-  extra?: Pick<PrivateClawSetupStep, "kind" | "packageSpec">,
+  extra?: Pick<PrivateClawSetupStep, "kind" | "env" | "candidates">,
 ): PrivateClawSetupStep {
   return {
     title,
@@ -207,15 +225,115 @@ function delay(ms: number): Promise<void> {
   });
 }
 
+function shellEscape(value: string): string {
+  if (/^[A-Za-z0-9_./:@%+=,-]+$/u.test(value)) {
+    return value;
+  }
+  return `'${value.replace(/'/gu, `'\"'\"'`)}'`;
+}
+
+function buildCommandDisplay(command: string, args: string[]): string {
+  return [command, ...args].map(shellEscape).join(" ");
+}
+
+export function buildOpenClawCommandEnv(configPath: string): NodeJS.ProcessEnv {
+  const resolvedConfigPath = path.resolve(configPath);
+  const stateDir = path.dirname(resolvedConfigPath);
+  return {
+    ...process.env,
+    OPENCLAW_STATE_DIR: stateDir,
+    OPENCLAW_CONFIG_PATH: resolvedConfigPath,
+  };
+}
+
+function buildOpenClawDisplayPrefix(configPath?: string): string | undefined {
+  if (!configPath) {
+    return undefined;
+  }
+  const resolvedConfigPath = path.resolve(configPath);
+  const stateDir = path.dirname(resolvedConfigPath);
+  return `OPENCLAW_STATE_DIR=${shellEscape(stateDir)} OPENCLAW_CONFIG_PATH=${shellEscape(resolvedConfigPath)}`;
+}
+
+function buildDisplayWithOptionalPrefix(
+  command: string,
+  args: string[],
+  prefix?: string,
+): string {
+  const commandDisplay = buildCommandDisplay(command, args);
+  return prefix ? `${prefix} ${commandDisplay}` : commandDisplay;
+}
+
+function createOpenClawStep(
+  title: string,
+  args: string[],
+  configPath?: string,
+): PrivateClawSetupStep {
+  const env = configPath ? buildOpenClawCommandEnv(configPath) : undefined;
+  return createStep(
+    title,
+    "openclaw",
+    args,
+    buildDisplayWithOptionalPrefix(
+      "openclaw",
+      args,
+      buildOpenClawDisplayPrefix(configPath),
+    ),
+    {
+      ...(env ? { env } : {}),
+    },
+  );
+}
+
+function createNpmExecOpenClawStep(
+  title: string,
+  args: string[],
+  configPath?: string,
+): PrivateClawSetupStep {
+  const command = resolveNpmCommand();
+  const fullArgs = ["exec", "-y", "openclaw@latest", "--", ...args];
+  const env = configPath ? buildOpenClawCommandEnv(configPath) : undefined;
+  return createStep(
+    title,
+    command,
+    fullArgs,
+    buildDisplayWithOptionalPrefix(
+      command,
+      fullArgs,
+      buildOpenClawDisplayPrefix(configPath),
+    ),
+    {
+      ...(env ? { env } : {}),
+    },
+  );
+}
+
+function createOpenClawOneShotRunner(configPath?: string): OneShotCommandRunner {
+  if (!configPath) {
+    return runOneShotCommand;
+  }
+  const env = buildOpenClawCommandEnv(configPath);
+  return (command, args, options) =>
+    runOneShotCommand(command, args, {
+      ...(options ?? {}),
+      env: {
+        ...env,
+        ...(options?.env ?? {}),
+      },
+    });
+}
+
 async function runOneShotCommand(
   command: string,
   args: string[],
   options?: {
     cwd?: string;
+    env?: NodeJS.ProcessEnv;
   },
 ): Promise<RunOneShotCommandResult> {
   const child = spawn(command, args, {
     ...(options?.cwd ? { cwd: options.cwd } : {}),
+    ...(options?.env ? { env: options.env } : {}),
     stdio: ["ignore", "pipe", "pipe"],
   });
   let stdoutText = "";
@@ -257,10 +375,12 @@ async function runStreamingCommand(
   args: string[],
   options?: {
     cwd?: string;
+    env?: NodeJS.ProcessEnv;
   },
 ): Promise<RunOneShotCommandResult> {
   const child = spawn(command, args, {
     ...(options?.cwd ? { cwd: options.cwd } : {}),
+    ...(options?.env ? { env: options.env } : {}),
     stdio: ["ignore", "pipe", "pipe"],
   });
   let stdoutText = "";
@@ -395,92 +515,110 @@ function resolveNpmCommand(): string {
   return process.platform === "win32" ? "npm.cmd" : "npm";
 }
 
-function isExactSemverVersion(value: string): boolean {
-  return /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u.test(
-    value.trim(),
+function resolveCurrentPrivateClawPackageRoot(): string {
+  return fileURLToPath(new URL("../", import.meta.url));
+}
+
+function buildPrivateClawVerificationDisplay(configPath?: string): string {
+  return buildDisplayWithOptionalPrefix(
+    "openclaw",
+    ["privateclaw", "pair", "--help"],
+    buildOpenClawDisplayPrefix(configPath),
   );
 }
 
-function buildPackedArchiveHint(packageSpec: string): string {
-  const normalizedSpec = packageSpec.trim();
-  const lastAt = normalizedSpec.lastIndexOf("@");
-  const hasSelector = lastAt > 0;
-  const packageName = hasSelector ? normalizedSpec.slice(0, lastAt) : normalizedSpec;
-  const selector = hasSelector ? normalizedSpec.slice(lastAt + 1) : "";
-  const sanitizedName = packageName.replace(/^@/u, "").replace(/\//gu, "-");
-  if (selector && isExactSemverVersion(selector)) {
-    return `${sanitizedName}-${selector.replace(/^v/iu, "")}.tgz`;
-  }
-  return `${sanitizedName}-*.tgz`;
+function createOpenClawInstallCandidates(params: {
+  packageRoot: string;
+  packageSpec: string;
+  configPath?: string;
+}): PrivateClawSetupCommandCandidate[] {
+  const normalizedPackageRoot = path.resolve(params.packageRoot);
+  const installArgs = [
+    "plugins",
+    "install",
+    OPENCLAW_UNSAFE_INSTALL_FLAG,
+    normalizedPackageRoot,
+  ];
+  const exactSpecArgs = [
+    "plugins",
+    "install",
+    OPENCLAW_UNSAFE_INSTALL_FLAG,
+    params.packageSpec,
+  ];
+  const openClawLocalStep = createOpenClawStep(
+    "Install the local PrivateClaw package directory into OpenClaw",
+    installArgs,
+    params.configPath,
+  );
+  const npmExecFallbackStep = createNpmExecOpenClawStep(
+    "Install the local PrivateClaw package directory via npm exec openclaw",
+    installArgs,
+    params.configPath,
+  );
+  const exactVersionStep = createOpenClawStep(
+    "Install the published PrivateClaw package with the exact npm spec",
+    exactSpecArgs,
+    params.configPath,
+  );
+  return [
+    {
+      label: "openclaw (local package directory)",
+      command: openClawLocalStep.command,
+      args: openClawLocalStep.args,
+      display: openClawLocalStep.display,
+      ...(openClawLocalStep.env ? { env: openClawLocalStep.env } : {}),
+    },
+    {
+      label: "npm exec fallback (local package directory)",
+      command: npmExecFallbackStep.command,
+      args: npmExecFallbackStep.args,
+      display: npmExecFallbackStep.display,
+      ...(npmExecFallbackStep.env ? { env: npmExecFallbackStep.env } : {}),
+    },
+    {
+      label: "openclaw (exact version fallback)",
+      command: exactVersionStep.command,
+      args: exactVersionStep.args,
+      display: exactVersionStep.display,
+      ...(exactVersionStep.env ? { env: exactVersionStep.env } : {}),
+    },
+  ];
 }
 
-function createNpmPackInstallStep(packageSpec: string): PrivateClawSetupStep {
+function createOpenClawInstallStep(params: {
+  packageRoot: string;
+  packageSpec: string;
+  configPath?: string;
+}): PrivateClawSetupStep {
+  const candidates = createOpenClawInstallCandidates(params);
+  const [firstCandidate] = candidates;
+  if (!firstCandidate) {
+    throw new Error("Missing OpenClaw install candidates.");
+  }
   return createStep(
-    "Pack the PrivateClaw npm package locally, then install the generated archive into OpenClaw",
-    resolveNpmCommand(),
-    ["pack", packageSpec],
-    `npm pack ${packageSpec} && openclaw plugins install ./${buildPackedArchiveHint(packageSpec)}`,
+    "Install the local PrivateClaw package into OpenClaw",
+    firstCandidate.command,
+    firstCandidate.args,
+    firstCandidate.display,
     {
-      kind: "npm-pack-install",
-      packageSpec,
+      kind: "install-candidates",
+      candidates,
+      ...(firstCandidate.env ? { env: firstCandidate.env } : {}),
     },
   );
 }
 
-function createManualNpmArchiveInstallSteps(
-  packageSpec: string,
-): [PrivateClawSetupStep, PrivateClawSetupStep] {
-  const archiveHint = buildPackedArchiveHint(packageSpec);
-  return [
-    createStep(
-      "Pack the PrivateClaw plugin from npm into a local archive",
-      resolveNpmCommand(),
-      ["pack", packageSpec],
-      `npm pack ${packageSpec}`,
-    ),
-    createStep(
-      "Install the generated PrivateClaw plugin archive into OpenClaw",
-      "openclaw",
-      ["plugins", "install", `./${archiveHint}`],
-      `openclaw plugins install ./${archiveHint}`,
-    ),
-  ];
-}
-
-async function runNpmPackInstallStep(step: PrivateClawSetupStep): Promise<void> {
-  if (!step.packageSpec) {
-    throw new Error("Missing packageSpec for npm-pack-install step.");
-  }
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), "privateclaw-plugin-install-"));
-  try {
-    const packResult = await runOneShotCommand(
-      resolveNpmCommand(),
-      [
-        "pack",
-        step.packageSpec,
-        "--json",
-        "--ignore-scripts",
-        "--pack-destination",
-        tempDir,
-      ],
-    );
-    const packOutput = packResult.stdout.trim() || packResult.combined.trim();
-    const parsed = JSON.parse(packOutput) as Array<{ filename?: unknown }>;
-    const archiveFileName =
-      typeof parsed[0]?.filename === "string" && parsed[0].filename.trim() !== ""
-        ? parsed[0].filename.trim()
-        : undefined;
-    if (!archiveFileName) {
-      throw new Error(`Could not determine the generated archive for ${step.packageSpec}.`);
-    }
-    await runStreamingCommand("openclaw", [
-      "plugins",
-      "install",
-      path.join(tempDir, archiveFileName),
-    ]);
-  } finally {
-    await rm(tempDir, { recursive: true, force: true });
-  }
+function createManualOpenClawInstallSteps(params: {
+  packageRoot: string;
+  packageSpec: string;
+  configPath?: string;
+}): PrivateClawSetupStep[] {
+  const candidates = createOpenClawInstallCandidates(params);
+  return candidates.map((candidate) =>
+    createStep(candidate.label, candidate.command, candidate.args, candidate.display, {
+      ...(candidate.env ? { env: candidate.env } : {}),
+    }),
+  );
 }
 
 export function parsePrivateClawSessionDurationPreset(
@@ -506,6 +644,7 @@ function buildPairingCommandStep(params: {
   groupMode: boolean;
   ttlMs: number;
   relayBaseUrl?: string;
+  configPath?: string;
   label?: string;
   foreground?: boolean;
   openInBrowser?: boolean;
@@ -535,11 +674,10 @@ function buildPairingCommandStep(params: {
   if (params.verbose) {
     args.push("--verbose");
   }
-  return createStep(
+  return createOpenClawStep(
     "Start the requested PrivateClaw pairing flow",
-    "openclaw",
     args,
-    `openclaw ${args.join(" ")}`,
+    params.configPath,
   );
 }
 
@@ -609,38 +747,59 @@ export async function resolvePrivateClawSetupSelection(params: {
 
 export function buildPrivateClawSetupPlan(params: {
   packageSpec: string;
+  packageRoot: string;
   status: LocalOpenClawStatus;
   selection: PrivateClawSetupSelection;
   relayBaseUrl?: string;
+  configPath?: string;
   label?: string;
   foreground?: boolean;
   openInBrowser?: boolean;
   verbose?: boolean;
 }): PrivateClawSetupPlan {
-  const installStep = createNpmPackInstallStep(params.packageSpec);
-  const manualInstallSteps = createManualNpmArchiveInstallSteps(params.packageSpec);
-  const updateStep = createStep(
+  const installStep = createOpenClawInstallStep({
+    packageRoot: params.packageRoot,
+    packageSpec: params.packageSpec,
+    ...(params.configPath ? { configPath: params.configPath } : {}),
+  });
+  const manualInstallSteps = createManualOpenClawInstallSteps({
+    packageRoot: params.packageRoot,
+    packageSpec: params.packageSpec,
+    ...(params.configPath ? { configPath: params.configPath } : {}),
+  });
+  const updateStep = createOpenClawStep(
     "Update the existing PrivateClaw OpenClaw plugin",
-    "openclaw",
     ["plugins", "update", PRIVATECLAW_PLUGIN_ID],
-    `openclaw plugins update ${PRIVATECLAW_PLUGIN_ID}`,
+    params.configPath,
   );
-  const enableStep = createStep(
+  const enableStep = createOpenClawStep(
     "Enable the PrivateClaw OpenClaw plugin",
-    "openclaw",
     ["plugins", "enable", PRIVATECLAW_PLUGIN_ID],
-    `openclaw plugins enable ${PRIVATECLAW_PLUGIN_ID}`,
+    params.configPath,
   );
-  const restartStep = createStep(
+  const gatewayModeStep = params.configPath
+    ? createOpenClawStep(
+        "Mark this isolated OpenClaw config as a local gateway",
+        ["config", "set", "gateway.mode", "local"],
+        params.configPath,
+      )
+    : undefined;
+  const restartStep = createOpenClawStep(
     "Restart the OpenClaw gateway so the new plugin command is reloaded",
-    "openclaw",
     ["gateway", "restart"],
-    "openclaw gateway restart",
+    params.configPath,
   );
+  const startStep = createOpenClawStep(
+    "Start the OpenClaw gateway with this config",
+    ["gateway", "run"],
+    params.configPath,
+  );
+  const startupStep = params.configPath ? startStep : restartStep;
   const pairingCommand = buildPairingCommandStep({
     groupMode: params.selection.groupMode,
     ttlMs: params.selection.ttlMs,
     ...(params.relayBaseUrl ? { relayBaseUrl: params.relayBaseUrl } : {}),
+    ...(params.configPath ? { configPath: params.configPath } : {}),
     ...(params.label ? { label: params.label } : {}),
     ...(params.foreground ? { foreground: true } : {}),
     ...(params.openInBrowser ? { openInBrowser: true } : {}),
@@ -657,9 +816,17 @@ export function buildPrivateClawSetupPlan(params: {
     ),
   ];
   const verificationNotes = [
+    ...(params.configPath
+      ? [
+          `[privateclaw-provider] ${formatBilingualInline(
+            `若要启动这个隔离配置对应的 OpenClaw，请运行：${startStep.display}`,
+            `To start OpenClaw for this isolated config, run: ${startStep.display}`,
+          )}`,
+        ]
+      : []),
     `[privateclaw-provider] ${formatBilingualInline(
-      `若需要手工确认插件命令是否就绪，可运行：${PRIVATECLAW_VERIFICATION_COMMAND}`,
-      `If you want to verify the plugin command manually, run: ${PRIVATECLAW_VERIFICATION_COMMAND}`,
+      `若需要手工确认插件命令是否就绪，可运行：${buildPrivateClawVerificationDisplay(params.configPath)}`,
+      `If you want to verify the plugin command manually, run: ${buildPrivateClawVerificationDisplay(params.configPath)}`,
     )}`,
   ];
 
@@ -674,7 +841,13 @@ export function buildPrivateClawSetupPlan(params: {
           "Could not detect `openclaw` on this machine. Run these commands on the machine where OpenClaw is installed:",
         )}`,
       automaticSteps: [],
-      manualSteps: [...manualInstallSteps, enableStep, restartStep, pairingCommand],
+      manualSteps: [
+        ...manualInstallSteps,
+        enableStep,
+        ...(gatewayModeStep ? [gatewayModeStep] : []),
+        startupStep,
+        pairingCommand,
+      ],
       selectionNotes,
       verificationNotes,
       pairingCommand,
@@ -691,8 +864,10 @@ export function buildPrivateClawSetupPlan(params: {
           "本机的 OpenClaw + PrivateClaw 已经可用，接下来直接开始配对：",
           "OpenClaw + PrivateClaw are already available locally. Starting pairing next:",
         )}`,
-      automaticSteps: [],
-      manualSteps: [pairingCommand],
+      automaticSteps: gatewayModeStep ? [gatewayModeStep] : [],
+      manualSteps: params.configPath
+        ? [...(gatewayModeStep ? [gatewayModeStep] : []), startupStep, pairingCommand]
+        : [pairingCommand],
       selectionNotes,
       verificationNotes,
       pairingCommand,
@@ -703,24 +878,34 @@ export function buildPrivateClawSetupPlan(params: {
     packageSpec: params.packageSpec,
     localOpenClaw: true,
     privateClawCommandAvailable: false,
-    introduction:
-      `[privateclaw-provider] ${formatBilingualInline(
-        params.status.privateClawPluginPresent
-          ? "检测到本机已经安装过 PrivateClaw 插件，但命令还没有生效。现在会更新、启用并重启 OpenClaw："
-          : "检测到本机可以直接运行 OpenClaw。现在会安装、启用 PrivateClaw 插件并重启 OpenClaw：",
-        params.status.privateClawPluginPresent
-          ? "A local PrivateClaw plugin is already present, but the command is not active yet. Updating, enabling, and restarting OpenClaw now:"
-          : "OpenClaw is available locally. Installing, enabling, and restarting the PrivateClaw plugin now:",
-      )}`,
+      introduction:
+        `[privateclaw-provider] ${formatBilingualInline(
+          params.configPath
+            ? params.status.privateClawPluginPresent
+              ? "检测到本机已经安装过 PrivateClaw 插件，但命令还没有生效。现在会更新并启用插件；隔离配置对应的 OpenClaw 启动命令见下方："
+              : "检测到本机可以直接运行 OpenClaw。现在会安装并启用 PrivateClaw 插件；隔离配置对应的 OpenClaw 启动命令见下方："
+            : params.status.privateClawPluginPresent
+              ? "检测到本机已经安装过 PrivateClaw 插件，但命令还没有生效。现在会更新、启用并重启 OpenClaw："
+              : "检测到本机可以直接运行 OpenClaw。现在会安装、启用 PrivateClaw 插件并重启 OpenClaw：",
+          params.configPath
+            ? params.status.privateClawPluginPresent
+              ? "A local PrivateClaw plugin is already present, but the command is not active yet. Updating and enabling it now; the isolated OpenClaw start command is shown below:"
+              : "OpenClaw is available locally. Installing and enabling the PrivateClaw plugin now; the isolated OpenClaw start command is shown below:"
+            : params.status.privateClawPluginPresent
+              ? "A local PrivateClaw plugin is already present, but the command is not active yet. Updating, enabling, and restarting OpenClaw now:"
+              : "OpenClaw is available locally. Installing, enabling, and restarting the PrivateClaw plugin now:",
+        )}`,
     automaticSteps: [
       ...(params.status.privateClawPluginPresent ? [updateStep] : [installStep]),
       enableStep,
-      restartStep,
+      ...(gatewayModeStep ? [gatewayModeStep] : []),
+      ...(params.configPath ? [] : [restartStep]),
     ],
     manualSteps: [
       ...(params.status.privateClawPluginPresent ? [updateStep] : [installStep]),
       enableStep,
-      restartStep,
+      ...(gatewayModeStep ? [gatewayModeStep] : []),
+      startupStep,
       pairingCommand,
     ],
     selectionNotes,
@@ -732,12 +917,14 @@ export function buildPrivateClawSetupPlan(params: {
 export function renderPrivateClawSetupGuidance(
   plan: PrivateClawSetupPlan,
 ): string {
-  return [
-    plan.introduction,
-    ...plan.selectionNotes.map((line) => `[privateclaw-provider] ${line}`),
-    ...plan.manualSteps.map((step) => `[privateclaw-provider]   ${step.display}`),
-    ...plan.verificationNotes,
-  ].join("\n");
+  return appendPrivateClawAppInstallFooter(
+    [
+      plan.introduction,
+      ...plan.selectionNotes.map((line) => `[privateclaw-provider] ${line}`),
+      ...plan.manualSteps.map((step) => `[privateclaw-provider]   ${step.display}`),
+      ...plan.verificationNotes,
+    ].join("\n"),
+  );
 }
 
 async function promptForPrivateClawChoice(
@@ -802,11 +989,26 @@ async function promptForPrivateClawChoice(
 async function runPrivateClawSetupStep(
   step: PrivateClawSetupStep,
 ): Promise<void> {
-  if (step.kind === "npm-pack-install") {
-    await runNpmPackInstallStep(step);
-    return;
+  if (step.kind === "install-candidates") {
+    let lastError: unknown;
+    for (const candidate of step.candidates ?? []) {
+      try {
+        await runStreamingCommand(candidate.command, candidate.args, {
+          ...(candidate.env ? { env: candidate.env } : {}),
+        });
+        return;
+      } catch (error) {
+        lastError = error;
+        console.warn(
+          `[privateclaw-provider] Install attempt failed (${candidate.label}): ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+    throw lastError ?? new Error("Missing OpenClaw install candidates.");
   }
-  await runStreamingCommand(step.command, step.args);
+  await runStreamingCommand(step.command, step.args, {
+    ...(step.env ? { env: step.env } : {}),
+  });
 }
 
 async function waitForPrivateClawCommandAvailability(
@@ -831,9 +1033,14 @@ export async function runPrivateClawSetup(
   options: RunPrivateClawSetupOptions = {},
 ): Promise<void> {
   const detectStatus =
-    options.detectLocalOpenClawStatus ?? detectLocalOpenClawStatus;
+    options.detectLocalOpenClawStatus ??
+    (() =>
+      detectLocalOpenClawStatus(
+        createOpenClawOneShotRunner(options.configPath),
+      ));
   const packageSpec =
     options.packageSpec ?? (await resolveCurrentPrivateClawPackageSpec());
+  const packageRoot = options.packageRoot ?? resolveCurrentPrivateClawPackageRoot();
   const selection =
     options.selection ??
     (await resolvePrivateClawSetupSelection({
@@ -849,8 +1056,10 @@ export async function runPrivateClawSetup(
   const status = await detectStatus();
   const plan = buildPrivateClawSetupPlan({
     packageSpec,
+    packageRoot,
     status,
     selection,
+    ...(options.configPath ? { configPath: options.configPath } : {}),
     ...(options.relayBaseUrl ? { relayBaseUrl: options.relayBaseUrl } : {}),
     ...(options.label ? { label: options.label } : {}),
     ...(options.foreground ? { foreground: true } : {}),
@@ -875,7 +1084,10 @@ export async function runPrivateClawSetup(
   const runStep = options.runStep ?? runPrivateClawSetupStep;
   const runPairingCommand =
     options.runPairingCommand ??
-    ((step: PrivateClawSetupStep) => runStreamingCommand(step.command, step.args));
+    ((step: PrivateClawSetupStep) =>
+      runStreamingCommand(step.command, step.args, {
+        ...(step.env ? { env: step.env } : {}),
+      }));
 
   for (const step of plan.automaticSteps) {
     log(`[privateclaw-provider] ${formatBilingualInline("正在执行", "Running")}: ${step.display}`);
@@ -891,15 +1103,15 @@ export async function runPrivateClawSetup(
     if (!refreshedStatus.privateClawCommandAvailable) {
       throw new Error(
         formatBilingualInline(
-          `OpenClaw 已重载，但 \`privateclaw\` 仍然无法响应 \`${PRIVATECLAW_VERIFICATION_COMMAND}\`。请确认 gateway 已正常重启后再试。`,
-          `OpenClaw reloaded, but \`privateclaw\` still does not respond to \`${PRIVATECLAW_VERIFICATION_COMMAND}\`. Confirm the gateway restarted cleanly, then try again.`,
+          `PrivateClaw 安装/启用步骤已完成，但 \`privateclaw\` 仍然无法响应 \`${buildPrivateClawVerificationDisplay(options.configPath)}\`。请确认当前 OpenClaw 配置已正确生效后再试。`,
+          `The PrivateClaw install/enable steps completed, but \`privateclaw\` still does not respond to \`${buildPrivateClawVerificationDisplay(options.configPath)}\`. Confirm the current OpenClaw config loaded cleanly, then try again.`,
         ),
       );
     }
     log(
       `[privateclaw-provider] ${formatBilingualInline(
-        `已确认命令就绪：${PRIVATECLAW_VERIFICATION_COMMAND}`,
-        `Verified command availability with: ${PRIVATECLAW_VERIFICATION_COMMAND}`,
+        `已确认命令就绪：${buildPrivateClawVerificationDisplay(options.configPath)}`,
+        `Verified command availability with: ${buildPrivateClawVerificationDisplay(options.configPath)}`,
       )}`,
     );
   }

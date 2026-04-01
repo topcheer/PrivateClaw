@@ -121,12 +121,23 @@ The repo code now defaults to that relay, so production installs can use it with
 Use Node.js 22 or newer on the machine where you install or run the PrivateClaw OpenClaw plugin.
 
 ```bash
-npm pack @privateclaw/privateclaw@latest
-openclaw plugins install ./privateclaw-privateclaw-*.tgz
+openclaw plugins install --dangerously-force-unsafe-install @privateclaw/privateclaw@latest
 openclaw plugins enable privateclaw
 ```
 
-Recent OpenClaw builds try ClawHub first for bare npm specs. That means `openclaw plugins install @privateclaw/privateclaw` follows the newest version currently published on ClawHub, which can lag the newest npm patch. If you want to force the newest npm package immediately, pack it locally and install the generated archive instead.
+Keep `--dangerously-force-unsafe-install` on every manual install path. If you already have a local package directory (for example from this repository checkout, or from a package directory that `npx` downloaded locally), prefer installing that directory first because OpenClaw `2026.3.31` drops the unsafe-install override on archive installs:
+
+```bash
+openclaw plugins install --dangerously-force-unsafe-install ./packages/privateclaw-provider
+openclaw plugins enable privateclaw
+```
+
+If you intentionally install from ClawHub, keep the same flag there too:
+
+```bash
+openclaw plugins install --dangerously-force-unsafe-install clawhub:@privateclaw/privateclaw@latest
+openclaw plugins enable privateclaw
+```
 
 If you are using the default public relay at `https://relay.privateclaw.us`, the `relayBaseUrl` config step is optional and can be skipped. Only run `openclaw config set plugins.entries.privateclaw.config.relayBaseUrl ...` when you want to change the default relay for the whole plugin. For one-off invites, you can now override the relay per command instead of changing persistent config.
 
@@ -136,11 +147,10 @@ PrivateClaw is an OpenClaw plugin command provider, not a built-in chat transpor
 - use `openclaw plugins enable privateclaw` to enable it,
 - and configure it under `plugins.entries.privateclaw.config`.
 
-If you need the newest GitHub checkout immediately instead of the published npm package, install the packed workspace archive instead:
+If you need the newest GitHub checkout immediately instead of the published npm package, install the local package directory instead of packing an archive:
 
 ```bash
-TARBALL="$(npm pack --workspace @privateclaw/privateclaw | tail -n 1)"
-openclaw plugins install "./${TARBALL}"
+openclaw plugins install --dangerously-force-unsafe-install ./packages/privateclaw-provider
 openclaw plugins enable privateclaw
 ```
 

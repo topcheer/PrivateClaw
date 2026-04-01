@@ -124,6 +124,11 @@ typedef PrivateClawSessionClientFactory =
       PrivateClawPushTokenProvider? pushTokenProvider,
     });
 
+DateTime _defaultPrivateClawCurrentTimeResolver() => DateTime.now().toUtc();
+
+DateTime Function() privateClawCurrentTimeResolver =
+    _defaultPrivateClawCurrentTimeResolver;
+
 Future<bool> _defaultPrivateClawWebsiteLauncher(
   Uri url, {
   LaunchMode mode = LaunchMode.platformDefault,
@@ -391,7 +396,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       return null;
     }
     final Duration remaining = invite.expiresAt.difference(
-      DateTime.now().toUtc(),
+      privateClawCurrentTimeResolver(),
     );
     if (remaining <= Duration.zero) {
       return null;
@@ -417,6 +422,9 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       _sessionStatus == PrivateClawSessionStatus.active &&
       !_isRenewingSession &&
       _showsSessionRenewPrompt;
+
+  double get _sessionRenewBannerRightInset =>
+      _canCollapsePairingPanel && _isPairingPanelCollapsed ? 56 : 16;
 
   Widget _buildRelayServerInfo(BuildContext context) {
     final String? relayLabel = _currentRelayLabel;
@@ -583,7 +591,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     PrivateClawActiveSessionRecord record,
   ) async {
     final AppLocalizations l10n = AppLocalizations.of(context)!;
-    if (!record.invite.expiresAt.isAfter(DateTime.now().toUtc())) {
+    if (!record.invite.expiresAt.isAfter(privateClawCurrentTimeResolver())) {
       await _activeSessionStore.remove(record.invite.sessionId);
       await _refreshSavedSessionRecords();
       if (!mounted) {
@@ -1114,7 +1122,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     if (record == null) {
       return;
     }
-    if (record.invite.expiresAt.isBefore(DateTime.now().toUtc())) {
+    if (record.invite.expiresAt.isBefore(privateClawCurrentTimeResolver())) {
       await _activeSessionStore.remove(record.invite.sessionId);
       await _refreshSavedSessionRecords();
       return;
@@ -1174,7 +1182,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
           PrivateClawActiveSessionRecord(
             invite: bootstrap.invite,
             identity: identity,
-            savedAt: DateTime.now().toUtc(),
+            savedAt: privateClawCurrentTimeResolver(),
           );
       await _identityStore.save(identity);
       await _activeSessionStore.save(
@@ -1241,7 +1249,9 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
         final String renewedMessage = l10n.sessionRenewedNotice(
           _formatDateTime(event.renewedExpiresAt!),
           _formatRemainingDuration(
-            event.renewedExpiresAt!.difference(DateTime.now().toUtc()),
+            event.renewedExpiresAt!.difference(
+              privateClawCurrentTimeResolver(),
+            ),
           ),
         );
         _statusText = renewedMessage;
@@ -1250,7 +1260,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
             id: _nextSystemMessageId('renewed'),
             sender: ChatSender.system,
             text: renewedMessage,
-            sentAt: DateTime.now().toUtc(),
+            sentAt: privateClawCurrentTimeResolver(),
             replyTo: event.renewedReplyTo,
           ),
         );
@@ -1392,19 +1402,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     if (!_hasLiveSessionContext || remaining == null) {
       return;
     }
-
-    final Duration nextRefresh;
-    if (remaining > _sessionRenewWarningThreshold) {
-      nextRefresh =
-          remaining -
-          _sessionRenewWarningThreshold +
-          const Duration(seconds: 1);
-    } else if (remaining > const Duration(minutes: 1)) {
-      nextRefresh = const Duration(minutes: 1);
-    } else {
-      nextRefresh = remaining + const Duration(seconds: 1);
-    }
-
+    final Duration nextRefresh = _nextSessionExpiryRefreshDelay(remaining);
     _sessionExpiryRefreshTimer = Timer(nextRefresh, () {
       if (!mounted) {
         return;
@@ -1412,6 +1410,20 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       setState(() {});
       _scheduleSessionExpiryRefresh();
     });
+  }
+
+  Duration _nextSessionExpiryRefreshDelay(Duration remaining) {
+    if (remaining > _sessionRenewWarningThreshold) {
+      return remaining -
+          _sessionRenewWarningThreshold +
+          const Duration(seconds: 1);
+    }
+    if (remaining > const Duration(minutes: 1)) {
+      final int remainderSeconds =
+          remaining.inSeconds - (remaining.inMinutes * 60);
+      return Duration(seconds: remainderSeconds + 1);
+    }
+    return const Duration(seconds: 1);
   }
 
   Future<void> _openScanner() async {
@@ -2592,58 +2604,109 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       return const SizedBox.shrink();
     }
 
-    final ColorScheme colorScheme = Theme.of(context).colorScheme;
-    return DecoratedBox(
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme colorScheme = theme.colorScheme;
+    return Material(
       key: const ValueKey<String>('session-renew-prompt'),
-      decoration: BoxDecoration(
-        color: colorScheme.secondaryContainer,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Row(
-              children: <Widget>[
-                const Icon(Icons.schedule_outlined),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    l10n.sessionRenewPromptTitle,
-                    style: Theme.of(context).textTheme.titleMedium,
+      color: colorScheme.secondaryContainer,
+      borderRadius: BorderRadius.circular(16),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: colorScheme.secondary),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Icon(
+                    Icons.schedule_outlined,
+                    color: colorScheme.onSecondaryContainer,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          l10n.sessionRenewPromptTitle,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          l10n.sessionRenewPromptBody(
+                            _formatRemainingDuration(remaining),
+                          ),
+                          style: theme.textTheme.bodyMedium,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Container(
+                    key: const ValueKey<String>('session-renew-countdown'),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: colorScheme.secondary,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      _formatRemainingDuration(remaining),
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: colorScheme.onSecondary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: FilledButton.icon(
+                  key: const ValueKey<String>('session-renew-button'),
+                  onPressed: _canSendSessionRenewCommand
+                      ? () {
+                          unawaited(_sendSessionRenewCommand());
+                        }
+                      : null,
+                  icon: _isRenewingSession
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.refresh),
+                  label: Text(
+                    _isRenewingSession
+                        ? l10n.sessionRenewButtonPending
+                        : l10n.sessionRenewButton,
                   ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              l10n.sessionRenewPromptBody(_formatRemainingDuration(remaining)),
-            ),
-            const SizedBox(height: 12),
-            FilledButton.icon(
-              key: const ValueKey<String>('session-renew-button'),
-              onPressed: _canSendSessionRenewCommand
-                  ? () {
-                      unawaited(_sendSessionRenewCommand());
-                    }
-                  : null,
-              icon: _isRenewingSession
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.refresh),
-              label: Text(
-                _isRenewingSession
-                    ? l10n.sessionRenewButtonPending
-                    : l10n.sessionRenewButton,
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
+    );
+  }
+
+  Widget _buildPersistentSessionRenewBanner(
+    BuildContext context,
+    AppLocalizations l10n,
+  ) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16, 8, _sessionRenewBannerRightInset, 0),
+      child: _buildSessionRenewPrompt(context, l10n),
     );
   }
 
@@ -2772,6 +2835,8 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
                   children: <Widget>[
                     if (!_canCollapsePairingPanel)
                       _buildPairingSection(context, l10n),
+                    if (_showsSessionRenewPrompt)
+                      _buildPersistentSessionRenewBanner(context, l10n),
                     Expanded(child: _buildMessageList(l10n)),
                     _buildComposer(l10n),
                     if (_isEmojiPickerVisible)
@@ -3082,10 +3147,6 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
                     ],
                   ),
                 ),
-                if (_showsSessionRenewPrompt) ...<Widget>[
-                  const SizedBox(height: 12),
-                  _buildSessionRenewPrompt(context, l10n),
-                ],
               ],
             ),
           ),
@@ -3276,10 +3337,6 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
                   ],
                 ),
               ),
-              if (_showsSessionRenewPrompt) ...<Widget>[
-                const SizedBox(height: 12),
-                _buildSessionRenewPrompt(context, l10n),
-              ],
             ],
           ),
         ),
@@ -3746,6 +3803,10 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
 
   String _formatRemainingDuration(Duration value) {
     final Duration safeValue = value.isNegative ? Duration.zero : value;
+    final int totalSeconds = safeValue.inSeconds;
+    if (totalSeconds < 60) {
+      return '${math.max(totalSeconds, 1)}s';
+    }
     final int totalMinutes = safeValue.inMinutes;
     final int hours = totalMinutes ~/ 60;
     final int minutes = totalMinutes % 60;

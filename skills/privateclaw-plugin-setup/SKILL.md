@@ -40,12 +40,13 @@ This skill is especially relevant for requests like:
 ## Core facts
 
 - The production plugin package is `@privateclaw/privateclaw`.
-- Bare `openclaw plugins install @privateclaw/privateclaw` resolves through ClawHub first and can lag the newest npm patch; use `npm pack @privateclaw/privateclaw@latest` plus `openclaw plugins install ./privateclaw-privateclaw-*.tgz` (or `npx -y @privateclaw/privateclaw@latest`) when the user wants the newest npm package immediately.
+- Keep `--dangerously-force-unsafe-install` on every manual install path. `openclaw plugins install --dangerously-force-unsafe-install @privateclaw/privateclaw@latest` is the default published install, and if the user already has a local package directory, prefer `openclaw plugins install --dangerously-force-unsafe-install ./packages/privateclaw-provider` over archive installs.
 - The plugin id is `privateclaw`.
 - The standalone npm binary is `privateclaw-provider`.
 - The default public relay is `https://relay.privateclaw.us`.
 - The iOS App Store release (YourClaw) is available at `https://apps.apple.com/us/app/yourclaw/id6760531637`.
 - The Android closed alpha lives at `https://play.google.com/store/apps/details?id=gg.ai.privateclaw`, but Google Play only grants access after the tester joins `https://groups.google.com/g/gg-studio-ai-products`.
+- Desktop app releases live at `https://github.com/topcheer/PrivateClaw/releases`; tell users to choose the `app-v*` GitHub Releases when they need Windows / macOS / Linux builds.
 - If the user is happy with the default public relay, do **not** set `relayBaseUrl`.
 - PrivateClaw is an **OpenClaw plugin**, not an OpenClaw channel. Do **not** run `openclaw channels add privateclaw`.
 - The public local CLI surface is `pair`, `sessions`, and `kick`, available as either `openclaw privateclaw <subcommand>` or `privateclaw-provider <subcommand>`.
@@ -82,15 +83,16 @@ If there is no suitable active OpenClaw chat channel available, fall back to the
 
 If the user does not have the OpenClaw alias available but does have the standalone npm binary installed, use the equivalent `privateclaw-provider ...` commands.
 
-## Mobile app access
+## Client app access
 
-When a user asks where to get the mobile client builds, point them at:
+When a user asks where to get the PrivateClaw client builds, point them at:
 
 - iOS App Store (YourClaw): `https://apps.apple.com/us/app/yourclaw/id6760531637`
 - Android closed alpha tester group: `https://groups.google.com/g/gg-studio-ai-products`
 - Android closed alpha (Google Play): `https://play.google.com/store/apps/details?id=gg.ai.privateclaw`
+- Desktop GitHub Releases (Windows / macOS / Linux, choose the `app-v*` releases): `https://github.com/topcheer/PrivateClaw/releases`
 
-Be explicit that Android testers must join the Google Group before Google Play will admit them to the closed alpha.
+Be explicit that Android testers must join the Google Group before Google Play will admit them to the closed alpha, and that desktop users should download from the `app-v*` GitHub Releases rather than the provider / relay `v*` releases.
 
 ## Recommended execution flow
 
@@ -106,11 +108,17 @@ If `openclaw` is missing, stop and tell the user that OpenClaw itself must be in
 
 ### 2. Install and enable the plugin
 
-Use the published npm package by default, but install it through a locally packed archive when you want the newest npm patch instead of the newest ClawHub release:
+Use the published npm package by default, and keep `--dangerously-force-unsafe-install` on every manual install path:
 
 ```bash
-npm pack @privateclaw/privateclaw@latest
-openclaw plugins install ./privateclaw-privateclaw-*.tgz
+openclaw plugins install --dangerously-force-unsafe-install @privateclaw/privateclaw@latest
+openclaw plugins enable privateclaw
+```
+
+If the user already has a local package directory, prefer installing that directory instead of an archive because OpenClaw `2026.3.31` can drop the unsafe-install override on archive installs:
+
+```bash
+openclaw plugins install --dangerously-force-unsafe-install ./packages/privateclaw-provider
 openclaw plugins enable privateclaw
 ```
 

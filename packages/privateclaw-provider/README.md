@@ -15,11 +15,12 @@ It is responsible for:
 
 Join the community on Telegram: [PrivateClaw Telegram group](https://t.me/+W3RUKxEO9kIxMmZl)
 
-Mobile app access:
+Client app access:
 
 - iOS App Store (YourClaw): https://apps.apple.com/us/app/yourclaw/id6760531637
 - Android closed alpha tester group: https://groups.google.com/g/gg-studio-ai-products
 - Android closed alpha (Google Play): https://play.google.com/store/apps/details?id=gg.ai.privateclaw
+- Desktop GitHub Releases (Windows / macOS / Linux, look for `app-v*`): https://github.com/topcheer/PrivateClaw/releases
 
 For Android closed alpha, Google Play access only opens after the tester joins the Google Group above.
 
@@ -62,21 +63,26 @@ The production default relay for this package is:
 https://relay.privateclaw.us
 ```
 
-Recent OpenClaw builds try ClawHub first for bare npm specs. That means `openclaw plugins install @privateclaw/privateclaw` follows the newest version currently published on ClawHub, which can lag the newest npm patch. If you want to force the newest npm package immediately, pack it locally and install the generated archive instead:
+Keep `--dangerously-force-unsafe-install` on every manual install path. The simplest published install is:
 
 ```bash
-npm pack @privateclaw/privateclaw@latest
-openclaw plugins install ./privateclaw-privateclaw-*.tgz
+openclaw plugins install --dangerously-force-unsafe-install @privateclaw/privateclaw@latest
 openclaw plugins enable privateclaw
 ```
 
 If you are using the default public relay at `https://relay.privateclaw.us`, the `relayBaseUrl` override is optional and can be skipped. Only run `openclaw config set plugins.entries.privateclaw.config.relayBaseUrl ...` when you want to change the default relay for the whole plugin. For one-off invites, you can now override the relay per slash command or per CLI invocation instead of changing persistent config.
 
-If you need the newest GitHub checkout immediately instead of the published npm package, pack the workspace and install the archive:
+If you already have a local package directory, prefer installing that directory instead of an archive. This avoids the OpenClaw `2026.3.31` archive path that drops the unsafe-install override:
 
 ```bash
-TARBALL="$(npm pack --workspace @privateclaw/privateclaw | tail -n 1)"
-openclaw plugins install "./${TARBALL}"
+openclaw plugins install --dangerously-force-unsafe-install ./packages/privateclaw-provider
+openclaw plugins enable privateclaw
+```
+
+If you explicitly install from ClawHub, keep the same flag there too:
+
+```bash
+openclaw plugins install --dangerously-force-unsafe-install clawhub:@privateclaw/privateclaw@latest
 openclaw plugins enable privateclaw
 ```
 

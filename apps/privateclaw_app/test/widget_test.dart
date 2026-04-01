@@ -951,17 +951,85 @@ void main() {
     },
   );
 
-  testWidgets('expiring session preview renders a renew prompt', (
+  testWidgets(
+    'expiring session preview keeps renew prompt visible while panel is collapsed',
+    (WidgetTester tester) async {
+      final DateTime now = DateTime.now().toUtc();
+      final PrivateClawInvite invite = PrivateClawInvite(
+        version: 1,
+        sessionId: 'session-renew',
+        sessionKey: 'test-session-key',
+        appWsUrl: 'wss://relay.privateclaw.us/ws/app?sessionId=session-renew',
+        expiresAt: now.add(const Duration(minutes: 29)),
+        groupMode: true,
+      );
+
+      await tester.pumpWidget(
+        PrivateClawApp(
+          screenshotConfig: StoreScreenshotConfig(
+            previewData: PrivateClawPreviewData(
+              invite: invite,
+              identity: PrivateClawIdentity(
+                appId: 'app-preview',
+                createdAt: now.subtract(const Duration(days: 1)),
+                displayName: 'Preview',
+              ),
+              status: PrivateClawSessionStatus.active,
+              statusText: 'Renewal reminder: less than 30 minutes remain.',
+              isPairingPanelCollapsed: true,
+              availableCommands: const <PrivateClawSlashCommand>[
+                PrivateClawSlashCommand(
+                  slash: '/renew-session',
+                  description: 'Extend the current encrypted session.',
+                  acceptsArgs: false,
+                  source: 'provider',
+                ),
+              ],
+            ),
+            localeOverride: const Locale('en'),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey<String>('session-panel-handle')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('session-panel-overlay')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('session-renew-prompt')),
+        findsOneWidget,
+      );
+      final FilledButton renewButton = tester.widget<FilledButton>(
+        find.byKey(const ValueKey<String>('session-renew-button')),
+      );
+      expect(renewButton.onPressed, isNull);
+    },
+  );
+
+  testWidgets('renew prompt countdown switches to seconds near expiry', (
     WidgetTester tester,
   ) async {
-    final DateTime now = DateTime.now().toUtc();
+    final DateTime Function() originalTimeResolver =
+        privateClawCurrentTimeResolver;
+    DateTime currentTime = DateTime.now().toUtc();
+    privateClawCurrentTimeResolver = () => currentTime;
+    addTearDown(() {
+      privateClawCurrentTimeResolver = originalTimeResolver;
+    });
+
     final PrivateClawInvite invite = PrivateClawInvite(
       version: 1,
-      sessionId: 'session-renew',
+      sessionId: 'session-renew-seconds',
       sessionKey: 'test-session-key',
-      appWsUrl: 'wss://relay.privateclaw.us/ws/app?sessionId=session-renew',
-      expiresAt: now.add(const Duration(minutes: 29)),
-      groupMode: true,
+      appWsUrl:
+          'wss://relay.privateclaw.us/ws/app?sessionId=session-renew-seconds',
+      expiresAt: currentTime.add(const Duration(seconds: 61)),
     );
 
     await tester.pumpWidget(
@@ -970,9 +1038,9 @@ void main() {
           previewData: PrivateClawPreviewData(
             invite: invite,
             identity: PrivateClawIdentity(
-              appId: 'app-preview',
-              createdAt: now.subtract(const Duration(days: 1)),
-              displayName: 'Preview',
+              appId: 'app-preview-seconds',
+              createdAt: currentTime.subtract(const Duration(days: 1)),
+              displayName: 'Preview Seconds',
             ),
             status: PrivateClawSessionStatus.active,
             statusText: 'Renewal reminder: less than 30 minutes remain.',
@@ -992,19 +1060,22 @@ void main() {
     );
 
     await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(const ValueKey<String>('session-panel-handle')),
-    );
-    await tester.pumpAndSettle();
 
-    expect(
-      find.byKey(const ValueKey<String>('session-renew-prompt')),
-      findsOneWidget,
+    Finder countdownTextFinder() => find.descendant(
+      of: find.byKey(const ValueKey<String>('session-renew-countdown')),
+      matching: find.byType(Text),
     );
-    final FilledButton renewButton = tester.widget<FilledButton>(
-      find.byKey(const ValueKey<String>('session-renew-button')),
-    );
-    expect(renewButton.onPressed, isNull);
+
+    String countdownText() =>
+        tester.widget<Text>(countdownTextFinder()).data ?? '';
+
+    expect(countdownText(), '1m');
+
+    currentTime = currentTime.add(const Duration(seconds: 2));
+    await tester.pump(const Duration(seconds: 2));
+
+    expect(countdownText(), isNot('1m'));
+    expect(countdownText().endsWith('s'), isTrue);
   });
 
   testWidgets('slash command sheet supports search filtering', (

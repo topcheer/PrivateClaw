@@ -139,6 +139,8 @@ test("detectLocalOpenClawStatus marks the plugin as present when OpenClaw can in
 test("buildRelayProviderSetupPlan prints remote OpenClaw commands when openclaw is unavailable", () => {
   const plan = buildRelayProviderSetupPlan({
     relayBaseUrl: "https://relay.example.com",
+    packageRoot: "/tmp/privateclaw-package",
+    packageSpec: "@privateclaw/privateclaw@0.1.40",
     status: {
       openClawAvailable: false,
       privateClawCommandAvailable: false,
@@ -146,15 +148,16 @@ test("buildRelayProviderSetupPlan prints remote OpenClaw commands when openclaw 
   });
 
   assert.equal(plan.localOpenClaw, false);
-  assert.equal(plan.manualSteps.length, 5);
+  assert.equal(plan.manualSteps.length, 6);
   assert.match(
     renderRelayProviderSetupGuidance(plan),
-    /npm pack @privateclaw\/privateclaw@latest/,
+    /openclaw plugins install --dangerously-force-unsafe-install \/tmp\/privateclaw-package/,
   );
   assert.match(
     renderRelayProviderSetupGuidance(plan),
-    /openclaw plugins install \.\/privateclaw-privateclaw-\*\.tgz/,
+    /openclaw plugins install --dangerously-force-unsafe-install @privateclaw\/privateclaw@0\.1\.40/,
   );
+  assert.doesNotMatch(renderRelayProviderSetupGuidance(plan), /npm pack/u);
   assert.match(
     renderRelayProviderSetupGuidance(plan),
     /openclaw config set plugins\.entries\.privateclaw\.config\.relayBaseUrl https:\/\/relay\.example\.com/,
@@ -172,6 +175,8 @@ test("buildRelayProviderSetupPlan prints remote OpenClaw commands when openclaw 
 test("buildRelayProviderSetupPlan uses config-only flow when local privateclaw is already active", () => {
   const plan = buildRelayProviderSetupPlan({
     relayBaseUrl: "https://relay.example.com",
+    packageRoot: "/tmp/privateclaw-package",
+    packageSpec: "@privateclaw/privateclaw@0.1.40",
     status: {
       openClawAvailable: true,
       privateClawCommandAvailable: true,
@@ -193,6 +198,8 @@ test("buildRelayProviderSetupPlan uses config-only flow when local privateclaw i
 test("buildRelayProviderSetupPlan uses update when privateclaw is already installed but inactive", () => {
   const plan = buildRelayProviderSetupPlan({
     relayBaseUrl: "https://relay.example.com",
+    packageRoot: "/tmp/privateclaw-package",
+    packageSpec: "@privateclaw/privateclaw@0.1.40",
     status: {
       openClawAvailable: true,
       privateClawCommandAvailable: false,
@@ -220,6 +227,8 @@ test("offerRelayProviderSetup runs install + enable + config + restart, then sta
   await offerRelayProviderSetup({
     relayBaseUrl: "https://relay.example.com",
     webChatUrl: "https://relay.example.com/chat/",
+    packageRoot: "/tmp/privateclaw-package",
+    packageSpec: "@privateclaw/privateclaw@0.1.40",
     onLog: (line) => {
       logs.push(line);
     },
@@ -260,7 +269,7 @@ test("offerRelayProviderSetup runs install + enable + config + restart, then sta
   });
 
   assert.deepEqual(executed, [
-    "npm pack @privateclaw/privateclaw@latest && openclaw plugins install ./privateclaw-privateclaw-*.tgz",
+    "openclaw plugins install --dangerously-force-unsafe-install /tmp/privateclaw-package",
     "openclaw plugins enable privateclaw",
     "openclaw config set plugins.entries.privateclaw.config.relayBaseUrl https://relay.example.com",
     "openclaw gateway restart",
@@ -281,6 +290,8 @@ test("offerRelayProviderSetup runs update instead of install when privateclaw is
 
   await offerRelayProviderSetup({
     relayBaseUrl: "https://relay.example.com",
+    packageRoot: "/tmp/privateclaw-package",
+    packageSpec: "@privateclaw/privateclaw@0.1.40",
     isInteractive: true,
     detectLocalOpenClawStatus: async () => {
       detectCalls += 1;
@@ -311,6 +322,103 @@ test("offerRelayProviderSetup runs update instead of install when privateclaw is
     "openclaw config set plugins.entries.privateclaw.config.relayBaseUrl https://relay.example.com",
     "openclaw gateway restart",
   ]);
+});
+
+test("offerRelayProviderSetup propagates OPENCLAW_STATE_DIR and OPENCLAW_CONFIG_PATH when an OpenClaw config path is provided", async () => {
+  const executed: string[] = [];
+  const stepEnvs: Array<NodeJS.ProcessEnv | undefined> = [];
+  const pairingEnvs: Array<NodeJS.ProcessEnv | undefined> = [];
+  const prompts = [true, true];
+  let detectCalls = 0;
+
+  await offerRelayProviderSetup({
+    relayBaseUrl: "https://relay.example.com",
+    packageRoot: "/tmp/privateclaw-package",
+    packageSpec: "@privateclaw/privateclaw@0.1.40",
+    openClawConfigPath: "/tmp/openclaw-test/openclaw.json",
+    isInteractive: true,
+    detectLocalOpenClawStatus: async () => {
+      detectCalls += 1;
+      if (detectCalls === 1) {
+        return {
+          openClawAvailable: true,
+          privateClawCommandAvailable: false,
+          privateClawPluginPresent: false,
+        };
+      }
+      return {
+        openClawAvailable: true,
+        privateClawCommandAvailable: true,
+        privateClawPluginPresent: true,
+      };
+    },
+    promptToContinue: async () => prompts.shift() ?? false,
+    runStep: async (step) => {
+      executed.push(step.display);
+      stepEnvs.push(step.env);
+    },
+    runPairingCommand: async (step) => {
+      pairingEnvs.push(step.env);
+      return {
+        stdout: "邀请链接 / Invite URI: privateclaw://connect?payload=test-invite\n",
+        stderr: "",
+        combined:
+          "邀请链接 / Invite URI: privateclaw://connect?payload=test-invite\n",
+      };
+    },
+    verificationTimeoutMs: 10,
+    verificationPollMs: 0,
+  });
+
+  assert.equal(
+    executed[0],
+    "OPENCLAW_STATE_DIR=/tmp/openclaw-test OPENCLAW_CONFIG_PATH=/tmp/openclaw-test/openclaw.json openclaw plugins install --dangerously-force-unsafe-install /tmp/privateclaw-package",
+  );
+  assert.deepEqual(executed, [
+    "OPENCLAW_STATE_DIR=/tmp/openclaw-test OPENCLAW_CONFIG_PATH=/tmp/openclaw-test/openclaw.json openclaw plugins install --dangerously-force-unsafe-install /tmp/privateclaw-package",
+    "OPENCLAW_STATE_DIR=/tmp/openclaw-test OPENCLAW_CONFIG_PATH=/tmp/openclaw-test/openclaw.json openclaw plugins enable privateclaw",
+    "OPENCLAW_STATE_DIR=/tmp/openclaw-test OPENCLAW_CONFIG_PATH=/tmp/openclaw-test/openclaw.json openclaw config set plugins.entries.privateclaw.config.relayBaseUrl https://relay.example.com",
+    "OPENCLAW_STATE_DIR=/tmp/openclaw-test OPENCLAW_CONFIG_PATH=/tmp/openclaw-test/openclaw.json openclaw config set gateway.mode local",
+  ]);
+  assert.equal(stepEnvs[0]?.OPENCLAW_STATE_DIR, "/tmp/openclaw-test");
+  assert.equal(
+    stepEnvs[0]?.OPENCLAW_CONFIG_PATH,
+    "/tmp/openclaw-test/openclaw.json",
+  );
+  assert.equal(pairingEnvs[0]?.OPENCLAW_STATE_DIR, "/tmp/openclaw-test");
+  assert.equal(
+    pairingEnvs[0]?.OPENCLAW_CONFIG_PATH,
+    "/tmp/openclaw-test/openclaw.json",
+  );
+});
+
+test("buildRelayProviderSetupPlan uses gateway run guidance instead of restart when config path is provided", () => {
+  const plan = buildRelayProviderSetupPlan({
+    relayBaseUrl: "https://relay.example.com",
+    packageRoot: "/tmp/privateclaw-package",
+    packageSpec: "@privateclaw/privateclaw@0.1.40",
+    openClawConfigPath: "/tmp/openclaw-test/openclaw.json",
+    status: {
+      openClawAvailable: true,
+      privateClawCommandAvailable: false,
+      privateClawPluginPresent: false,
+    },
+  });
+
+  assert.deepEqual(
+    plan.automaticSteps.map((step) => step.display),
+    [
+      "OPENCLAW_STATE_DIR=/tmp/openclaw-test OPENCLAW_CONFIG_PATH=/tmp/openclaw-test/openclaw.json openclaw plugins install --dangerously-force-unsafe-install /tmp/privateclaw-package",
+      "OPENCLAW_STATE_DIR=/tmp/openclaw-test OPENCLAW_CONFIG_PATH=/tmp/openclaw-test/openclaw.json openclaw plugins enable privateclaw",
+      "OPENCLAW_STATE_DIR=/tmp/openclaw-test OPENCLAW_CONFIG_PATH=/tmp/openclaw-test/openclaw.json openclaw config set plugins.entries.privateclaw.config.relayBaseUrl https://relay.example.com",
+      "OPENCLAW_STATE_DIR=/tmp/openclaw-test OPENCLAW_CONFIG_PATH=/tmp/openclaw-test/openclaw.json openclaw config set gateway.mode local",
+    ],
+  );
+  assert.match(
+    renderRelayProviderSetupGuidance(plan),
+    /OPENCLAW_STATE_DIR=\/tmp\/openclaw-test OPENCLAW_CONFIG_PATH=\/tmp\/openclaw-test\/openclaw\.json openclaw gateway run/,
+  );
+  assert.doesNotMatch(renderRelayProviderSetupGuidance(plan), /openclaw gateway restart/u);
 });
 
 test("offerRelayProviderSetup only prints guidance when openclaw is unavailable locally", async () => {

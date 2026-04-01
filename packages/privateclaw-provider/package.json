@@ -1,7 +1,7 @@
 {
   "name": "@privateclaw/privateclaw",
-  "version": "0.1.40",
-  "description": "PrivateClaw provider runtime and OpenClaw-compatible plugin adapter. iOS App Store (YourClaw): https://apps.apple.com/us/app/yourclaw/id6760531637 ; Android closed alpha requires joining https://groups.google.com/g/gg-studio-ai-products before installing https://play.google.com/store/apps/details?id=gg.ai.privateclaw",
+  "version": "0.1.41",
+  "description": "PrivateClaw provider runtime and OpenClaw-compatible plugin adapter. iOS App Store (YourClaw): https://apps.apple.com/us/app/yourclaw/id6760531637 ; Android closed alpha requires joining https://groups.google.com/g/gg-studio-ai-products before installing https://play.google.com/store/apps/details?id=gg.ai.privateclaw ; Desktop GitHub Releases (look for app-v*): https://github.com/topcheer/PrivateClaw/releases",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

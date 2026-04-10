@@ -1,7 +1,7 @@
 ---
 name: privateclaw-plugin-setup
 description: Install, enable, verify, pair, and manage PrivateClaw OpenClaw sessions, preferring same-conversation /privateclaw QR replies and falling back to the local CLI when needed.
-version: 1.1.2
+version: 1.1.3
 metadata:
   openclaw:
     requires:

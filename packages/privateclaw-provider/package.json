@@ -1,6 +1,6 @@
 {
   "name": "@privateclaw/privateclaw",
-  "version": "0.1.41",
+  "version": "0.1.42",
   "description": "PrivateClaw provider runtime and OpenClaw-compatible plugin adapter. iOS App Store (YourClaw): https://apps.apple.com/us/app/yourclaw/id6760531637 ; Android closed alpha requires joining https://groups.google.com/g/gg-studio-ai-products before installing https://play.google.com/store/apps/details?id=gg.ai.privateclaw ; Desktop GitHub Releases (look for app-v*): https://github.com/topcheer/PrivateClaw/releases",
   "type": "module",
   "main": "./dist/index.js",
@@ -57,7 +57,7 @@
     "test": "node --import tsx --test src/*.test.ts src/**/*.test.ts"
   },
   "dependencies": {
-    "@privateclaw/protocol": "^0.1.3",
+    "@privateclaw/protocol": "^0.1.4",
     "fflate": "^0.8.2",
     "qrcode": "^1.5.4",
     "ws": "^8.18.3"

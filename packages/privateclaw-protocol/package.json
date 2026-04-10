@@ -1,6 +1,6 @@
 {
   "name": "@privateclaw/protocol",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Protocol types and crypto helpers for PrivateClaw sessions",
   "type": "module",
   "main": "./dist/index.js",

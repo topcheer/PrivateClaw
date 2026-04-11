@@ -1066,7 +1066,20 @@ async function patchOpenClawPluginsAllow(
     config = {};
   }
 
-  const currentAllow = config["plugins.allow"];
+  // OpenClaw config uses nested structure: { "plugins": { "allow": [...] } }
+  let pluginsSection = config["plugins"];
+  if (
+    typeof pluginsSection === "object" &&
+    pluginsSection !== null &&
+    !Array.isArray(pluginsSection)
+  ) {
+    // existing plugins section – keep it
+  } else {
+    pluginsSection = {};
+    config["plugins"] = pluginsSection;
+  }
+
+  const currentAllow = (pluginsSection as Record<string, unknown>)["allow"];
   let allowList: string[];
   if (Array.isArray(currentAllow)) {
     allowList = currentAllow.filter((item): item is string => typeof item === "string");
@@ -1079,7 +1092,12 @@ async function patchOpenClawPluginsAllow(
   }
 
   allowList.push(pluginId);
-  config["plugins.allow"] = allowList;
+  (pluginsSection as Record<string, unknown>)["allow"] = allowList;
+
+  // Remove any flat "plugins.allow" key that a previous buggy version may have written.
+  if ("plugins.allow" in config) {
+    delete config["plugins.allow"];
+  }
 
   await mkdir(path.dirname(resolvedPath), { recursive: true });
   await writeFile(resolvedPath, JSON.stringify(config, null, 2), "utf8");

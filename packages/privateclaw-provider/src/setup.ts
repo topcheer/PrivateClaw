@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
@@ -768,11 +769,6 @@ export function buildPrivateClawSetupPlan(params: {
     packageSpec: params.packageSpec,
     ...(params.configPath ? { configPath: params.configPath } : {}),
   });
-  const allowStep = createOpenClawStep(
-    "Allow the PrivateClaw OpenClaw plugin to load",
-    ["plugins", "allow", PRIVATECLAW_PLUGIN_ID],
-    params.configPath,
-  );
   const updateStep = createOpenClawStep(
     "Update the existing PrivateClaw OpenClaw plugin",
     ["plugins", "update", PRIVATECLAW_PLUGIN_ID, OPENCLAW_UNSAFE_INSTALL_FLAG],
@@ -848,7 +844,6 @@ export function buildPrivateClawSetupPlan(params: {
         )}`,
       automaticSteps: [],
       manualSteps: [
-        allowStep,
         ...manualInstallSteps,
         enableStep,
         ...(gatewayModeStep ? [gatewayModeStep] : []),
@@ -876,7 +871,7 @@ export function buildPrivateClawSetupPlan(params: {
             : "OpenClaw + PrivateClaw are already available locally. Starting pairing next:",
         )}`,
       automaticSteps: [
-        ...(params.status.privateClawPluginPresent ? [allowStep, updateStep] : []),
+        ...(params.status.privateClawPluginPresent ? [updateStep] : []),
         ...(gatewayModeStep ? [gatewayModeStep] : []),
       ],
       manualSteps: params.configPath
@@ -910,14 +905,12 @@ export function buildPrivateClawSetupPlan(params: {
               : "OpenClaw is available locally. Installing, enabling, and restarting the PrivateClaw plugin now:",
         )}`,
     automaticSteps: [
-      allowStep,
       ...(params.status.privateClawPluginPresent ? [updateStep] : [installStep]),
       enableStep,
       ...(gatewayModeStep ? [gatewayModeStep] : []),
       ...(params.configPath ? [] : [restartStep]),
     ],
     manualSteps: [
-      allowStep,
       ...(params.status.privateClawPluginPresent ? [updateStep] : [installStep]),
       enableStep,
       ...(gatewayModeStep ? [gatewayModeStep] : []),
@@ -1045,6 +1038,60 @@ async function waitForPrivateClawCommandAvailability(
   return status;
 }
 
+function resolveOpenClawConfigPath(configPath?: string): string | undefined {
+  if (configPath) {
+    return path.resolve(configPath);
+  }
+  const envConfigPath = process.env.OPENCLAW_CONFIG_PATH?.trim();
+  if (envConfigPath) {
+    return path.resolve(envConfigPath);
+  }
+  return path.join(os.homedir(), ".openclaw", "openclaw.json");
+}
+
+async function patchOpenClawPluginsAllow(
+  configPath: string | undefined,
+  pluginId: string,
+  log: (line: string) => void,
+): Promise<void> {
+  const resolvedPath = resolveOpenClawConfigPath(configPath);
+  if (!resolvedPath) {
+    return;
+  }
+
+  let config: Record<string, unknown>;
+  try {
+    config = JSON.parse(await readFile(resolvedPath, "utf8")) as Record<string, unknown>;
+  } catch {
+    config = {};
+  }
+
+  const currentAllow = config["plugins.allow"];
+  let allowList: string[];
+  if (Array.isArray(currentAllow)) {
+    allowList = currentAllow.filter((item): item is string => typeof item === "string");
+  } else {
+    allowList = [];
+  }
+
+  if (allowList.includes(pluginId)) {
+    return;
+  }
+
+  allowList.push(pluginId);
+  config["plugins.allow"] = allowList;
+
+  await mkdir(path.dirname(resolvedPath), { recursive: true });
+  await writeFile(resolvedPath, JSON.stringify(config, null, 2), "utf8");
+
+  log(
+    `[privateclaw-provider] ${formatBilingualInline(
+      `已将 ${pluginId} 加入 ${resolvedPath} 的 plugins.allow`,
+      `Added ${pluginId} to plugins.allow in ${resolvedPath}`,
+    )}`,
+  );
+}
+
 export async function runPrivateClawSetup(
   options: RunPrivateClawSetupOptions = {},
 ): Promise<void> {
@@ -1122,6 +1169,9 @@ export async function runPrivateClawSetup(
 
   // Show introduction.
   log(prepPlan.introduction);
+
+  // Patch plugins.allow in the OpenClaw config before install/update.
+  await patchOpenClawPluginsAllow(options.configPath, PRIVATECLAW_PLUGIN_ID, log);
 
   // Run automatic steps (install / update / enable / restart).
   const runStep = options.runStep ?? runPrivateClawSetupStep;

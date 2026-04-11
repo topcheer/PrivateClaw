@@ -964,41 +964,87 @@ class PrivateClawPluginRuntime {
     let finalReplyDelivered = false;
     let dispatchErrorKind: string | undefined;
     let dispatchErrorMessage: string | undefined;
-    await runtime.reply.dispatchReplyWithBufferedBlockDispatcher({
-      ctx: finalizedCtx,
-      cfg,
-      dispatcherOptions: {
-        deliver: async (payload, info) => {
-          const replyToId =
-            typeof payload.replyToId === "string" && payload.replyToId.trim() !== ""
-              ? payload.replyToId
-              : message.payload.clientMessageId;
-          await this.deliverOpenClawOutboundMessage(message.sessionId, {
-            ...(payload.text?.trim() ? { text: payload.text.trim() } : {}),
-            ...(payload.mediaUrl?.trim()
-              ? { mediaUrl: payload.mediaUrl.trim() }
-              : {}),
-            ...(payload.mediaUrls?.length
-              ? { mediaUrls: payload.mediaUrls }
-              : {}),
-            replyToId,
-          });
-          if (info.kind === "final") {
-            finalReplyDelivered = true;
-          }
-        },
-        onError: (error, info) => {
-          const detail = formatCommandError(error);
-          if (!dispatchErrorMessage) {
-            dispatchErrorKind = info.kind;
-            dispatchErrorMessage = detail;
-          }
+    const targetAppId = message.participant?.appId ?? message.payload.appId;
+    // Start an independent typing indicator timer that runs alongside the
+    // agent dispatch.  It is stopped as soon as the first reply is delivered
+    // or the dispatch completes, whichever comes first.  This avoids touching
+    // dispatcherOptions (which would go through openclaw's typing controller
+    // with rethrowOnError:true and could abort the entire agent run).
+    let typingDelivered = false;
+    const stopTyping = () => {
+      typingDelivered = true;
+    };
+    const typingIntervalMs = 5_000;
+    const typingLoop = setInterval(() => {
+      if (typingDelivered) {
+        clearInterval(typingLoop);
+        return;
+      }
+      const provider = this.findLocalProviderBySession(message.sessionId);
+      if (provider) {
+        provider.sendTypingIndicator(message.sessionId, {
+          state: "typing",
+          replyTo: message.payload.clientMessageId,
+          targetAppId,
+        }).catch((err) => {
           this.providerOptions.onLog?.(
-            `[privateclaw] runtime_dispatch_error kind=${info.kind} message=${detail}`,
+            `[privateclaw] typing_indicator_send_error session=${message.sessionId} ${formatCommandError(err)}`,
           );
+        });
+      }
+    }, typingIntervalMs);
+    try {
+      await runtime.reply.dispatchReplyWithBufferedBlockDispatcher({
+        ctx: finalizedCtx,
+        cfg,
+        dispatcherOptions: {
+          deliver: async (payload, info) => {
+            stopTyping();
+            const replyToId =
+              typeof payload.replyToId === "string" && payload.replyToId.trim() !== ""
+                ? payload.replyToId
+                : message.payload.clientMessageId;
+            await this.deliverOpenClawOutboundMessage(message.sessionId, {
+              ...(payload.text?.trim() ? { text: payload.text.trim() } : {}),
+              ...(payload.mediaUrl?.trim()
+                ? { mediaUrl: payload.mediaUrl.trim() }
+                : {}),
+              ...(payload.mediaUrls?.length
+                ? { mediaUrls: payload.mediaUrls }
+                : {}),
+              replyToId,
+            });
+            if (info.kind === "final") {
+              finalReplyDelivered = true;
+            }
+          },
+          onError: (error, info) => {
+            const detail = formatCommandError(error);
+            if (!dispatchErrorMessage) {
+              dispatchErrorKind = info.kind;
+              dispatchErrorMessage = detail;
+            }
+            this.providerOptions.onLog?.(
+              `[privateclaw] runtime_dispatch_error kind=${info.kind} message=${detail}`,
+            );
+          },
         },
-      },
-    });
+      });
+    } finally {
+      stopTyping();
+      clearInterval(typingLoop);
+      // Send idle indicator to clear typing state on the app side.
+      const provider = this.findLocalProviderBySession(message.sessionId);
+      if (provider) {
+        provider.sendTypingIndicator(message.sessionId, {
+          state: "idle",
+          replyTo: message.payload.clientMessageId,
+          targetAppId,
+        }).catch(() => {
+          // best-effort; ignore errors on cleanup
+        });
+      }
+    }
     if (dispatchErrorMessage && !finalReplyDelivered) {
       throw new Error(
         `Failed to dispatch the OpenClaw runtime reply for ${message.sessionId} (${dispatchErrorKind ?? "unknown"}): ${dispatchErrorMessage}`,

@@ -46,6 +46,7 @@ import 'widgets/session_qr_sheet.dart';
 import 'widgets/slash_commands_sheet.dart';
 import 'widgets/voice_recording_action_badge.dart';
 import 'widgets/voice_waveform_bars.dart';
+import 'widgets/typing_indicator_bubble.dart';
 
 const int _maxInlineAttachmentBytes = 5 * 1024 * 1024;
 const Duration _sessionRenewWarningThreshold = Duration(minutes: 30);
@@ -308,6 +309,8 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
   bool _isVoiceCancelArmed = false;
   bool _isSlashCommandsSheetOpen = false;
   bool _hasInitializedQuickActions = false;
+  bool _isAssistantTyping = false;
+  Timer? _typingIndicatorTimeout;
   Locale? _configuredQuickActionsLocale;
   String _previousInviteInputText = '';
   String _previousComposerText = '';
@@ -721,6 +724,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     unawaited(_cancelVoiceRecording(updateStatus: false, setUiState: false));
     unawaited(_disposeClient(reason: 'widget_disposed', notifyRemote: false));
     _sessionExpiryRefreshTimer?.cancel();
+    _typingIndicatorTimeout?.cancel();
     _voiceRecordingTicker?.cancel();
     _recentPhotoAssets.clear();
     _photoThumbnailFutures.clear();
@@ -1243,6 +1247,27 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
         final ChatMessage message = event.message!;
         _upsertMessage(message);
         _maybeShowDesktopNotification(message);
+        if (message.sender == ChatSender.assistant && !message.isPending) {
+          _isAssistantTyping = false;
+          _typingIndicatorTimeout?.cancel();
+          _typingIndicatorTimeout = null;
+        }
+      }
+      if (event.isTyping != null) {
+        _typingIndicatorTimeout?.cancel();
+        _typingIndicatorTimeout = null;
+        if (event.isTyping!) {
+          _isAssistantTyping = true;
+          _typingIndicatorTimeout = Timer(const Duration(seconds: 8), () {
+            if (mounted && _isAssistantTyping) {
+              setState(() {
+                _isAssistantTyping = false;
+              });
+            }
+          });
+        } else {
+          _isAssistantTyping = false;
+        }
       }
       if (event.renewedExpiresAt != null) {
         _isRenewingSession = false;
@@ -3358,19 +3383,26 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       );
     }
 
-    return ListView.separated(
-      controller: _scrollController,
-      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-      itemCount: _messages.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 8),
-      itemBuilder: (BuildContext context, int index) {
-        final ChatMessage message = _messages[index];
-        return ChatMessageBubble(
-          key: ValueKey<String>(message.id),
-          message: message,
-        );
-      },
+    return Column(
+      children: <Widget>[
+        Expanded(
+          child: ListView.separated(
+            controller: _scrollController,
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+            itemCount: _messages.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            itemBuilder: (BuildContext context, int index) {
+              final ChatMessage message = _messages[index];
+              return ChatMessageBubble(
+                key: ValueKey<String>(message.id),
+                message: message,
+              );
+            },
+          ),
+        ),
+        if (_isAssistantTyping) const TypingIndicatorBubble(),
+      ],
     );
   }
 

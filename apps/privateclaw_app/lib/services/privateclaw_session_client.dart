@@ -59,6 +59,8 @@ class PrivateClawSessionEvent {
     this.renewedReplyTo,
     this.participants,
     this.assignedIdentity,
+    this.isTyping,
+    this.typingReplyTo,
   });
 
   final ChatMessage? message;
@@ -72,6 +74,8 @@ class PrivateClawSessionEvent {
   final String? renewedReplyTo;
   final List<PrivateClawParticipant>? participants;
   final PrivateClawIdentity? assignedIdentity;
+  final bool? isTyping;
+  final String? typingReplyTo;
 }
 
 class PrivateClawSessionClient {
@@ -247,6 +251,7 @@ class PrivateClawSessionClient {
           'appId': _identity.appId,
           'deviceLabel': 'PrivateClaw',
           'supportsThinkingTrace': true,
+          'supportsTypingIndicator': true,
           if (_identity.displayName != null)
             'displayName': _identity.displayName,
           'sentAt': DateTime.now().toUtc().toIso8601String(),
@@ -450,10 +455,20 @@ class PrivateClawSessionClient {
           'appId': _identity.appId,
           'deviceLabel': 'PrivateClaw',
           'supportsThinkingTrace': true,
+          'supportsTypingIndicator': true,
           if (_identity.displayName != null)
             'displayName': _identity.displayName,
           'sentAt': DateTime.now().toUtc().toIso8601String(),
         });
+        return;
+      case 'typing_indicator':
+        final String state = payload['state'] as String? ?? 'idle';
+        _emitEvent(
+          PrivateClawSessionEvent(
+            isTyping: state == 'typing',
+            typingReplyTo: payload['replyTo'] as String?,
+          ),
+        );
         return;
       default:
         _emitEvent(
@@ -501,6 +516,13 @@ class PrivateClawSessionClient {
         debugPrint(
           '[privateclaw-app] received provider_capabilities '
           'currentAppId=${payload['currentAppId'] ?? 'none'}',
+        );
+        return;
+      case 'typing_indicator':
+        debugPrint(
+          '[privateclaw-app] received typing_indicator '
+          'state=${payload['state'] ?? 'unknown'} '
+          'replyTo=${payload['replyTo'] ?? 'none'}',
         );
         return;
     }

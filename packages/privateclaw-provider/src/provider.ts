@@ -1849,6 +1849,7 @@ export class PrivateClawProvider {
       deviceLabel?: string;
       displayName?: string;
       supportsThinkingTrace?: boolean;
+      supportsTypingIndicator?: boolean;
       sentAt: string;
     },
   ): Promise<{ participant: ProviderParticipantState; isNew: boolean }> {
@@ -1867,6 +1868,9 @@ export class PrivateClawProvider {
         ...(requestedDisplayName ? { displayName: requestedDisplayName } : {}),
         ...(typeof params.supportsThinkingTrace === "boolean"
           ? { supportsThinkingTrace: params.supportsThinkingTrace }
+          : {}),
+        ...(typeof params.supportsTypingIndicator === "boolean"
+          ? { supportsTypingIndicator: params.supportsTypingIndicator }
           : {}),
         lastSeenAt: params.sentAt,
       };
@@ -1889,6 +1893,9 @@ export class PrivateClawProvider {
       ...(params.deviceLabel ? { deviceLabel: params.deviceLabel } : {}),
       ...(typeof params.supportsThinkingTrace === "boolean"
         ? { supportsThinkingTrace: params.supportsThinkingTrace }
+        : {}),
+      ...(typeof params.supportsTypingIndicator === "boolean"
+        ? { supportsTypingIndicator: params.supportsTypingIndicator }
         : {}),
       joinedAt: params.sentAt,
       lastSeenAt: params.sentAt,
@@ -2019,6 +2026,38 @@ export class PrivateClawProvider {
       summary: params.summary,
       entries: cloneThinkingEntries(params.entries),
       sentAt,
+      ...(params.replyTo ? { replyTo: params.replyTo } : {}),
+    } as const;
+    await Promise.all(
+      targetAppIds.map((targetAppId) =>
+        this.sendPayload(sessionId, payload, targetAppId),
+      ),
+    );
+  }
+
+  async sendTypingIndicator(
+    sessionId: string,
+    params: {
+      state: "typing" | "idle";
+      replyTo?: string | undefined;
+      targetAppId?: string | undefined;
+    },
+  ): Promise<void> {
+    const session = this.requireSession(sessionId);
+    const targetAppIds = params.targetAppId
+      ? (session.participants.get(params.targetAppId)?.supportsTypingIndicator === true
+          ? [params.targetAppId]
+          : [])
+      : [...session.participants.values()]
+          .filter((participant) => participant.supportsTypingIndicator === true)
+          .map((participant) => participant.appId);
+    if (targetAppIds.length === 0) {
+      return;
+    }
+    const payload = {
+      kind: "typing_indicator",
+      state: params.state,
+      sentAt: nowIso(),
       ...(params.replyTo ? { replyTo: params.replyTo } : {}),
     } as const;
     await Promise.all(
@@ -2501,6 +2540,7 @@ export class PrivateClawProvider {
         const participantState = await this.upsertParticipant(sessionId, {
           sentAt: payload.sentAt,
           supportsThinkingTrace: payload.supportsThinkingTrace === true,
+          supportsTypingIndicator: payload.supportsTypingIndicator === true,
           ...(payload.appId ? { appId: normalizedAppId } : {}),
           ...(payload.deviceLabel
             ? { deviceLabel: payload.deviceLabel }

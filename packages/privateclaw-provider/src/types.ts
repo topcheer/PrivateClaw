@@ -121,6 +121,7 @@ export interface ProviderParticipantState extends PrivateClawParticipant {
   lastUserMessageAt?: string;
   botModeSilentJoinPromptSentAt?: string;
   supportsThinkingTrace?: boolean;
+  supportsTypingIndicator?: boolean;
 }
 
 export interface PrivateClawManagedSession {

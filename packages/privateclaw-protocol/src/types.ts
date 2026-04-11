@@ -40,6 +40,7 @@ export interface ClientHelloPayload {
   deviceLabel?: string;
   displayName?: string;
   supportsThinkingTrace?: boolean;
+  supportsTypingIndicator?: boolean;
   sentAt: string;
 }
 
@@ -158,6 +159,13 @@ export interface SessionRenewedPayload {
   replyTo?: string;
 }
 
+export interface TypingIndicatorPayload {
+  kind: "typing_indicator";
+  state: "typing" | "idle";
+  sentAt: string;
+  replyTo?: string;
+}
+
 export interface SessionClosePayload {
   kind: "session_close";
   reason: string;
@@ -175,6 +183,7 @@ export type PrivateClawPayload =
   | SystemMessagePayload
   | ProviderCapabilitiesPayload
   | SessionRenewedPayload
+  | TypingIndicatorPayload
   | SessionClosePayload;
 
 export interface ProviderCreateSessionMessage {

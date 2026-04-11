@@ -7,6 +7,7 @@ import { stdin, stdout } from "node:process";
 import { fileURLToPath } from "node:url";
 import {
   appendPrivateClawAppInstallFooter,
+  appendPrivateClawAppInstallFooterLines,
   formatBilingualInline,
 } from "./text.js";
 
@@ -861,10 +862,17 @@ export function buildPrivateClawSetupPlan(params: {
       privateClawCommandAvailable: true,
       introduction:
         `[privateclaw-provider] ${formatBilingualInline(
-          "本机的 OpenClaw + PrivateClaw 已经可用，接下来直接开始配对：",
-          "OpenClaw + PrivateClaw are already available locally. Starting pairing next:",
+          params.status.privateClawPluginPresent
+            ? "检测到本机已经安装了 PrivateClaw 插件。正在检查并更新到最新版本："
+            : "本机的 OpenClaw + PrivateClaw 已经可用，接下来直接开始配对：",
+          params.status.privateClawPluginPresent
+            ? "A PrivateClaw plugin is already installed locally. Checking for updates:"
+            : "OpenClaw + PrivateClaw are already available locally. Starting pairing next:",
         )}`,
-      automaticSteps: gatewayModeStep ? [gatewayModeStep] : [],
+      automaticSteps: [
+        ...(params.status.privateClawPluginPresent ? [updateStep] : []),
+        ...(gatewayModeStep ? [gatewayModeStep] : []),
+      ],
       manualSteps: params.configPath
         ? [...(gatewayModeStep ? [gatewayModeStep] : []), startupStep, pairingCommand]
         : [pairingCommand],
@@ -1041,38 +1049,42 @@ export async function runPrivateClawSetup(
   const packageSpec =
     options.packageSpec ?? (await resolveCurrentPrivateClawPackageSpec());
   const packageRoot = options.packageRoot ?? resolveCurrentPrivateClawPackageRoot();
-  const selection =
-    options.selection ??
-    (await resolvePrivateClawSetupSelection({
-      ...(typeof options.groupMode === "boolean"
-        ? { groupMode: options.groupMode }
-        : {}),
-      ...(typeof options.ttlMs === "number" ? { ttlMs: options.ttlMs } : {}),
-      ...(options.durationPreset ? { durationPreset: options.durationPreset } : {}),
-      ...(options.promptForChoice
-        ? { promptForChoice: options.promptForChoice }
-        : {}),
-    }));
-  const status = await detectStatus();
-  const plan = buildPrivateClawSetupPlan({
-    packageSpec,
-    packageRoot,
-    status,
-    selection,
-    ...(options.configPath ? { configPath: options.configPath } : {}),
-    ...(options.relayBaseUrl ? { relayBaseUrl: options.relayBaseUrl } : {}),
-    ...(options.label ? { label: options.label } : {}),
-    ...(options.foreground ? { foreground: true } : {}),
-    ...(options.openInBrowser ? { openInBrowser: true } : {}),
-    ...(options.verbose ? { verbose: true } : {}),
-  });
-  const guidance = renderPrivateClawSetupGuidance(plan);
   const log = options.onLog ?? ((line: string) => console.log(line));
-  for (const line of guidance.split("\n")) {
-    log(line);
-  }
 
-  if (!plan.localOpenClaw) {
+  // Phase 1: Detect status and prepare the plugin BEFORE asking about pairing.
+  const status = await detectStatus();
+
+  // If openclaw is not available at all, show manual steps with full pairing command.
+  // Selection is needed early here to render the correct pairing command in guidance.
+  if (!status.openClawAvailable) {
+    const selection =
+      options.selection ??
+      (await resolvePrivateClawSetupSelection({
+        ...(typeof options.groupMode === "boolean"
+          ? { groupMode: options.groupMode }
+          : {}),
+        ...(typeof options.ttlMs === "number" ? { ttlMs: options.ttlMs } : {}),
+        ...(options.durationPreset ? { durationPreset: options.durationPreset } : {}),
+        ...(options.promptForChoice
+          ? { promptForChoice: options.promptForChoice }
+          : {}),
+      }));
+    const plan = buildPrivateClawSetupPlan({
+      packageSpec,
+      packageRoot,
+      status,
+      selection,
+      ...(options.configPath ? { configPath: options.configPath } : {}),
+      ...(options.relayBaseUrl ? { relayBaseUrl: options.relayBaseUrl } : {}),
+      ...(options.label ? { label: options.label } : {}),
+      ...(options.foreground ? { foreground: true } : {}),
+      ...(options.openInBrowser ? { openInBrowser: true } : {}),
+      ...(options.verbose ? { verbose: true } : {}),
+    });
+    const guidance = renderPrivateClawSetupGuidance(plan);
+    for (const line of guidance.split("\n")) {
+      log(line);
+    }
     throw new Error(
       formatBilingualInline(
         "当前机器上还没有可用的 `openclaw` 命令，无法继续自动安装 PrivateClaw 插件。",
@@ -1081,20 +1093,37 @@ export async function runPrivateClawSetup(
     );
   }
 
-  const runStep = options.runStep ?? runPrivateClawSetupStep;
-  const runPairingCommand =
-    options.runPairingCommand ??
-    ((step: PrivateClawSetupStep) =>
-      runStreamingCommand(step.command, step.args, {
-        ...(step.env ? { env: step.env } : {}),
-      }));
+  // Build a preparation plan with a placeholder selection to get the install/update/enable steps.
+  const placeholderSelection: PrivateClawSetupSelection = {
+    groupMode: false,
+    ttlMs: DAY_MS,
+    durationLabel: formatBilingualInline("24 小时", "24 hours"),
+  };
+  const prepPlan = buildPrivateClawSetupPlan({
+    packageSpec,
+    packageRoot,
+    status,
+    selection: placeholderSelection,
+    ...(options.configPath ? { configPath: options.configPath } : {}),
+    ...(options.relayBaseUrl ? { relayBaseUrl: options.relayBaseUrl } : {}),
+    ...(options.label ? { label: options.label } : {}),
+    ...(options.foreground ? { foreground: true } : {}),
+    ...(options.openInBrowser ? { openInBrowser: true } : {}),
+    ...(options.verbose ? { verbose: true } : {}),
+  });
 
-  for (const step of plan.automaticSteps) {
+  // Show introduction.
+  log(prepPlan.introduction);
+
+  // Run automatic steps (install / update / enable / restart).
+  const runStep = options.runStep ?? runPrivateClawSetupStep;
+  for (const step of prepPlan.automaticSteps) {
     log(`[privateclaw-provider] ${formatBilingualInline("正在执行", "Running")}: ${step.display}`);
     await runStep(step);
   }
 
-  if (!plan.privateClawCommandAvailable) {
+  // Verify command availability after install/update/enable.
+  if (!prepPlan.privateClawCommandAvailable) {
     const refreshedStatus = await waitForPrivateClawCommandAvailability(
       detectStatus,
       options.verificationTimeoutMs ?? 15_000,
@@ -1116,8 +1145,55 @@ export async function runPrivateClawSetup(
     );
   }
 
+  // Phase 2: Plugin is now ready. Ask the user for pairing preferences.
+  const selection =
+    options.selection ??
+    (await resolvePrivateClawSetupSelection({
+      ...(typeof options.groupMode === "boolean"
+        ? { groupMode: options.groupMode }
+        : {}),
+      ...(typeof options.ttlMs === "number" ? { ttlMs: options.ttlMs } : {}),
+      ...(options.durationPreset ? { durationPreset: options.durationPreset } : {}),
+      ...(options.promptForChoice
+        ? { promptForChoice: options.promptForChoice }
+        : {}),
+    }));
+
   log(
-    `[privateclaw-provider] ${formatBilingualInline("开始配对", "Starting pairing")}: ${plan.pairingCommand.display}`,
+    `[privateclaw-provider] ${formatBilingualInline(
+      `配对模式：${selection.groupMode ? "群聊" : "单独会话"}`,
+      `Pairing mode: ${selection.groupMode ? "group chat" : "single chat"}`,
+    )}`,
   );
-  await runPairingCommand(plan.pairingCommand);
+  log(
+    `[privateclaw-provider] ${formatBilingualInline(
+      `会话时长：${selection.durationLabel.split(" / ")[0]}`,
+      `Session duration: ${selection.durationLabel.split(" / ")[1] ?? selection.durationLabel}`,
+    )}`,
+  );
+
+  // Build and run the pairing command.
+  const pairingCommand = buildPairingCommandStep({
+    groupMode: selection.groupMode,
+    ttlMs: selection.ttlMs,
+    ...(options.relayBaseUrl ? { relayBaseUrl: options.relayBaseUrl } : {}),
+    ...(options.configPath ? { configPath: options.configPath } : {}),
+    ...(options.label ? { label: options.label } : {}),
+    ...(options.foreground ? { foreground: true } : {}),
+    ...(options.openInBrowser ? { openInBrowser: true } : {}),
+    ...(options.verbose ? { verbose: true } : {}),
+  });
+  log(
+    `[privateclaw-provider] ${formatBilingualInline("开始配对", "Starting pairing")}: ${pairingCommand.display}`,
+  );
+  for (const line of appendPrivateClawAppInstallFooterLines([])) {
+    log(line);
+  }
+  const runPairingCommand =
+    options.runPairingCommand ??
+    ((step: PrivateClawSetupStep) =>
+      runStreamingCommand(step.command, step.args, {
+        ...(step.env ? { env: step.env } : {}),
+      }));
+  await runPairingCommand(pairingCommand);
 }

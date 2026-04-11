@@ -152,9 +152,11 @@ export async function spawnBackgroundPairDaemon(params: {
       });
     });
 
-    const result = await waitForResultFile<PairDaemonResult>(resultPath, 30_000);
+    const result = await waitForResultFile<PairDaemonResult>(resultPath, 60_000);
     if (!result.ok) {
-      throw new Error(result.error);
+      throw new Error(
+        `[privateclaw-provider] Daemon pair child failed: ${result.error}`,
+      );
     }
     return result.bundle;
   } finally {

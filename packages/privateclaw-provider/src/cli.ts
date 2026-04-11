@@ -540,7 +540,10 @@ async function runPairCommand(args: string[]): Promise<void> {
     } catch (error) {
       await writeDaemonResult(resultFile, {
         ok: false,
-        error: error instanceof Error ? error.message : String(error),
+        error:
+          error instanceof Error
+            ? `${error.message}\n${error.stack ?? ""}`
+            : String(error),
       });
       throw error;
     } finally {

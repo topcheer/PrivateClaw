@@ -107,6 +107,7 @@ export interface RunPrivateClawSetupOptions {
   onLog?: (line: string) => void;
   verificationTimeoutMs?: number;
   verificationPollMs?: number;
+  gatewaySettleMs?: number;
 }
 
 const PRIVATECLAW_PACKAGE_NAME = "@privateclaw/privateclaw";
@@ -1217,7 +1218,10 @@ export async function runPrivateClawSetup(
   }
 
   // Verify command availability after install/update/enable.
-  if (!prepPlan.privateClawCommandAvailable) {
+  const didRestart = prepPlan.automaticSteps.some(
+    (step) => step.args[0] === "gateway" && step.args[1] === "restart",
+  );
+  if (!prepPlan.privateClawCommandAvailable || didRestart) {
     const refreshedStatus = await waitForPrivateClawCommandAvailability(
       detectStatus,
       options.verificationTimeoutMs ?? 15_000,
@@ -1237,6 +1241,20 @@ export async function runPrivateClawSetup(
         `Verified command availability with: ${buildPrivateClawVerificationDisplay(options.configPath)}`,
       )}`,
     );
+    // After a gateway restart, give the gateway extra time to finish loading
+    // plugins and restoring sessions before issuing the pair command.
+    if (didRestart) {
+      const settleMs = options.gatewaySettleMs ?? 5_000;
+      if (settleMs > 0) {
+        log(
+          `[privateclaw-provider] ${formatBilingualInline(
+            `等待 gateway 完全就绪（${settleMs / 1000} 秒）…`,
+            `Waiting for gateway to settle (${settleMs / 1000}s)...`,
+          )}`,
+        );
+        await delay(settleMs);
+      }
+    }
   }
 
   // Phase 2: Plugin is now ready. Ask the user for pairing preferences.

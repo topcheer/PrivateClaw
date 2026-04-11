@@ -1428,6 +1428,15 @@ export class PrivateClawProvider {
           ...(message.attachments ? { attachments: message.attachments } : {}),
         });
       }
+      if (messages.length === 0) {
+        this.options.onLog?.(
+          `[provider] bridge_no_reply_ack session=${sessionId}`,
+        );
+        await this.sendAssistantMessage(sessionId, {
+          text: formatBilingualInline("收到！", "Roger!"),
+          replyTo: payload.clientMessageId,
+        });
+      }
     } catch (error) {
       if (supportsThinkingTrace) {
         await this.sendThinkingMessage(sessionId, {

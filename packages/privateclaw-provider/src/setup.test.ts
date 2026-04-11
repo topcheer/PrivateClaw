@@ -152,7 +152,7 @@ test("buildPrivateClawSetupPlan prints manual OpenClaw commands when openclaw is
   });
 
   assert.equal(plan.localOpenClaw, false);
-  assert.equal(plan.manualSteps.length, 6);
+  assert.equal(plan.manualSteps.length, 7);
   assert.match(
     renderPrivateClawSetupGuidance(plan),
     /openclaw plugins install --dangerously-force-unsafe-install \/tmp\/privateclaw-package/,

@@ -541,6 +541,12 @@ function createOpenClawInstallCandidates(params: {
     OPENCLAW_UNSAFE_INSTALL_FLAG,
     normalizedPackageRoot,
   ];
+  const updateArgs = [
+    "plugins",
+    "update",
+    PRIVATECLAW_PLUGIN_ID,
+    OPENCLAW_UNSAFE_INSTALL_FLAG,
+  ];
   const exactSpecArgs = [
     "plugins",
     "install",
@@ -550,6 +556,11 @@ function createOpenClawInstallCandidates(params: {
   const openClawLocalStep = createOpenClawStep(
     "Install the local PrivateClaw package directory into OpenClaw",
     installArgs,
+    params.configPath,
+  );
+  const updateStep = createOpenClawStep(
+    "Update the existing PrivateClaw plugin in OpenClaw",
+    updateArgs,
     params.configPath,
   );
   const npmExecFallbackStep = createNpmExecOpenClawStep(
@@ -569,6 +580,13 @@ function createOpenClawInstallCandidates(params: {
       args: openClawLocalStep.args,
       display: openClawLocalStep.display,
       ...(openClawLocalStep.env ? { env: openClawLocalStep.env } : {}),
+    },
+    {
+      label: "openclaw update (for plugin-already-exists)",
+      command: updateStep.command,
+      args: updateStep.args,
+      display: updateStep.display,
+      ...(updateStep.env ? { env: updateStep.env } : {}),
     },
     {
       label: "npm exec fallback (local package directory)",

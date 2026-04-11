@@ -356,6 +356,7 @@ async function requestDescriptorJson<T>(
     `http://${descriptor.host}:${descriptor.port}${pathname}`,
     {
       method: init?.method ?? "GET",
+      signal: AbortSignal.timeout(5000),
       headers: {
         authorization: `Bearer ${descriptor.token}`,
         ...(init?.body !== undefined
@@ -731,6 +732,10 @@ export async function listManagedSessionsFromStateDir(
   const listings: PrivateClawDiscoveredSessionListing[] = [];
 
   for (const { descriptor, descriptorPath } of descriptors) {
+    if (!isDescriptorProcessAlive(descriptor)) {
+      await rm(descriptorPath, { force: true });
+      continue;
+    }
     try {
       const response = await requestDescriptorJson<{
         host: PrivateClawDiscoveredSessionHost;

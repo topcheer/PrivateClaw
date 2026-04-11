@@ -768,9 +768,14 @@ export function buildPrivateClawSetupPlan(params: {
     packageSpec: params.packageSpec,
     ...(params.configPath ? { configPath: params.configPath } : {}),
   });
+  const allowStep = createOpenClawStep(
+    "Allow the PrivateClaw OpenClaw plugin to load",
+    ["plugins", "allow", PRIVATECLAW_PLUGIN_ID],
+    params.configPath,
+  );
   const updateStep = createOpenClawStep(
     "Update the existing PrivateClaw OpenClaw plugin",
-    ["plugins", "update", PRIVATECLAW_PLUGIN_ID],
+    ["plugins", "update", PRIVATECLAW_PLUGIN_ID, OPENCLAW_UNSAFE_INSTALL_FLAG],
     params.configPath,
   );
   const enableStep = createOpenClawStep(
@@ -843,6 +848,7 @@ export function buildPrivateClawSetupPlan(params: {
         )}`,
       automaticSteps: [],
       manualSteps: [
+        allowStep,
         ...manualInstallSteps,
         enableStep,
         ...(gatewayModeStep ? [gatewayModeStep] : []),
@@ -870,7 +876,7 @@ export function buildPrivateClawSetupPlan(params: {
             : "OpenClaw + PrivateClaw are already available locally. Starting pairing next:",
         )}`,
       automaticSteps: [
-        ...(params.status.privateClawPluginPresent ? [updateStep] : []),
+        ...(params.status.privateClawPluginPresent ? [allowStep, updateStep] : []),
         ...(gatewayModeStep ? [gatewayModeStep] : []),
       ],
       manualSteps: params.configPath
@@ -904,12 +910,14 @@ export function buildPrivateClawSetupPlan(params: {
               : "OpenClaw is available locally. Installing, enabling, and restarting the PrivateClaw plugin now:",
         )}`,
     automaticSteps: [
+      allowStep,
       ...(params.status.privateClawPluginPresent ? [updateStep] : [installStep]),
       enableStep,
       ...(gatewayModeStep ? [gatewayModeStep] : []),
       ...(params.configPath ? [] : [restartStep]),
     ],
     manualSteps: [
+      allowStep,
       ...(params.status.privateClawPluginPresent ? [updateStep] : [installStep]),
       enableStep,
       ...(gatewayModeStep ? [gatewayModeStep] : []),

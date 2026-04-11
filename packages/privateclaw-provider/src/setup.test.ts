@@ -152,7 +152,7 @@ test("buildPrivateClawSetupPlan prints manual OpenClaw commands when openclaw is
   });
 
   assert.equal(plan.localOpenClaw, false);
-  assert.equal(plan.manualSteps.length, 6);
+  assert.equal(plan.manualSteps.length, 7);
   assert.match(
     renderPrivateClawSetupGuidance(plan),
     /openclaw plugins install --dangerously-force-unsafe-install \/tmp\/privateclaw-package/,
@@ -220,6 +220,7 @@ test("runPrivateClawSetup installs, enables, restarts, then starts pairing", asy
   });
 
   assert.deepEqual(executed, [
+    "openclaw plugins allow privateclaw",
     "openclaw plugins install --dangerously-force-unsafe-install /tmp/privateclaw-package",
     "openclaw plugins enable privateclaw",
     "openclaw gateway restart",
@@ -279,9 +280,10 @@ test("runPrivateClawSetup propagates OPENCLAW_STATE_DIR and OPENCLAW_CONFIG_PATH
 
   assert.equal(
     executed[0],
-    "OPENCLAW_STATE_DIR=/tmp/openclaw-test OPENCLAW_CONFIG_PATH=/tmp/openclaw-test/openclaw.json openclaw plugins install --dangerously-force-unsafe-install /tmp/privateclaw-package",
+    "OPENCLAW_STATE_DIR=/tmp/openclaw-test OPENCLAW_CONFIG_PATH=/tmp/openclaw-test/openclaw.json openclaw plugins allow privateclaw",
   );
   assert.deepEqual(executed, [
+    "OPENCLAW_STATE_DIR=/tmp/openclaw-test OPENCLAW_CONFIG_PATH=/tmp/openclaw-test/openclaw.json openclaw plugins allow privateclaw",
     "OPENCLAW_STATE_DIR=/tmp/openclaw-test OPENCLAW_CONFIG_PATH=/tmp/openclaw-test/openclaw.json openclaw plugins install --dangerously-force-unsafe-install /tmp/privateclaw-package",
     "OPENCLAW_STATE_DIR=/tmp/openclaw-test OPENCLAW_CONFIG_PATH=/tmp/openclaw-test/openclaw.json openclaw plugins enable privateclaw",
     "OPENCLAW_STATE_DIR=/tmp/openclaw-test OPENCLAW_CONFIG_PATH=/tmp/openclaw-test/openclaw.json openclaw config set gateway.mode local",
@@ -318,6 +320,7 @@ test("buildPrivateClawSetupPlan uses gateway run guidance instead of restart whe
   assert.deepEqual(
     plan.automaticSteps.map((step) => step.display),
     [
+      "OPENCLAW_STATE_DIR=/tmp/openclaw-test OPENCLAW_CONFIG_PATH=/tmp/openclaw-test/openclaw.json openclaw plugins allow privateclaw",
       "OPENCLAW_STATE_DIR=/tmp/openclaw-test OPENCLAW_CONFIG_PATH=/tmp/openclaw-test/openclaw.json openclaw plugins install --dangerously-force-unsafe-install /tmp/privateclaw-package",
       "OPENCLAW_STATE_DIR=/tmp/openclaw-test OPENCLAW_CONFIG_PATH=/tmp/openclaw-test/openclaw.json openclaw plugins enable privateclaw",
       "OPENCLAW_STATE_DIR=/tmp/openclaw-test OPENCLAW_CONFIG_PATH=/tmp/openclaw-test/openclaw.json openclaw config set gateway.mode local",

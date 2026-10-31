@@ -479,10 +479,12 @@ async function main() {
     dest.images = [...imageEntries];
   }
 
-  // ── Step 6b: Pricing — keep the cloned submission's published pricing.
-  // The legacy API cannot express paid tiers (Tier* is rejected), so
-  // overwriting unconditionally would silently flip a paid app to Free.
-  // Only fill a default when the clone carries no pricing at all.
+  // ── Step 6b: Pricing - keep the cloned submission's published pricing.
+  // The legacy API cannot express paid tiers (Tier* is rejected), and paid
+  // clones return priceId "Base" which the API refuses to accept back on PUT.
+  // For package-only updates of paid apps, omit pricing from the PUT body so
+  // the server keeps the published pricing. Only fill a Free default when the
+  // clone carries no pricing at all.
   if (!submission.pricing || !submission.pricing.priceId) {
     submission.pricing = {
       trialPeriod: "NoFreeTrial",
@@ -491,6 +493,13 @@ async function main() {
       priceId: "Free",
       isAdvancedPricingModel: false,
     };
+  } else if (submission.pricing.priceId === "Base" || submission.pricing.isAdvancedPricingModel) {
+    // Official msstore-cli behavior (microsoft/msstore-cli#67): paid apps use
+    // the advanced pricing model whose cloned priceId "Base" cannot be sent
+    // back. Nulling priceId (keeping the rest of the pricing object) lets the
+    // server preserve the published price.
+    console.log("   Pricing: advanced/paid pricing - nulling priceId for PUT to preserve published price");
+    submission.pricing.priceId = null;
   }
 
   // ── Step 6c: Add MSIXBUNDLE package if --package provided ──

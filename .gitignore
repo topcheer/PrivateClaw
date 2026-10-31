@@ -1,5 +1,6 @@
 node_modules/
 social-local/
+.ggcode/
 packages/*/dist/
 services/*/dist/
 .dart_tool/

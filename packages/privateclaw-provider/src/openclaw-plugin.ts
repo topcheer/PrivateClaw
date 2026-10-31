@@ -1434,6 +1434,21 @@ function formatCommandErrorWithFooter(error: unknown): string {
   return appendPrivateClawAppInstallFooter(formatCommandError(error));
 }
 
+/**
+ * OpenClaw >= 2026.10 invokes register() once in a "cli-metadata" pass where
+ * `api.runtime` is a guard proxy that throws on any property access. The
+ * OpenClaw runtime is consumed lazily (only when chat messages arrive), so
+ * skip the binding in metadata-only passes and bind during the full
+ * registration pass instead.
+ */
+function readOpenClawRuntimeIfAvailable(api: OpenClawPluginApiCompat): unknown {
+  try {
+    return api.runtime;
+  } catch {
+    return undefined;
+  }
+}
+
 function createPluginDefinition(
   runtimeFactory: (api: OpenClawPluginApiCompat) => PrivateClawPluginRuntime,
 ): OpenClawExtensionPluginCompat {
@@ -1444,7 +1459,7 @@ function createPluginDefinition(
     configSchema: privateClawConfigSchema,
     register(api: OpenClawPluginApiCompat) {
       const runtime = runtimeFactory(api);
-      runtime.setOpenClawRuntime(api.runtime);
+      runtime.setOpenClawRuntime(readOpenClawRuntimeIfAvailable(api));
 
       api.registerService?.({
         id: "privateclaw-provider",

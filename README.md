@@ -121,21 +121,23 @@ The repo code now defaults to that relay, so production installs can use it with
 Use Node.js 22 or newer on the machine where you install or run the PrivateClaw OpenClaw plugin.
 
 ```bash
-openclaw plugins install --dangerously-force-unsafe-install @privateclaw/privateclaw@latest
+openclaw plugins install --force --accept-capabilities @privateclaw/privateclaw@latest
 openclaw plugins enable privateclaw
 ```
 
-Keep `--dangerously-force-unsafe-install` on every manual install path. If you already have a local package directory (for example from this repository checkout, or from a package directory that `npx` downloaded locally), prefer installing that directory first because OpenClaw `2026.3.31` drops the unsafe-install override on archive installs:
+The install flags depend on the OpenClaw host version. OpenClaw `2026.10` and newer removed `--dangerously-force-unsafe-install` (it is now a deprecated no-op): non-ClawHub sources require `--force`, and the first install of this plugin also requires `--accept-capabilities`. On older OpenClaw hosts, keep using `--dangerously-force-unsafe-install` instead. If you already have a local package directory (for example from this repository checkout, or from a package directory that `npx` downloaded locally), prefer installing that directory first instead of packing an archive, because OpenClaw `2026.3.31` drops the unsafe-install override on archive installs:
 
 ```bash
-openclaw plugins install --dangerously-force-unsafe-install ./packages/privateclaw-provider
+openclaw plugins install --force --accept-capabilities ./packages/privateclaw-provider
 openclaw plugins enable privateclaw
 ```
 
-If you intentionally install from ClawHub, keep the same flag there too:
+On OpenClaw `2026.10`+, local-directory installs do not automatically install the plugin's npm dependencies. If `openclaw plugins list` reports missing dependencies (for example `@privateclaw/protocol` or `fflate`), run `npm install --omit=dev` inside `~/.openclaw/extensions/privateclaw` and restart the gateway, or install from the npm registry instead, which resolves dependencies automatically.
+
+If you intentionally install from ClawHub, use the same flags for your host version:
 
 ```bash
-openclaw plugins install --dangerously-force-unsafe-install clawhub:@privateclaw/privateclaw@latest
+openclaw plugins install --force --accept-capabilities clawhub:@privateclaw/privateclaw@latest
 openclaw plugins enable privateclaw
 ```
 
@@ -150,7 +152,7 @@ PrivateClaw is an OpenClaw plugin command provider, not a built-in chat transpor
 If you need the newest GitHub checkout immediately instead of the published npm package, install the local package directory instead of packing an archive:
 
 ```bash
-openclaw plugins install --dangerously-force-unsafe-install ./packages/privateclaw-provider
+openclaw plugins install --force --accept-capabilities ./packages/privateclaw-provider
 openclaw plugins enable privateclaw
 ```
 

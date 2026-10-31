@@ -101,21 +101,23 @@ https://relay.privateclaw.us
 安装或运行 PrivateClaw 这个 OpenClaw 插件的机器，请使用 Node.js 22 或更高版本。
 
 ```bash
-openclaw plugins install --dangerously-force-unsafe-install @privateclaw/privateclaw@latest
+openclaw plugins install --force --accept-capabilities @privateclaw/privateclaw@latest
 openclaw plugins enable privateclaw
 ```
 
-所有手工安装路径都请保留 `--dangerously-force-unsafe-install`。如果你手边已经有本地 package 目录（例如当前仓库 checkout，或者 `npx` 在本机下载出来的 package 目录），优先直接安装这个目录，因为 OpenClaw `2026.3.31` 的 archive 安装分支会把 unsafe-install override 丢掉：
+安装旗标取决于 OpenClaw 宿主版本。OpenClaw `2026.10` 及以上版本已移除 `--dangerously-force-unsafe-install`（现在它只是一个已弃用的空操作）：非 ClawHub 源需要 `--force`，首次安装本插件还需要 `--accept-capabilities`。旧版 OpenClaw 宿主请继续使用 `--dangerously-force-unsafe-install`。如果你手边已经有本地 package 目录（例如当前仓库 checkout，或者 `npx` 在本机下载出来的 package 目录），优先直接安装这个目录而不是打包 archive，因为 OpenClaw `2026.3.31` 的 archive 安装分支会把 unsafe-install override 丢掉：
 
 ```bash
-openclaw plugins install --dangerously-force-unsafe-install ./packages/privateclaw-provider
+openclaw plugins install --force --accept-capabilities ./packages/privateclaw-provider
 openclaw plugins enable privateclaw
 ```
 
-如果你明确要走 ClawHub，也同样带上这个 flag：
+注意：OpenClaw `2026.10`+ 的本地目录安装不会自动安装插件的 npm 依赖。如果 `openclaw plugins list` 报告缺少依赖（例如 `@privateclaw/protocol` 或 `fflate`），请在 `~/.openclaw/extensions/privateclaw` 目录内执行 `npm install --omit=dev` 后重启 gateway，或改用 npm registry 安装（它会自动解析依赖）。
+
+如果你明确要走 ClawHub，也同样按你的宿主版本使用对应旗标：
 
 ```bash
-openclaw plugins install --dangerously-force-unsafe-install clawhub:@privateclaw/privateclaw@latest
+openclaw plugins install --force --accept-capabilities clawhub:@privateclaw/privateclaw@latest
 openclaw plugins enable privateclaw
 ```
 
@@ -130,7 +132,7 @@ PrivateClaw 是一个 OpenClaw 插件命令提供者，不是内置聊天传输 
 如果你不是要安装 npm 已发布版本，而是想立刻使用 GitHub 仓库里的最新代码，直接安装本地 package 目录即可，不要先打包 archive：
 
 ```bash
-openclaw plugins install --dangerously-force-unsafe-install ./packages/privateclaw-provider
+openclaw plugins install --force --accept-capabilities ./packages/privateclaw-provider
 openclaw plugins enable privateclaw
 ```
 

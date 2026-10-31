@@ -4,8 +4,10 @@ import {
   buildPrivateClawSetupPlan,
   detectLocalOpenClawStatus,
   EFFECTIVELY_PERMANENT_SESSION_TTL_MS,
+  parseOpenClawHostVersion,
   parsePrivateClawSessionDurationPreset,
   renderPrivateClawSetupGuidance,
+  resolveOpenClawInstallFlagsFromVersion,
   resolvePrivateClawSetupSelection,
   runPrivateClawSetup,
 } from "./setup.js";
@@ -40,6 +42,7 @@ test("detectLocalOpenClawStatus uses the privateclaw help probe to confirm comma
     openClawAvailable: true,
     privateClawCommandAvailable: true,
     privateClawPluginPresent: false,
+    openClawVersion: "2026.3.22",
   });
 });
 
@@ -71,6 +74,7 @@ test("detectLocalOpenClawStatus does not trust commands-list mentions when the p
     openClawAvailable: true,
     privateClawCommandAvailable: false,
     privateClawPluginPresent: false,
+    openClawVersion: "2026.3.22",
   });
 });
 
@@ -105,6 +109,7 @@ test("detectLocalOpenClawStatus does not trust generic root help output for unkn
     openClawAvailable: true,
     privateClawCommandAvailable: false,
     privateClawPluginPresent: false,
+    openClawVersion: "2026.3.22",
   });
 });
 
@@ -112,6 +117,70 @@ test("parsePrivateClawSessionDurationPreset supports the permanent preset", () =
   const preset = parsePrivateClawSessionDurationPreset("permanent");
   assert.equal(preset.ttlMs, EFFECTIVELY_PERMANENT_SESSION_TTL_MS);
   assert.match(preset.label, /Permanent/);
+});
+
+test("parseOpenClawHostVersion extracts calendar versions from --version output", () => {
+  assert.equal(
+    parseOpenClawHostVersion("OpenClaw 2026.10.9 (8b18b55)\n"),
+    "2026.10.9",
+  );
+  assert.equal(parseOpenClawHostVersion("OpenClaw 2026.3.22"), "2026.3.22");
+  assert.equal(
+    parseOpenClawHostVersion("OpenClaw 2026.10.10-beta.5"),
+    "2026.10.10-beta.5",
+  );
+  assert.equal(parseOpenClawHostVersion("something else"), undefined);
+});
+
+test("resolveOpenClawInstallFlagsFromVersion switches flags at OpenClaw 2026.10", () => {
+  assert.deepEqual(resolveOpenClawInstallFlagsFromVersion("2026.10.9"), [
+    "--force",
+    "--accept-capabilities",
+  ]);
+  assert.deepEqual(resolveOpenClawInstallFlagsFromVersion("2026.10.10-beta.5"), [
+    "--force",
+    "--accept-capabilities",
+  ]);
+  assert.deepEqual(resolveOpenClawInstallFlagsFromVersion("2026.9.36"), [
+    "--dangerously-force-unsafe-install",
+  ]);
+  assert.deepEqual(resolveOpenClawInstallFlagsFromVersion("2026.3.22"), [
+    "--dangerously-force-unsafe-install",
+  ]);
+  assert.deepEqual(resolveOpenClawInstallFlagsFromVersion(undefined), [
+    "--dangerously-force-unsafe-install",
+  ]);
+  assert.deepEqual(resolveOpenClawInstallFlagsFromVersion("garbage"), [
+    "--dangerously-force-unsafe-install",
+  ]);
+});
+
+test("buildPrivateClawSetupPlan uses modern install flags on OpenClaw 2026.10+ hosts", () => {
+  const plan = buildPrivateClawSetupPlan({
+    packageSpec: "@privateclaw/privateclaw@0.1.26",
+    packageRoot: "/tmp/privateclaw-package",
+    status: {
+      openClawAvailable: false,
+      privateClawCommandAvailable: false,
+      openClawVersion: "2026.10.9",
+    },
+    selection: {
+      groupMode: true,
+      ttlMs: 2 * 60 * 60 * 1000,
+      durationLabel: "2 小时 / 2 hours",
+    },
+  });
+
+  const guidance = renderPrivateClawSetupGuidance(plan);
+  assert.match(
+    guidance,
+    /openclaw plugins install --force --accept-capabilities \/tmp\/privateclaw-package/,
+  );
+  assert.match(
+    guidance,
+    /openclaw plugins install --force --accept-capabilities @privateclaw\/privateclaw@0\.1\.26/,
+  );
+  assert.doesNotMatch(guidance, /dangerously-force-unsafe-install/u);
 });
 
 test("resolvePrivateClawSetupSelection prompts for missing mode and duration", async () => {

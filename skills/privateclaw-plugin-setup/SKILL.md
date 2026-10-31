@@ -40,7 +40,7 @@ This skill is especially relevant for requests like:
 ## Core facts
 
 - The production plugin package is `@privateclaw/privateclaw`.
-- Keep `--dangerously-force-unsafe-install` on every manual install path. `openclaw plugins install --dangerously-force-unsafe-install @privateclaw/privateclaw@latest` is the default published install, and if the user already has a local package directory, prefer `openclaw plugins install --dangerously-force-unsafe-install ./packages/privateclaw-provider` over archive installs.
+- Install flags are host-version dependent. On OpenClaw `2026.10`+ use `openclaw plugins install --force --accept-capabilities @privateclaw/privateclaw@latest` (the old `--dangerously-force-unsafe-install` is a deprecated no-op there, non-ClawHub sources require `--force`, and the first install requires `--accept-capabilities`). On older hosts keep `--dangerously-force-unsafe-install`. If the user already has a local package directory, prefer `openclaw plugins install --force --accept-capabilities ./packages/privateclaw-provider` over archive installs.
 - The plugin id is `privateclaw`.
 - The standalone npm binary is `privateclaw-provider`.
 - The default public relay is `https://relay.privateclaw.us`.
@@ -108,19 +108,21 @@ If `openclaw` is missing, stop and tell the user that OpenClaw itself must be in
 
 ### 2. Install and enable the plugin
 
-Use the published npm package by default, and keep `--dangerously-force-unsafe-install` on every manual install path:
+Use the published npm package by default, with the flags matching the user's OpenClaw host version (`--force --accept-capabilities` on `2026.10`+, `--dangerously-force-unsafe-install` on older hosts):
 
 ```bash
-openclaw plugins install --dangerously-force-unsafe-install @privateclaw/privateclaw@latest
+openclaw plugins install --force --accept-capabilities @privateclaw/privateclaw@latest
 openclaw plugins enable privateclaw
 ```
 
 If the user already has a local package directory, prefer installing that directory instead of an archive because OpenClaw `2026.3.31` can drop the unsafe-install override on archive installs:
 
 ```bash
-openclaw plugins install --dangerously-force-unsafe-install ./packages/privateclaw-provider
+openclaw plugins install --force --accept-capabilities ./packages/privateclaw-provider
 openclaw plugins enable privateclaw
 ```
+
+On OpenClaw `2026.10`+, local-directory installs do not install plugin npm dependencies automatically; if `openclaw plugins list` reports missing dependencies, run `npm install --omit=dev` inside `~/.openclaw/extensions/privateclaw` and restart the gateway.
 
 ### 3. Optional relay override
 

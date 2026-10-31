@@ -20,6 +20,11 @@ on:
         required: true
         default: true
         type: boolean
+      include_store:
+        description: Submit the Windows Store bundle to Microsoft Store certification
+        required: true
+        default: false
+        type: boolean
       build_name:
         description: Override the app marketing version (defaults to pubspec / version resolver)
         required: false
@@ -47,6 +52,7 @@ jobs:
       release_tag: ${{ steps.version.outputs.release_tag }}
       upload_release: ${{ steps.version.outputs.upload_release }}
       include_mobile: ${{ steps.version.outputs.include_mobile }}
+      include_store: ${{ steps.version.outputs.include_store }}
     steps:
       - uses: actions/checkout@v4
 
@@ -61,6 +67,7 @@ jobs:
           MANUAL_RELEASE_TAG: ${{ github.event.inputs.release_tag || '' }}
           MANUAL_INCLUDE_MOBILE: ${{ github.event.inputs.include_mobile || '' }}
           MANUAL_PUBLISH_RELEASE: ${{ github.event.inputs.publish_github_release || '' }}
+          MANUAL_INCLUDE_STORE: ${{ github.event.inputs.include_store || '' }}
         run: |
           set -euo pipefail
           export PRIVATECLAW_BUILD_NAME="${MANUAL_BUILD_NAME}"
@@ -74,10 +81,12 @@ jobs:
             RELEASE_TAG="${GITHUB_REF_NAME}"
             UPLOAD_RELEASE="true"
             INCLUDE_MOBILE="true"
+            INCLUDE_STORE="true"
           else
             RELEASE_TAG="${MANUAL_RELEASE_TAG}"
             UPLOAD_RELEASE="${MANUAL_PUBLISH_RELEASE}"
             INCLUDE_MOBILE="${MANUAL_INCLUDE_MOBILE}"
+            INCLUDE_STORE="${MANUAL_INCLUDE_STORE}"
           fi
 
           if [ "${UPLOAD_RELEASE}" = "true" ] && [ -z "${RELEASE_TAG}" ]; then
@@ -91,6 +100,7 @@ jobs:
           echo "release_tag=${RELEASE_TAG}" >> "${GITHUB_OUTPUT}"
           echo "upload_release=${UPLOAD_RELEASE}" >> "${GITHUB_OUTPUT}"
           echo "include_mobile=${INCLUDE_MOBILE}" >> "${GITHUB_OUTPUT}"
+          echo "include_store=${INCLUDE_STORE}" >> "${GITHUB_OUTPUT}"
 
   validate-app:
     name: Validate Flutter app
@@ -366,6 +376,46 @@ jobs:
           name: PrivateClaw-${{ needs.prepare.outputs.version_slug }}-windows-store.msixbundle
           path: apps/privateclaw_app/builds/windows-store/PrivateClaw-${{ needs.prepare.outputs.version_slug }}-windows-store.msixbundle
           if-no-files-found: error
+
+  windows-store-publish:
+    name: Submit Windows Store bundle for certification
+    if: >
+      always() &&
+      needs.prepare.outputs.include_store == 'true' &&
+      needs.prepare.result == 'success' &&
+      needs.windows-store-bundle.result == 'success'
+    needs:
+      - prepare
+      - windows-store-bundle
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Download Windows Store bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: PrivateClaw-${{ needs.prepare.outputs.version_slug }}-windows-store.msixbundle
+          path: store-package
+
+      - id: bundle
+        name: Resolve bundle path
+        shell: pwsh
+        run: |
+          $bundle = Get-ChildItem store-package -Recurse -Filter *.msixbundle | Select-Object -First 1
+          if (-not $bundle) { Write-Error "No .msixbundle artifact found"; exit 1 }
+          "bundle=$($bundle.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Submit to Microsoft Store
+        shell: pwsh
+        env:
+          WINDOWS_STORE_TENANT_ID: ${{ secrets.WINDOWS_STORE_TENANT_ID }}
+          WINDOWS_STORE_CLIENT_ID: ${{ secrets.WINDOWS_STORE_CLIENT_ID }}
+          WINDOWS_STORE_CLIENT_SECRET: ${{ secrets.WINDOWS_STORE_CLIENT_SECRET }}
+        run: node scripts/windows-store-listing.mjs --submit --package "${{ steps.bundle.outputs.bundle }}" --commit
 
   android:
     name: Build Android artifacts

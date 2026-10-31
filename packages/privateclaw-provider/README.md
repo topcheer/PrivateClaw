@@ -63,10 +63,10 @@ The production default relay for this package is:
 https://relay.privateclaw.us
 ```
 
-Keep `--dangerously-force-unsafe-install` on every manual install path. The simplest published install is:
+Install flags depend on the OpenClaw host version. OpenClaw `2026.10`+ removed `--dangerously-force-unsafe-install` (it is now a deprecated no-op): non-ClawHub sources need `--force`, and the first install also needs `--accept-capabilities`. On older hosts keep `--dangerously-force-unsafe-install`. The simplest published install is:
 
 ```bash
-openclaw plugins install --dangerously-force-unsafe-install @privateclaw/privateclaw@latest
+openclaw plugins install --force --accept-capabilities @privateclaw/privateclaw@latest
 openclaw plugins enable privateclaw
 ```
 
@@ -75,14 +75,16 @@ If you are using the default public relay at `https://relay.privateclaw.us`, the
 If you already have a local package directory, prefer installing that directory instead of an archive. This avoids the OpenClaw `2026.3.31` archive path that drops the unsafe-install override:
 
 ```bash
-openclaw plugins install --dangerously-force-unsafe-install ./packages/privateclaw-provider
+openclaw plugins install --force --accept-capabilities ./packages/privateclaw-provider
 openclaw plugins enable privateclaw
 ```
 
-If you explicitly install from ClawHub, keep the same flag there too:
+On OpenClaw `2026.10`+, local-directory installs do not automatically install this plugin's npm dependencies. If `openclaw plugins list` reports missing dependencies (for example `@privateclaw/protocol` or `fflate`), run `npm install --omit=dev` inside `~/.openclaw/extensions/privateclaw` and restart the gateway, or install from the npm registry instead.
+
+If you explicitly install from ClawHub, use the same flags for your host version:
 
 ```bash
-openclaw plugins install --dangerously-force-unsafe-install clawhub:@privateclaw/privateclaw@latest
+openclaw plugins install --force --accept-capabilities clawhub:@privateclaw/privateclaw@latest
 openclaw plugins enable privateclaw
 ```
 

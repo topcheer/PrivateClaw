@@ -2,7 +2,14 @@
   "id": "privateclaw",
   "name": "PrivateClaw",
   "description": "Ephemeral end-to-end encrypted private session plugin for OpenClaw.",
-  "version": "0.1.51",
+  "version": "0.1.52",
+  "cliCommands": [
+    {
+      "name": "privateclaw",
+      "description": "PrivateClaw pairing and session management commands (pair, sessions, kick).",
+      "hasSubcommands": true
+    }
+  ],
   "configSchema": {
     "type": "object",
     "additionalProperties": false,

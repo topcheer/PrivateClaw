@@ -118,14 +118,17 @@ subsequent submissions, integrate the following into the release workflow:
 
 ### Phase 1: Automated Store Update on Release
 
-- [ ] Add `WINDOWS_STORE_TENANT_ID`, `WINDOWS_STORE_CLIENT_ID`, and
+- [x] Add `WINDOWS_STORE_TENANT_ID`, `WINDOWS_STORE_CLIENT_ID`, and
       `WINDOWS_STORE_CLIENT_SECRET` as GitHub Actions secrets
-- [ ] Add a `windows-store-publish` job to `app-release.yml` that:
-  1. Downloads the `windows-store-bundle` artifact
-  2. Runs `scripts/windows-store-listing.mjs --submit --package <bundle> --commit`
-  3. Reports certification status
-- [ ] Gate the publish job behind `include_store` workflow input (default: false)
+- [x] Add a `windows-store-publish` job to `app-release.yml` that:
+      1. Downloads the `windows-store-bundle` artifact
+      2. Runs `scripts/windows-store-listing.mjs --submit --package <bundle> --commit`
+      3. Reports certification status
+- [x] Gate the publish job behind `include_store` workflow input (default: false)
       to allow selective Store publishing
+
+The job runs automatically on `app-v*` tag pushes (tag releases always submit)
+and on manual dispatch when `include_store` is enabled.
 
 ### Phase 2: ARM64 Support
 

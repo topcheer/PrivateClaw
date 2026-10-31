@@ -16,6 +16,7 @@ export interface LocalOpenClawStatus {
   openClawAvailable: boolean;
   privateClawCommandAvailable: boolean;
   privateClawPluginPresent?: boolean;
+  openClawVersion?: string;
 }
 
 interface PrivateClawSetupCommandCandidate {
@@ -113,6 +114,34 @@ export interface RunPrivateClawSetupOptions {
 const PRIVATECLAW_PACKAGE_NAME = "@privateclaw/privateclaw";
 const PRIVATECLAW_PLUGIN_ID = "privateclaw";
 const OPENCLAW_UNSAFE_INSTALL_FLAG = "--dangerously-force-unsafe-install";
+const OPENCLAW_FORCE_INSTALL_FLAGS = ["--force", "--accept-capabilities"] as const;
+
+export function parseOpenClawHostVersion(output: string): string | undefined {
+  const match = output.match(/OpenClaw\s+(\d{4}\.\d+\.\d+(?:-[\w.]+)?)/iu);
+  return match?.[1];
+}
+
+/**
+ * OpenClaw 2026.10 removed `--dangerously-force-unsafe-install` (now a
+ * deprecated no-op), gates non-ClawHub sources behind `--force`, and requires
+ * `--accept-capabilities` on the first install. Older hosts keep the legacy
+ * unsafe-install override, and an undetectable version falls back to it too.
+ */
+export function resolveOpenClawInstallFlagsFromVersion(
+  version: string | undefined,
+): string[] {
+  if (!version) {
+    return [OPENCLAW_UNSAFE_INSTALL_FLAG];
+  }
+  const [year, month, ...rest] = version.split(".");
+  const parsedYear = Number.parseInt(year ?? "", 10);
+  const parsedMonth = Number.parseInt(month ?? "", 10);
+  if (!Number.isFinite(parsedYear) || !Number.isFinite(parsedMonth) || rest.length === 0) {
+    return [OPENCLAW_UNSAFE_INSTALL_FLAG];
+  }
+  const modern = parsedYear > 2026 || (parsedYear === 2026 && parsedMonth >= 10);
+  return modern ? [...OPENCLAW_FORCE_INSTALL_FLAGS] : [OPENCLAW_UNSAFE_INSTALL_FLAG];
+}
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
@@ -474,11 +503,16 @@ async function detectPrivateClawPluginPresence(
 export async function detectLocalOpenClawStatus(
   runCommand: OneShotCommandRunner = runOneShotCommand,
 ): Promise<LocalOpenClawStatus> {
-  if (!(await commandExists("openclaw", runCommand))) {
-    return {
-      openClawAvailable: false,
-      privateClawCommandAvailable: false,
-    };
+  let versionProbe: RunOneShotCommandResult | undefined;
+  try {
+    versionProbe = await runCommand("openclaw", ["--version"]);
+  } catch (error) {
+    if (isUnavailableCommandError(error)) {
+      return {
+        openClawAvailable: false,
+        privateClawCommandAvailable: false,
+      };
+    }
   }
 
   const [privateClawCommandAvailable, privateClawPluginPresent] =
@@ -487,10 +521,15 @@ export async function detectLocalOpenClawStatus(
       detectPrivateClawPluginPresence(runCommand),
     ]);
 
+  const openClawVersion = versionProbe
+    ? parseOpenClawHostVersion(versionProbe.combined)
+    : undefined;
+
   return {
     openClawAvailable: true,
     privateClawCommandAvailable,
     privateClawPluginPresent,
+    ...(openClawVersion ? { openClawVersion } : {}),
   };
 }
 
@@ -534,24 +573,25 @@ function createOpenClawInstallCandidates(params: {
   packageRoot: string;
   packageSpec: string;
   configPath?: string;
+  installFlags: readonly string[];
 }): PrivateClawSetupCommandCandidate[] {
   const normalizedPackageRoot = path.resolve(params.packageRoot);
   const installArgs = [
     "plugins",
     "install",
-    OPENCLAW_UNSAFE_INSTALL_FLAG,
+    ...params.installFlags,
     normalizedPackageRoot,
   ];
   const updateArgs = [
     "plugins",
     "update",
     PRIVATECLAW_PLUGIN_ID,
-    OPENCLAW_UNSAFE_INSTALL_FLAG,
+    ...params.installFlags,
   ];
   const exactSpecArgs = [
     "plugins",
     "install",
-    OPENCLAW_UNSAFE_INSTALL_FLAG,
+    ...params.installFlags,
     params.packageSpec,
   ];
   const openClawLocalStep = createOpenClawStep(
@@ -610,6 +650,7 @@ function createOpenClawInstallStep(params: {
   packageRoot: string;
   packageSpec: string;
   configPath?: string;
+  installFlags: readonly string[];
 }): PrivateClawSetupStep {
   const candidates = createOpenClawInstallCandidates(params);
   const [firstCandidate] = candidates;
@@ -633,6 +674,7 @@ function createManualOpenClawInstallSteps(params: {
   packageRoot: string;
   packageSpec: string;
   configPath?: string;
+  installFlags: readonly string[];
 }): PrivateClawSetupStep[] {
   const candidates = createOpenClawInstallCandidates(params);
   return candidates.map((candidate) =>
@@ -778,19 +820,24 @@ export function buildPrivateClawSetupPlan(params: {
   openInBrowser?: boolean;
   verbose?: boolean;
 }): PrivateClawSetupPlan {
+  const installFlags = resolveOpenClawInstallFlagsFromVersion(
+    params.status.openClawVersion,
+  );
   const installStep = createOpenClawInstallStep({
     packageRoot: params.packageRoot,
     packageSpec: params.packageSpec,
     ...(params.configPath ? { configPath: params.configPath } : {}),
+    installFlags,
   });
   const manualInstallSteps = createManualOpenClawInstallSteps({
     packageRoot: params.packageRoot,
     packageSpec: params.packageSpec,
     ...(params.configPath ? { configPath: params.configPath } : {}),
+    installFlags,
   });
   const updateStep = createOpenClawStep(
     "Update the existing PrivateClaw OpenClaw plugin",
-    ["plugins", "update", PRIVATECLAW_PLUGIN_ID, OPENCLAW_UNSAFE_INSTALL_FLAG],
+    ["plugins", "update", PRIVATECLAW_PLUGIN_ID, ...installFlags],
     params.configPath,
   );
   const enableStep = createOpenClawStep(

@@ -12,7 +12,7 @@
 
 import fs from "fs";
 import path from "path";
-import { execSync } from "child_process";
+import { execSync, execFileSync } from "child_process";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -539,16 +539,15 @@ async function main() {
     // Remove old zip if present
     if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
 
-    // Build ZIP with images
-    const imageFiles = "StoreLogo_1080x1080.png StorePoster_720x1080.png Screenshot_1366x768.png";
-    execSync(`cd "${ASSETS_DIR}" && zip -j "${zipPath}" ${imageFiles}`, { stdio: "pipe" });
-    console.log(`   Images ZIP: ${(fs.statSync(zipPath).size / 1024).toFixed(1)} KB`);
-
-    // Add MSIXBUNDLE to the ZIP if provided
+    // Build ZIP with images (+ MSIXBUNDLE when provided); entries land at the
+    // zip root regardless of their source directory.
+    const imageFiles = ["StoreLogo_1080x1080.png", "StorePoster_720x1080.png", "Screenshot_1366x768.png"];
+    const uploadEntries = imageFiles.map((name) => path.join(ASSETS_DIR, name));
     if (pkgPath) {
-      execSync(`zip -j "${zipPath}" "${path.resolve(pkgPath)}"`, { stdio: "pipe" });
-      console.log(`   + Package added → ZIP: ${(fs.statSync(zipPath).size / 1024 / 1024).toFixed(1)} MB`);
+      uploadEntries.push(path.resolve(pkgPath));
     }
+    makeFlattenedZip(zipPath, uploadEntries);
+    console.log(`   ZIP ready: ${(fs.statSync(zipPath).size / 1024 / 1024).toFixed(1)} MB (${uploadEntries.length} entries)`);
 
     await uploadZipToBlob(uploadUrl, zipPath);
     console.log("   ✅ Uploaded to Azure Blob");
@@ -586,6 +585,28 @@ async function main() {
 
   console.log("\n✅ Done! Submission ID:", subId);
   console.log("   Partner Center: https://partner.microsoft.com/dashboard");
+}
+
+function makeFlattenedZip(zipPath, absoluteFiles) {
+  // Windows runners do not ship the `zip` CLI; fall back to PowerShell
+  // Compress-Archive there (bare file paths land at the zip root).
+  if (process.platform === "win32") {
+    const list = absoluteFiles.map((f) => f.replace(/'/g, "''")).join(",");
+    execFileSync(
+      "powershell.exe",
+      [
+        "-NoProfile",
+        "-Command",
+        `Compress-Archive -Path ${list} -DestinationPath '${zipPath.replace(/'/g, "''")}' -Force`,
+      ],
+      { stdio: "pipe" },
+    );
+    return;
+  }
+  execSync(
+    `zip -j "${zipPath}" ${absoluteFiles.map((f) => `"${f}"`).join(" ")}`,
+    { stdio: "pipe" },
+  );
 }
 
 function findLocale(existing, candidates) {

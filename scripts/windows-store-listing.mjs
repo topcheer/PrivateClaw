@@ -498,8 +498,21 @@ async function main() {
     }
     const pkgName = path.basename(pkgPath);
     console.log(`\n📦 Including package: ${pkgName} (${(fs.statSync(pkgPath).size / 1024 / 1024).toFixed(1)} MB)`);
-    // Clear existing packages and add ours
+    // The legacy Store API requires keeping every existing package entry (with
+    // its fileEntries) and marking removals as PendingDelete; dropping them
+    // outright fails the PUT with InvalidParameterValue.
+    const existingPackages = (Array.isArray(submission.applicationPackages)
+      ? submission.applicationPackages
+      : []
+    ).map((existing) => ({
+      ...existing,
+      fileStatus: "PendingDelete",
+    }));
+    if (existingPackages.length > 0) {
+      console.log(`   Marking ${existingPackages.length} existing package(s) as PendingDelete`);
+    }
     submission.applicationPackages = [
+      ...existingPackages,
       {
         fileName: pkgName,
         fileStatus: "PendingUpload",

@@ -29,10 +29,23 @@ const WEBSITE_URL = "https://privateclaw.us";
 
 function loadEnv() {
   const envPath = path.join(APP_DIR, "windows-store.env");
+  const hasProcessCredentials = Boolean(
+    process.env.WINDOWS_STORE_TENANT_ID &&
+      process.env.WINDOWS_STORE_CLIENT_ID &&
+      process.env.WINDOWS_STORE_CLIENT_SECRET,
+  );
   if (!fs.existsSync(envPath)) {
+    if (hasProcessCredentials) {
+      // CI (GitHub Actions secrets) provides credentials via process env;
+      // the local gitignored env file is only required for manual runs.
+      return;
+    }
     console.error(`❌ Missing credential file: ${envPath}`);
     console.error(
       "   Create it with WINDOWS_STORE_TENANT_ID, WINDOWS_STORE_CLIENT_ID, WINDOWS_STORE_CLIENT_SECRET"
+    );
+    console.error(
+      "   or export WINDOWS_STORE_TENANT_ID, WINDOWS_STORE_CLIENT_ID, WINDOWS_STORE_CLIENT_SECRET in the environment"
     );
     process.exit(1);
   }

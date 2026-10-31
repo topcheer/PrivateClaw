@@ -415,7 +415,7 @@ jobs:
           WINDOWS_STORE_TENANT_ID: ${{ secrets.WINDOWS_STORE_TENANT_ID }}
           WINDOWS_STORE_CLIENT_ID: ${{ secrets.WINDOWS_STORE_CLIENT_ID }}
           WINDOWS_STORE_CLIENT_SECRET: ${{ secrets.WINDOWS_STORE_CLIENT_SECRET }}
-        run: node scripts/windows-store-listing.mjs --submit --package "${{ steps.bundle.outputs.bundle }}" --commit
+        run: node scripts/windows-store-listing.mjs --fresh --submit --package "${{ steps.bundle.outputs.bundle }}" --commit
 
   android:
     name: Build Android artifacts

@@ -479,14 +479,19 @@ async function main() {
     dest.images = [...imageEntries];
   }
 
-  // ── Step 6b: Set pricing (use Free via API; paid pricing must be set in Partner Center UI) ──
-  submission.pricing = {
-    trialPeriod: "NoFreeTrial",
-    marketSpecificPricings: {},
-    sales: [],
-    priceId: "Free",
-    isAdvancedPricingModel: false,
-  };
+  // ── Step 6b: Pricing — keep the cloned submission's published pricing.
+  // The legacy API cannot express paid tiers (Tier* is rejected), so
+  // overwriting unconditionally would silently flip a paid app to Free.
+  // Only fill a default when the clone carries no pricing at all.
+  if (!submission.pricing || !submission.pricing.priceId) {
+    submission.pricing = {
+      trialPeriod: "NoFreeTrial",
+      marketSpecificPricings: {},
+      sales: [],
+      priceId: "Free",
+      isAdvancedPricingModel: false,
+    };
+  }
 
   // ── Step 6c: Add MSIXBUNDLE package if --package provided ──
   const pkgIdx = args.indexOf("--package");

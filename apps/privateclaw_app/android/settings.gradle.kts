@@ -12,6 +12,9 @@ pluginManagement {
 
     repositories {
         google()
+        // JetBrains' official Maven Central mirror; shields CI builds from
+        // intermittent repo.maven.apache.org 429 rate limits.
+        maven("https://cache-redirector.jetbrains.com/maven-central")
         mavenCentral()
         gradlePluginPortal()
     }

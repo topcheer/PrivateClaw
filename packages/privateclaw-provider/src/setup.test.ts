@@ -185,16 +185,17 @@ test("buildPrivateClawSetupPlan uses modern install flags on OpenClaw 2026.10+ h
   );
   assert.match(
     guidance,
-    /openclaw plugins install --force --accept-capabilities @privateclaw\/privateclaw@0\.1\.26/,
+    /openclaw plugins install --force --accept-capabilities npm:@privateclaw\/privateclaw@0\.1\.26/,
   );
   assert.doesNotMatch(guidance, /dangerously-force-unsafe-install/u);
 });
 
-test("resolveOpenClawNpmSourcePrefixFromVersion gates the npm: prefix at OpenClaw 2026.11", () => {
+test("resolveOpenClawNpmSourcePrefixFromVersion gates the npm: prefix at OpenClaw 2026.4", () => {
   assert.equal(resolveOpenClawNpmSourcePrefixFromVersion("2026.11.6"), "npm:");
   assert.equal(resolveOpenClawNpmSourcePrefixFromVersion("2027.1.2"), "npm:");
-  assert.equal(resolveOpenClawNpmSourcePrefixFromVersion("2026.10.33"), "");
-  assert.equal(resolveOpenClawNpmSourcePrefixFromVersion("2026.9.36"), "");
+  assert.equal(resolveOpenClawNpmSourcePrefixFromVersion("2026.10.33"), "npm:");
+  assert.equal(resolveOpenClawNpmSourcePrefixFromVersion("2026.4.24"), "npm:");
+  assert.equal(resolveOpenClawNpmSourcePrefixFromVersion("2026.3.31"), "");
   assert.equal(resolveOpenClawNpmSourcePrefixFromVersion("2026.3.22"), "");
   assert.equal(resolveOpenClawNpmSourcePrefixFromVersion(undefined), "");
   assert.equal(resolveOpenClawNpmSourcePrefixFromVersion("garbage"), "");

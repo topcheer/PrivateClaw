@@ -147,11 +147,11 @@ export function resolveOpenClawInstallFlagsFromVersion(
 }
 
 /**
- * OpenClaw >= 2026.11 resolves bare package specs through ClawHub by
- * default, which can serve a stale mirror of the plugin. Prefix registry
- * specs with `npm:` on those hosts so installs always hit the npm registry.
- * Older hosts (<= 2026.10) treat bare specs as npm already and may not
- * understand the `npm:` scheme, so they keep the bare spec.
+ * OpenClaw hosts resolve bare scoped package specs through ClawHub by
+ * default (verified empirically on 2026.4.24 through 2026.11.6), which can
+ * serve a stale mirror of the plugin. Prefix registry specs with `npm:` on
+ * those hosts so installs always hit the npm registry. Pre-2026.4 hosts are
+ * unverified against this behavior, so they keep the bare spec.
  */
 export function resolveOpenClawNpmSourcePrefixFromVersion(
   version: string | undefined,
@@ -165,7 +165,7 @@ export function resolveOpenClawNpmSourcePrefixFromVersion(
   if (!Number.isFinite(parsedYear) || !Number.isFinite(parsedMonth) || rest.length === 0) {
     return "";
   }
-  return parsedYear > 2026 || (parsedYear === 2026 && parsedMonth >= 11)
+  return parsedYear > 2026 || (parsedYear === 2026 && parsedMonth >= 4)
     ? "npm:"
     : "";
 }

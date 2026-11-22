@@ -108,7 +108,7 @@ If `openclaw` is missing, stop and tell the user that OpenClaw itself must be in
 
 ### 2. Install and enable the plugin
 
-Use the published npm package by default, with the flags matching the user's OpenClaw host version (`--force --accept-capabilities` everywhere from `2026.4` up; `npm:` source prefix on `2026.11`+, bare spec on `2026.10` and older):
+Use the published npm package by default, with the flags matching the user's OpenClaw host version (`--force --accept-capabilities` everywhere from `2026.4` up; `npm:` source prefix from `2026.4` through `2026.11`+ since bare scoped specs resolve through ClawHub on all of them):
 
 ```bash
 openclaw plugins install --force --accept-capabilities npm:@privateclaw/privateclaw@latest

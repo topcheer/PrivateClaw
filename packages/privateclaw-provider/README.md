@@ -63,7 +63,14 @@ The production default relay for this package is:
 https://relay.privateclaw.us
 ```
 
-Install flags depend on the OpenClaw host version. Verified on OpenClaw `2026.4.24` through `2026.11.6`: non-ClawHub sources need `--force`, the first install also needs `--accept-capabilities`, and `--dangerously-force-unsafe-install` is already a deprecated no-op there (only pre-2026.4 hosts keep it). OpenClaw hosts (verified `2026.4.24`–`2026.11.6`) resolve bare scoped specs through ClawHub by default (possibly a stale mirror), so prefix registry specs with `npm:`. The simplest published install is:
+Install flags depend on the OpenClaw host version. Verified on OpenClaw `2026.4.24` through `2026.11.6`: non-ClawHub sources need `--force`, the first install also needs `--accept-capabilities`, and `--dangerously-force-unsafe-install` is already a deprecated no-op there (only pre-2026.4 hosts keep it). The official install path is the ClawHub registry (also what bare `openclaw plugins install @privateclaw/privateclaw` resolves to on current hosts):
+
+```bash
+openclaw plugins install clawhub:@privateclaw/privateclaw --accept-capabilities
+openclaw plugins enable privateclaw
+```
+
+If you prefer installing straight from the npm registry (for example to pin an exact published version), prefix the spec with `npm:` so it bypasses the ClawHub mirror:
 
 ```bash
 openclaw plugins install --force --accept-capabilities npm:@privateclaw/privateclaw@latest
@@ -81,7 +88,7 @@ openclaw plugins enable privateclaw
 
 On OpenClaw `2026.10`+, local-directory installs do not automatically install this plugin's npm dependencies. If `openclaw plugins list` reports missing dependencies (for example `@privateclaw/protocol` or `fflate`), run `npm install --omit=dev` inside `~/.openclaw/extensions/privateclaw` and restart the gateway, or install from the npm registry instead.
 
-If you explicitly install from ClawHub, use the same flags for your host version:
+If you explicitly install from the npm registry, use the same flags for your host version:
 
 ```bash
 openclaw plugins install --force --accept-capabilities npm:@privateclaw/privateclaw@latest

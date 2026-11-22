@@ -50,3 +50,4 @@ apps/privateclaw_app/ios/Flutter/PrivateClawLocal.xcconfig
 .qoder/
 claude-review.md
 qoder-review.md
+packages/privateclaw-provider/reports/

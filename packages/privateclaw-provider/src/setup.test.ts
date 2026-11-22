@@ -8,6 +8,7 @@ import {
   parsePrivateClawSessionDurationPreset,
   renderPrivateClawSetupGuidance,
   resolveOpenClawInstallFlagsFromVersion,
+  resolveOpenClawNpmSourcePrefixFromVersion,
   resolvePrivateClawSetupSelection,
   runPrivateClawSetup,
 } from "./setup.js";
@@ -132,26 +133,32 @@ test("parseOpenClawHostVersion extracts calendar versions from --version output"
   assert.equal(parseOpenClawHostVersion("something else"), undefined);
 });
 
-test("resolveOpenClawInstallFlagsFromVersion switches flags at OpenClaw 2026.10", () => {
+test("resolveOpenClawInstallFlagsFromVersion switches flags at OpenClaw 2026.4", () => {
+  assert.deepEqual(resolveOpenClawInstallFlagsFromVersion("2026.11.6"), [
+    "--force",
+    "--accept-capabilities",
+  ]);
   assert.deepEqual(resolveOpenClawInstallFlagsFromVersion("2026.10.9"), [
     "--force",
     "--accept-capabilities",
   ]);
-  assert.deepEqual(resolveOpenClawInstallFlagsFromVersion("2026.10.10-beta.5"), [
+  assert.deepEqual(resolveOpenClawInstallFlagsFromVersion("2026.4.24"), [
     "--force",
     "--accept-capabilities",
   ]);
-  assert.deepEqual(resolveOpenClawInstallFlagsFromVersion("2026.9.36"), [
+  assert.deepEqual(resolveOpenClawInstallFlagsFromVersion("2026.3.31"), [
     "--dangerously-force-unsafe-install",
   ]);
   assert.deepEqual(resolveOpenClawInstallFlagsFromVersion("2026.3.22"), [
     "--dangerously-force-unsafe-install",
   ]);
   assert.deepEqual(resolveOpenClawInstallFlagsFromVersion(undefined), [
-    "--dangerously-force-unsafe-install",
+    "--force",
+    "--accept-capabilities",
   ]);
   assert.deepEqual(resolveOpenClawInstallFlagsFromVersion("garbage"), [
-    "--dangerously-force-unsafe-install",
+    "--force",
+    "--accept-capabilities",
   ]);
 });
 
@@ -181,6 +188,43 @@ test("buildPrivateClawSetupPlan uses modern install flags on OpenClaw 2026.10+ h
     /openclaw plugins install --force --accept-capabilities @privateclaw\/privateclaw@0\.1\.26/,
   );
   assert.doesNotMatch(guidance, /dangerously-force-unsafe-install/u);
+});
+
+test("resolveOpenClawNpmSourcePrefixFromVersion gates the npm: prefix at OpenClaw 2026.11", () => {
+  assert.equal(resolveOpenClawNpmSourcePrefixFromVersion("2026.11.6"), "npm:");
+  assert.equal(resolveOpenClawNpmSourcePrefixFromVersion("2027.1.2"), "npm:");
+  assert.equal(resolveOpenClawNpmSourcePrefixFromVersion("2026.10.33"), "");
+  assert.equal(resolveOpenClawNpmSourcePrefixFromVersion("2026.9.36"), "");
+  assert.equal(resolveOpenClawNpmSourcePrefixFromVersion("2026.3.22"), "");
+  assert.equal(resolveOpenClawNpmSourcePrefixFromVersion(undefined), "");
+  assert.equal(resolveOpenClawNpmSourcePrefixFromVersion("garbage"), "");
+});
+
+test("buildPrivateClawSetupPlan prefixes the registry spec with npm: on OpenClaw 2026.11+ hosts", () => {
+  const plan = buildPrivateClawSetupPlan({
+    packageSpec: "@privateclaw/privateclaw@0.1.26",
+    packageRoot: "/tmp/privateclaw-package",
+    status: {
+      openClawAvailable: false,
+      privateClawCommandAvailable: false,
+      openClawVersion: "2026.11.6",
+    },
+    selection: {
+      groupMode: true,
+      ttlMs: 2 * 60 * 60 * 1000,
+      durationLabel: "2 小时 / 2 hours",
+    },
+  });
+
+  const guidance = renderPrivateClawSetupGuidance(plan);
+  assert.match(
+    guidance,
+    /openclaw plugins install --force --accept-capabilities npm:@privateclaw\/privateclaw@0\.1\.26/,
+  );
+  assert.match(
+    guidance,
+    /openclaw plugins install --force --accept-capabilities \/tmp\/privateclaw-package/,
+  );
 });
 
 test("resolvePrivateClawSetupSelection prompts for missing mode and duration", async () => {
@@ -224,11 +268,11 @@ test("buildPrivateClawSetupPlan prints manual OpenClaw commands when openclaw is
   assert.equal(plan.manualSteps.length, 7);
   assert.match(
     renderPrivateClawSetupGuidance(plan),
-    /openclaw plugins install --dangerously-force-unsafe-install \/tmp\/privateclaw-package/,
+    /openclaw plugins install --force --accept-capabilities \/tmp\/privateclaw-package/,
   );
   assert.match(
     renderPrivateClawSetupGuidance(plan),
-    /openclaw plugins install --dangerously-force-unsafe-install @privateclaw\/privateclaw@0\.1\.26/,
+    /openclaw plugins install --force --accept-capabilities @privateclaw\/privateclaw@0\.1\.26/,
   );
   assert.doesNotMatch(renderPrivateClawSetupGuidance(plan), /npm pack/u);
   assert.match(renderPrivateClawSetupGuidance(plan), /GitHub Releases/i);
@@ -289,7 +333,7 @@ test("runPrivateClawSetup installs, enables, restarts, then starts pairing", asy
   });
 
   assert.deepEqual(executed, [
-    "openclaw plugins install --dangerously-force-unsafe-install /tmp/privateclaw-package",
+    "openclaw plugins install --force --accept-capabilities /tmp/privateclaw-package",
     "openclaw plugins enable privateclaw",
     "openclaw gateway restart",
   ]);
@@ -348,10 +392,10 @@ test("runPrivateClawSetup propagates OPENCLAW_STATE_DIR and OPENCLAW_CONFIG_PATH
 
   assert.equal(
     executed[0],
-    "OPENCLAW_STATE_DIR=/tmp/openclaw-test OPENCLAW_CONFIG_PATH=/tmp/openclaw-test/openclaw.json openclaw plugins install --dangerously-force-unsafe-install /tmp/privateclaw-package",
+    "OPENCLAW_STATE_DIR=/tmp/openclaw-test OPENCLAW_CONFIG_PATH=/tmp/openclaw-test/openclaw.json openclaw plugins install --force --accept-capabilities /tmp/privateclaw-package",
   );
   assert.deepEqual(executed, [
-    "OPENCLAW_STATE_DIR=/tmp/openclaw-test OPENCLAW_CONFIG_PATH=/tmp/openclaw-test/openclaw.json openclaw plugins install --dangerously-force-unsafe-install /tmp/privateclaw-package",
+    "OPENCLAW_STATE_DIR=/tmp/openclaw-test OPENCLAW_CONFIG_PATH=/tmp/openclaw-test/openclaw.json openclaw plugins install --force --accept-capabilities /tmp/privateclaw-package",
     "OPENCLAW_STATE_DIR=/tmp/openclaw-test OPENCLAW_CONFIG_PATH=/tmp/openclaw-test/openclaw.json openclaw plugins enable privateclaw",
     "OPENCLAW_STATE_DIR=/tmp/openclaw-test OPENCLAW_CONFIG_PATH=/tmp/openclaw-test/openclaw.json openclaw config set gateway.mode local",
   ]);
@@ -387,7 +431,7 @@ test("buildPrivateClawSetupPlan uses gateway run guidance instead of restart whe
   assert.deepEqual(
     plan.automaticSteps.map((step) => step.display),
     [
-      "OPENCLAW_STATE_DIR=/tmp/openclaw-test OPENCLAW_CONFIG_PATH=/tmp/openclaw-test/openclaw.json openclaw plugins install --dangerously-force-unsafe-install /tmp/privateclaw-package",
+      "OPENCLAW_STATE_DIR=/tmp/openclaw-test OPENCLAW_CONFIG_PATH=/tmp/openclaw-test/openclaw.json openclaw plugins install --force --accept-capabilities /tmp/privateclaw-package",
       "OPENCLAW_STATE_DIR=/tmp/openclaw-test OPENCLAW_CONFIG_PATH=/tmp/openclaw-test/openclaw.json openclaw plugins enable privateclaw",
       "OPENCLAW_STATE_DIR=/tmp/openclaw-test OPENCLAW_CONFIG_PATH=/tmp/openclaw-test/openclaw.json openclaw config set gateway.mode local",
     ],

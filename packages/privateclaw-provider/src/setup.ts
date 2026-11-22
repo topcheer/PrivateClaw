@@ -131,16 +131,43 @@ export function resolveOpenClawInstallFlagsFromVersion(
   version: string | undefined,
 ): string[] {
   if (!version) {
-    return [OPENCLAW_UNSAFE_INSTALL_FLAG];
+    return [...OPENCLAW_FORCE_INSTALL_FLAGS];
   }
   const [year, month, ...rest] = version.split(".");
   const parsedYear = Number.parseInt(year ?? "", 10);
   const parsedMonth = Number.parseInt(month ?? "", 10);
   if (!Number.isFinite(parsedYear) || !Number.isFinite(parsedMonth) || rest.length === 0) {
-    return [OPENCLAW_UNSAFE_INSTALL_FLAG];
+    return [...OPENCLAW_FORCE_INSTALL_FLAGS];
   }
-  const modern = parsedYear > 2026 || (parsedYear === 2026 && parsedMonth >= 10);
+  // Verified empirically (2026-11-01): the unified flag surface
+  // (--force + --accept-capabilities, with --dangerously-force-unsafe-install
+  // already a deprecated no-op) exists at least since OpenClaw 2026.4.24.
+  const modern = parsedYear > 2026 || (parsedYear === 2026 && parsedMonth >= 4);
   return modern ? [...OPENCLAW_FORCE_INSTALL_FLAGS] : [OPENCLAW_UNSAFE_INSTALL_FLAG];
+}
+
+/**
+ * OpenClaw >= 2026.11 resolves bare package specs through ClawHub by
+ * default, which can serve a stale mirror of the plugin. Prefix registry
+ * specs with `npm:` on those hosts so installs always hit the npm registry.
+ * Older hosts (<= 2026.10) treat bare specs as npm already and may not
+ * understand the `npm:` scheme, so they keep the bare spec.
+ */
+export function resolveOpenClawNpmSourcePrefixFromVersion(
+  version: string | undefined,
+): string {
+  if (!version) {
+    return "";
+  }
+  const [year, month, ...rest] = version.split(".");
+  const parsedYear = Number.parseInt(year ?? "", 10);
+  const parsedMonth = Number.parseInt(month ?? "", 10);
+  if (!Number.isFinite(parsedYear) || !Number.isFinite(parsedMonth) || rest.length === 0) {
+    return "";
+  }
+  return parsedYear > 2026 || (parsedYear === 2026 && parsedMonth >= 11)
+    ? "npm:"
+    : "";
 }
 
 const MINUTE_MS = 60_000;
@@ -574,6 +601,7 @@ function createOpenClawInstallCandidates(params: {
   packageSpec: string;
   configPath?: string;
   installFlags: readonly string[];
+  registrySourcePrefix?: string;
 }): PrivateClawSetupCommandCandidate[] {
   const normalizedPackageRoot = path.resolve(params.packageRoot);
   const installArgs = [
@@ -592,7 +620,7 @@ function createOpenClawInstallCandidates(params: {
     "plugins",
     "install",
     ...params.installFlags,
-    params.packageSpec,
+    `${params.registrySourcePrefix ?? ""}${params.packageSpec}`,
   ];
   const openClawLocalStep = createOpenClawStep(
     "Install the local PrivateClaw package directory into OpenClaw",
@@ -651,6 +679,7 @@ function createOpenClawInstallStep(params: {
   packageSpec: string;
   configPath?: string;
   installFlags: readonly string[];
+  registrySourcePrefix?: string;
 }): PrivateClawSetupStep {
   const candidates = createOpenClawInstallCandidates(params);
   const [firstCandidate] = candidates;
@@ -675,6 +704,7 @@ function createManualOpenClawInstallSteps(params: {
   packageSpec: string;
   configPath?: string;
   installFlags: readonly string[];
+  registrySourcePrefix?: string;
 }): PrivateClawSetupStep[] {
   const candidates = createOpenClawInstallCandidates(params);
   return candidates.map((candidate) =>
@@ -823,17 +853,22 @@ export function buildPrivateClawSetupPlan(params: {
   const installFlags = resolveOpenClawInstallFlagsFromVersion(
     params.status.openClawVersion,
   );
+  const registrySourcePrefix = resolveOpenClawNpmSourcePrefixFromVersion(
+    params.status.openClawVersion,
+  );
   const installStep = createOpenClawInstallStep({
     packageRoot: params.packageRoot,
     packageSpec: params.packageSpec,
     ...(params.configPath ? { configPath: params.configPath } : {}),
     installFlags,
+    registrySourcePrefix,
   });
   const manualInstallSteps = createManualOpenClawInstallSteps({
     packageRoot: params.packageRoot,
     packageSpec: params.packageSpec,
     ...(params.configPath ? { configPath: params.configPath } : {}),
     installFlags,
+    registrySourcePrefix,
   });
   const updateStep = createOpenClawStep(
     "Update the existing PrivateClaw OpenClaw plugin",

@@ -63,10 +63,10 @@ The production default relay for this package is:
 https://relay.privateclaw.us
 ```
 
-Install flags depend on the OpenClaw host version. OpenClaw `2026.10`+ removed `--dangerously-force-unsafe-install` (it is now a deprecated no-op): non-ClawHub sources need `--force`, and the first install also needs `--accept-capabilities`. On older hosts keep `--dangerously-force-unsafe-install`. The simplest published install is:
+Install flags depend on the OpenClaw host version. Verified on OpenClaw `2026.4.24` through `2026.11.6`: non-ClawHub sources need `--force`, the first install also needs `--accept-capabilities`, and `--dangerously-force-unsafe-install` is already a deprecated no-op there (only pre-2026.4 hosts keep it). OpenClaw `2026.11`+ resolves bare specs through ClawHub by default (possibly a stale mirror), so prefix registry specs with `npm:` there; `2026.10` and older use the bare spec. The simplest published install is:
 
 ```bash
-openclaw plugins install --force --accept-capabilities @privateclaw/privateclaw@latest
+openclaw plugins install --force --accept-capabilities npm:@privateclaw/privateclaw@latest
 openclaw plugins enable privateclaw
 ```
 
@@ -84,7 +84,7 @@ On OpenClaw `2026.10`+, local-directory installs do not automatically install th
 If you explicitly install from ClawHub, use the same flags for your host version:
 
 ```bash
-openclaw plugins install --force --accept-capabilities clawhub:@privateclaw/privateclaw@latest
+openclaw plugins install --force --accept-capabilities npm:@privateclaw/privateclaw@latest
 openclaw plugins enable privateclaw
 ```
 

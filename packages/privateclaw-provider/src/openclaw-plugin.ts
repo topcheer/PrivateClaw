@@ -1436,14 +1436,19 @@ function formatCommandErrorWithFooter(error: unknown): string {
 
 /**
  * OpenClaw >= 2026.10 invokes register() once in a "cli-metadata" pass where
- * `api.runtime` is a guard proxy that throws on any property access. The
- * OpenClaw runtime is consumed lazily (only when chat messages arrive), so
- * skip the binding in metadata-only passes and bind during the full
- * registration pass instead.
+ * `api.runtime` is a guard proxy that throws on any property access. OpenClaw
+ * >= 2026.11 relaxes the guard one level: reading `api.runtime` succeeds and
+ * returns a proxy that throws only when its properties are probed (which
+ * isOpenClawPluginRuntimeCompatible does). Probe inside the try so both guard
+ * styles skip binding during metadata passes; the full registration pass
+ * receives a real runtime and binds normally. The OpenClaw runtime is
+ * consumed lazily (only when chat messages arrive), so skipping the binding
+ * in metadata-only passes is safe.
  */
 function readOpenClawRuntimeIfAvailable(api: OpenClawPluginApiCompat): unknown {
   try {
-    return api.runtime;
+    const runtime = api.runtime;
+    return isOpenClawPluginRuntimeCompatible(runtime) ? runtime : undefined;
   } catch {
     return undefined;
   }

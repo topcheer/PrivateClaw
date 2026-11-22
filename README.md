@@ -121,11 +121,11 @@ The repo code now defaults to that relay, so production installs can use it with
 Use Node.js 22 or newer on the machine where you install or run the PrivateClaw OpenClaw plugin.
 
 ```bash
-openclaw plugins install --force --accept-capabilities @privateclaw/privateclaw@latest
+openclaw plugins install --force --accept-capabilities npm:@privateclaw/privateclaw@latest
 openclaw plugins enable privateclaw
 ```
 
-The install flags depend on the OpenClaw host version. OpenClaw `2026.10` and newer removed `--dangerously-force-unsafe-install` (it is now a deprecated no-op): non-ClawHub sources require `--force`, and the first install of this plugin also requires `--accept-capabilities`. On older OpenClaw hosts, keep using `--dangerously-force-unsafe-install` instead. If you already have a local package directory (for example from this repository checkout, or from a package directory that `npx` downloaded locally), prefer installing that directory first instead of packing an archive, because OpenClaw `2026.3.31` drops the unsafe-install override on archive installs:
+The flags and source prefix depend on the OpenClaw host version. Verified on OpenClaw `2026.4.24` through `2026.11.6`: non-ClawHub sources require `--force`, the first install also requires `--accept-capabilities`, and the old `--dangerously-force-unsafe-install` is already a deprecated no-op there (only pre-2026.4 hosts still need it). Separately, OpenClaw `2026.11` and newer resolve bare package specs through ClawHub by default, which can serve a stale mirror of this plugin — prefix registry specs with `npm:` on those hosts (drop the prefix on `2026.10` and older, where bare specs already mean npm). If you already have a local package directory (for example from this repository checkout, or from a package directory that `npx` downloaded locally), prefer installing that directory first instead of packing an archive, because OpenClaw `2026.3.31` drops the unsafe-install override on archive installs:
 
 ```bash
 openclaw plugins install --force --accept-capabilities ./packages/privateclaw-provider
@@ -137,7 +137,7 @@ On OpenClaw `2026.10`+, local-directory installs do not automatically install th
 If you intentionally install from ClawHub, use the same flags for your host version:
 
 ```bash
-openclaw plugins install --force --accept-capabilities clawhub:@privateclaw/privateclaw@latest
+openclaw plugins install --force --accept-capabilities npm:@privateclaw/privateclaw@latest
 openclaw plugins enable privateclaw
 ```
 

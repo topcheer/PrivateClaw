@@ -101,11 +101,11 @@ https://relay.privateclaw.us
 安装或运行 PrivateClaw 这个 OpenClaw 插件的机器，请使用 Node.js 22 或更高版本。
 
 ```bash
-openclaw plugins install --force --accept-capabilities @privateclaw/privateclaw@latest
+openclaw plugins install --force --accept-capabilities npm:@privateclaw/privateclaw@latest
 openclaw plugins enable privateclaw
 ```
 
-安装旗标取决于 OpenClaw 宿主版本。OpenClaw `2026.10` 及以上版本已移除 `--dangerously-force-unsafe-install`（现在它只是一个已弃用的空操作）：非 ClawHub 源需要 `--force`，首次安装本插件还需要 `--accept-capabilities`。旧版 OpenClaw 宿主请继续使用 `--dangerously-force-unsafe-install`。如果你手边已经有本地 package 目录（例如当前仓库 checkout，或者 `npx` 在本机下载出来的 package 目录），优先直接安装这个目录而不是打包 archive，因为 OpenClaw `2026.3.31` 的 archive 安装分支会把 unsafe-install override 丢掉：
+安装旗标与源前缀取决于 OpenClaw 宿主版本。已在 OpenClaw `2026.4.24` 至 `2026.11.6` 上实测：非 ClawHub 源需要 `--force`，首次安装还需要 `--accept-capabilities`，而 `--dangerously-force-unsafe-install` 早已是弃用空操作（仅 2026.4 之前的宿主仍需旧旗标）。另外，OpenClaw `2026.11` 及以上版本默认把裸包名经 ClawHub 解析，可能拿到本插件的陈旧镜像——这些宿主务必加 `npm:` 前缀强制走 npm registry（2026.10 及更早宿主用裸包名即可，本身就是 npm 源）。如果你手边已经有本地 package 目录（例如当前仓库 checkout，或者 `npx` 在本机下载出来的 package 目录），优先直接安装这个目录而不是打包 archive，因为 OpenClaw `2026.3.31` 的 archive 安装分支会把 unsafe-install override 丢掉：
 
 ```bash
 openclaw plugins install --force --accept-capabilities ./packages/privateclaw-provider
@@ -117,7 +117,7 @@ openclaw plugins enable privateclaw
 如果你明确要走 ClawHub，也同样按你的宿主版本使用对应旗标：
 
 ```bash
-openclaw plugins install --force --accept-capabilities clawhub:@privateclaw/privateclaw@latest
+openclaw plugins install --force --accept-capabilities npm:@privateclaw/privateclaw@latest
 openclaw plugins enable privateclaw
 ```
 

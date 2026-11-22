@@ -40,7 +40,7 @@ This skill is especially relevant for requests like:
 ## Core facts
 
 - The production plugin package is `@privateclaw/privateclaw`.
-- Install flags are host-version dependent. On OpenClaw `2026.10`+ use `openclaw plugins install --force --accept-capabilities @privateclaw/privateclaw@latest` (the old `--dangerously-force-unsafe-install` is a deprecated no-op there, non-ClawHub sources require `--force`, and the first install requires `--accept-capabilities`). On older hosts keep `--dangerously-force-unsafe-install`. If the user already has a local package directory, prefer `openclaw plugins install --force --accept-capabilities ./packages/privateclaw-provider` over archive installs.
+- Install flags are host-version dependent. Verified on OpenClaw `2026.4.24` through `2026.11.6`: use `openclaw plugins install --force --accept-capabilities <spec>` (`--dangerously-force-unsafe-install` is already a deprecated no-op there; only pre-2026.4 hosts keep it). OpenClaw `2026.11`+ resolves bare package specs through ClawHub by default and can serve a stale mirror — prefer the `npm:` source prefix (e.g. `npm:@privateclaw/privateclaw@latest`) so installs always hit the npm registry; `2026.10` and older use the bare spec. If the user already has a local package directory, prefer `openclaw plugins install --force --accept-capabilities ./packages/privateclaw-provider` over archive installs.
 - The plugin id is `privateclaw`.
 - The standalone npm binary is `privateclaw-provider`.
 - The default public relay is `https://relay.privateclaw.us`.
@@ -108,10 +108,10 @@ If `openclaw` is missing, stop and tell the user that OpenClaw itself must be in
 
 ### 2. Install and enable the plugin
 
-Use the published npm package by default, with the flags matching the user's OpenClaw host version (`--force --accept-capabilities` on `2026.10`+, `--dangerously-force-unsafe-install` on older hosts):
+Use the published npm package by default, with the flags matching the user's OpenClaw host version (`--force --accept-capabilities` everywhere from `2026.4` up; `npm:` source prefix on `2026.11`+, bare spec on `2026.10` and older):
 
 ```bash
-openclaw plugins install --force --accept-capabilities @privateclaw/privateclaw@latest
+openclaw plugins install --force --accept-capabilities npm:@privateclaw/privateclaw@latest
 openclaw plugins enable privateclaw
 ```
 

@@ -3,7 +3,7 @@ import AVFoundation
 import FlutterMacOS
 import UserNotifications
 import audio_session
-import file_picker
+import file_picker_darwin
 import file_selector_macos
 import just_audio
 import mobile_scanner
@@ -39,8 +39,8 @@ private func registerPrivateClawDesktopPlugins(
   UrlLauncherPlugin.register(
     with: registry.registrar(forPlugin: "UrlLauncherPlugin")
   )
-  FVPVideoPlayerPlugin.register(
-    with: registry.registrar(forPlugin: "FVPVideoPlayerPlugin")
+  VideoPlayerPlugin.register(
+    with: registry.registrar(forPlugin: "VideoPlayerPlugin")
   )
 }
 

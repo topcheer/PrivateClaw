@@ -6,7 +6,7 @@ import UIKit
 import UserNotifications
 import Vision
 import audio_session
-import file_picker
+import file_picker_darwin
 import just_audio
 import video_player_avfoundation
 
@@ -72,8 +72,8 @@ import video_player_avfoundation
     registerPlugin("JustAudioPlugin") { registrar in
       JustAudioPlugin.register(with: registrar)
     }
-    registerPlugin("FVPVideoPlayerPlugin") { registrar in
-      FVPVideoPlayerPlugin.register(with: registrar)
+    registerPlugin("VideoPlayerPlugin") { registrar in
+      VideoPlayerPlugin.register(with: registrar)
     }
   }
 

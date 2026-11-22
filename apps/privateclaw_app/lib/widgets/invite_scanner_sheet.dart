@@ -110,15 +110,14 @@ class _InviteScannerSheetState extends State<InviteScannerSheet> {
       privateClawSupportsInviteImageAnalysisForTargetPlatform(_targetPlatform);
 
   Future<String?> _pickImagePath() async {
-    final FilePickerResult? result = await FilePicker.platform.pickFiles(
-      allowMultiple: false,
+    final PlatformFile? file = await FilePicker.pickFile(
       type: FileType.image,
     );
-    if (result == null || result.files.isEmpty) {
+    if (file == null) {
       return null;
     }
 
-    final String? path = result.files.single.path;
+    final String? path = file.path;
     if (path == null || path.isEmpty) {
       throw UnsupportedError('The selected image is not readable from a file.');
     }

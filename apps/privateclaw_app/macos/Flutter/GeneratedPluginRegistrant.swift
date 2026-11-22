@@ -6,7 +6,7 @@ import FlutterMacOS
 import Foundation
 
 import audio_session
-import file_picker
+import file_picker_darwin
 import file_selector_macos
 import firebase_core
 import firebase_messaging

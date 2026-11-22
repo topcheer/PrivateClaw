@@ -51,3 +51,4 @@ apps/privateclaw_app/ios/Flutter/PrivateClawLocal.xcconfig
 claude-review.md
 qoder-review.md
 packages/privateclaw-provider/reports/
+apps/privateclaw_app/android/build/

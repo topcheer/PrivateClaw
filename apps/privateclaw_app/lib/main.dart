@@ -1605,19 +1605,17 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     final AppLocalizations l10n = AppLocalizations.of(context)!;
     _closeComposerPanels(clearFocus: true);
     try {
-      final FilePickerResult? result = await FilePicker.platform.pickFiles(
-        allowMultiple: true,
-        withData: true,
+      final List<PlatformFile> files = await FilePicker.pickFiles(
         type: FileType.any,
       );
-      if (result == null || result.files.isEmpty) {
+      if (files.isEmpty) {
         return;
       }
 
       final List<ChatAttachment> nextAttachments =
           await _inlineAttachmentsFromPlatformFiles(
             l10n,
-            result.files,
+            files,
             inferMimeType: (PlatformFile file) => _inferMimeType(file.name),
           );
 
@@ -1637,21 +1635,12 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
   }
 
   Future<Uint8List?> _readPlatformFileBytes(PlatformFile file) async {
-    final Uint8List? inMemoryBytes = file.bytes;
-    if (inMemoryBytes != null && inMemoryBytes.isNotEmpty) {
-      return inMemoryBytes;
-    }
-
-    final String? path = file.path;
-    if (path == null || path.isEmpty) {
+    try {
+      final Uint8List bytes = await file.readAsBytes();
+      return bytes.isEmpty ? null : bytes;
+    } catch (_) {
       return null;
     }
-    final File diskFile = File(path);
-    if (!await diskFile.exists()) {
-      return null;
-    }
-    final Uint8List bytes = await diskFile.readAsBytes();
-    return bytes.isEmpty ? null : bytes;
   }
 
   Future<List<ChatAttachment>> _inlineAttachmentsFromPlatformFiles(
@@ -1860,18 +1849,16 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     _closeComposerPanels(clearFocus: true);
     try {
       if (!_supportsRecentPhotoTray) {
-        final FilePickerResult? result = await FilePicker.platform.pickFiles(
-          allowMultiple: true,
-          withData: true,
+        final List<PlatformFile> files = await FilePicker.pickFiles(
           type: FileType.image,
         );
-        if (result == null || result.files.isEmpty || !mounted) {
+        if (files.isEmpty || !mounted) {
           return;
         }
         final List<ChatAttachment> nextAttachments =
             await _inlineAttachmentsFromPlatformFiles(
               l10n,
-              result.files,
+              files,
               inferMimeType: (PlatformFile file) => _inferMimeType(file.name),
             );
         if (nextAttachments.isEmpty || !mounted) {

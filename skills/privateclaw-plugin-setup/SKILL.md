@@ -40,7 +40,7 @@ This skill is especially relevant for requests like:
 ## Core facts
 
 - The production plugin package is `@privateclaw/privateclaw`.
-- Install flags are host-version dependent. Verified on OpenClaw `2026.4.24` through `2026.11.6`: use `openclaw plugins install --force --accept-capabilities <spec>` (`--dangerously-force-unsafe-install` is already a deprecated no-op there; only pre-2026.4 hosts keep it). OpenClaw `2026.11`+ resolves bare package specs through ClawHub by default and can serve a stale mirror — prefer the `npm:` source prefix (e.g. `npm:@privateclaw/privateclaw@latest`) so installs always hit the npm registry; `2026.10` and older use the bare spec. If the user already has a local package directory, prefer `openclaw plugins install --force --accept-capabilities ./packages/privateclaw-provider` over archive installs.
+- Install flags are host-version dependent. Verified on OpenClaw `2026.4.24` through `2026.11.6`: use `openclaw plugins install --force --accept-capabilities <spec>` (`--dangerously-force-unsafe-install` is already a deprecated no-op there; only pre-2026.4 hosts keep it). Bare scoped package specs resolve through ClawHub by default on all of those hosts and can serve a stale mirror — prefer the `npm:` source prefix (e.g. `npm:@privateclaw/privateclaw@latest`) so installs always hit the npm registry. If the user already has a local package directory, prefer `openclaw plugins install --force --accept-capabilities ./packages/privateclaw-provider` over archive installs.
 - The plugin id is `privateclaw`.
 - The standalone npm binary is `privateclaw-provider`.
 - The default public relay is `https://relay.privateclaw.us`.

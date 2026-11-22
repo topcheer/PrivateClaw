@@ -145,10 +145,10 @@ jobs:
             arch: x64
             runner: windows-latest
             flutter_install_method: flutter-action
-          - platform: windows
-            arch: arm64
-            runner: windows-11-arm
-            flutter_install_method: git-clone
+          # windows-arm64 removed: firebase C++ SDK 14.1 ships no ARM64 Windows
+          # binaries, so firebase_core 5.x cannot link there. ARM64 Windows
+          # users install the x64 build via WoW64/Prism (same policy as the
+          # Microsoft Store package).
           - platform: macos
             arch: x64
             runner: macos-15-intel
@@ -166,6 +166,16 @@ jobs:
           flutter-version: 3.50.0
           channel: stable
           cache: true
+
+      - name: Select newest Xcode (Swift tools 6.2 for firebase-ios-sdk 13+)
+        if: matrix.platform == 'macos' && matrix.arch == 'x64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          newest=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+          echo "Available:"; ls -d /Applications/Xcode*.app 2>/dev/null || true
+          echo "Newest: ${newest}"
+          sudo xcode-select -s "${newest}"
 
       - name: Clone Flutter SDK
         if: matrix.flutter_install_method == 'git-clone'

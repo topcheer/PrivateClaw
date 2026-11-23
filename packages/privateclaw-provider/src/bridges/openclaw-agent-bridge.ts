@@ -1684,7 +1684,16 @@ function resolveInlineQqMediaAttachment(
     try {
       const parsedUrl = new URL(rawValue);
       if (parsedUrl.protocol === "file:") {
-        const filePath = fileURLToPath(parsedUrl);
+        // Security (CWE-22/200): a file: URL is just another way to name a local
+        // path, so it must pass the same workspace containment + realpath checks
+        // as any other path. Unresolvable or escaping targets yield no attachment.
+        const filePath = resolveStructuredAttachmentFilePath(
+          fileURLToPath(parsedUrl),
+          workspaceDir,
+        );
+        if (!filePath) {
+          return undefined;
+        }
         const fileBytes = readFileSync(filePath);
         const fileName = path.basename(filePath) || "attachment";
         return {
@@ -2058,16 +2067,27 @@ export function inferMimeTypeFromFileName(fileName: string): string | undefined 
 // lets a small malicious file block the gateway event loop (CWE-409). Inspect
 // central-directory metadata first, then only inflate the Word XML entries we
 // actually need, each under a hard expanded-size cap.
+const DOCX_MAX_ENTRIES = 64;
 const DOCX_MAX_ENTRY_BYTES = 8 * 1024 * 1024;
 const DOCX_MAX_TOTAL_BYTES = 16 * 1024 * 1024;
 const DOCX_MAX_RATIO = 200;
 
 function extractDocxText(buffer: Buffer): string {
   try {
+    // Pre-inflation budget: fflate invokes `filter` per entry before inflating it,
+    // so declared sizes can be accumulated and the whole archive rejected before
+    // any large allocation. This closes the gap where many individually-valid
+    // entries collectively exceed the aggregate limit.
+    let declaredEntries = 0;
+    let declaredBytes = 0;
     const archive = unzipSync(new Uint8Array(buffer), {
       filter: (entry) => {
         if (!/^word\/(document|header\d+|footer\d+)\.xml$/u.test(entry.name)) {
           return false;
+        }
+        declaredEntries += 1;
+        if (declaredEntries > DOCX_MAX_ENTRIES) {
+          throw new Error("docx entry count exceeds limit");
         }
         if (entry.originalSize > DOCX_MAX_ENTRY_BYTES) {
           throw new Error("docx entry exceeds size limit");
@@ -2075,9 +2095,14 @@ function extractDocxText(buffer: Buffer): string {
         if (entry.originalSize > 0 && entry.originalSize / Math.max(entry.size, 1) > DOCX_MAX_RATIO) {
           throw new Error("docx entry exceeds compression ratio limit");
         }
+        declaredBytes += entry.originalSize;
+        if (declaredBytes > DOCX_MAX_TOTAL_BYTES) {
+          throw new Error("docx archive exceeds aggregate size limit");
+        }
         return true;
       },
     });
+    // Belt and braces: verify actual inflated output too (metadata can lie).
     let expandedBytes = 0;
     for (const entry of Object.values(archive)) {
       expandedBytes += entry.byteLength;

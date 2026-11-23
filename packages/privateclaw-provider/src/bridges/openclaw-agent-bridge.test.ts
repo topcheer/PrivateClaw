@@ -418,6 +418,64 @@ test("parseOpenClawAgentOutput tolerates malformed closing tags and qqimg markup
   assert.equal(attachment.dataBase64, imageBytes.toString("base64"));
 });
 
+test("parseOpenClawAgentOutput rejects file: URLs in inline media markup outside the workspace (CWE-22)", async (t) => {
+  const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "privateclaw-structured-workspace-"));
+  const outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), "privateclaw-structured-outside-"));
+  t.after(async () => {
+    await Promise.all([
+      fs.rm(workspaceDir, { recursive: true, force: true }),
+      fs.rm(outsideDir, { recursive: true, force: true }),
+    ]);
+  });
+
+  const secretPath = path.join(outsideDir, "secret.txt");
+  await fs.writeFile(secretPath, "top-secret-bytes", "utf8");
+  const insidePath = path.join(workspaceDir, "inside.txt");
+  await fs.writeFile(insidePath, "inside-bytes", "utf8");
+
+  const buildResult = (markup: string) =>
+    parseOpenClawAgentOutput(
+      JSON.stringify({
+        status: "ok",
+        result: {
+          payloads: [
+            {
+              text: [
+                "<privateclaw-response>",
+                JSON.stringify({ version: 1, messages: [{ text: `doc\n\n<qqfile>${markup}</qqfile>` }] }),
+                "</privateclaw-response>",
+              ].join("\n"),
+            },
+          ],
+        },
+      }),
+      { workspaceDir },
+    );
+
+  // A file: URL naming a host file outside the workspace must not be read.
+  const outsideResult = buildResult(`file://${secretPath}`);
+  if (typeof outsideResult !== "string") {
+    const [outsideMessage] = outsideResult.messages;
+    assert(outsideMessage && typeof outsideMessage !== "string");
+    assert.equal(outsideMessage.attachments?.length ?? 0, 0);
+    assert.equal(
+      JSON.stringify(outsideResult).includes(Buffer.from("top-secret-bytes").toString("base64")),
+      false,
+    );
+  }
+
+  // A file: URL pointing inside the workspace is still served (feature preserved).
+  const insideResult = buildResult(`file://${insidePath}`);
+  if (typeof insideResult !== "string") {
+    const [insideMessage] = insideResult.messages;
+    assert(insideMessage && typeof insideMessage !== "string");
+    assert.equal(insideMessage.attachments?.length, 1);
+    assert.equal(insideMessage.attachments?.[0]?.dataBase64, Buffer.from("inside-bytes").toString("base64"));
+  } else {
+    assert.fail("expected the in-workspace file: URL attachment to resolve");
+  }
+});
+
 test("parseOpenClawAgentOutput extracts qqfile markup into standard attachments", async (t) => {
   const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "privateclaw-structured-workspace-"));
   const mediaDir = path.join(workspaceDir, "media");

@@ -4,13 +4,17 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    # Dry-run path for the ClawHub job only (npm publish stays tag-only).
+    description: 'ClawHub dry-run validation (no npm publish)'
 
 permissions:
-  id-token: write  # Required for OIDC
+  id-token: write  # Required for OIDC (npm provenance + ClawHub trusted publishing)
   contents: read
 
 jobs:
   publish:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -77,3 +81,44 @@ jobs:
       - name: Publish provider package
         if: steps.provider-release.outputs.publish == 'true'
         run: npm publish --workspace @privateclaw/privateclaw --access public
+
+  # Mirror the provider package to ClawHub. Tag pushes publish for real (the CLI
+  # needs a saved token for tag-triggered runs; trusted publishing only covers
+  # workflow_dispatch today). Manual dispatches always run as a dry run.
+  clawhub:
+    name: Publish provider to ClawHub
+    needs: publish
+    if: always() && (github.event_name == 'workflow_dispatch' || needs.publish.result == 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # clawhub records source repo + exact commit
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - run: npm ci
+      - run: npm run build --workspace @privateclaw/privateclaw
+
+      - name: Validate package (Plugin Inspector)
+        run: npx clawhub@0.27.0 package validate packages/privateclaw-provider
+
+      - name: Publish to ClawHub
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "push" ]; then
+            if [ -z "${CLAWHUB_TOKEN}" ]; then
+              echo "::error::CLAWHUB_TOKEN secret is missing; cannot publish on tag push"
+              exit 1
+            fi
+            npx clawhub@0.27.0 login --token "$CLAWHUB_TOKEN"
+            npx clawhub@0.27.0 package publish packages/privateclaw-provider --wait --wait-timeout 1200 --json
+          else
+            echo "Dry run (workflow_dispatch): no upload, no token needed."
+            npx clawhub@0.27.0 package publish packages/privateclaw-provider --dry-run --json
+          fi
+        env:
+          CLAWHUB_TOKEN: ${{ secrets.CLAWHUB_TOKEN }}

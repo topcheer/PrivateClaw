@@ -14,6 +14,7 @@ import fs from "fs";
 import path from "path";
 import { execSync, execFileSync } from "child_process";
 import { fileURLToPath } from "url";
+import { resolveWindowsStoreVersion } from "resolve-windows-store-version.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -24,6 +25,29 @@ const BASE_URL = "https://manage.devcenter.microsoft.com/v1.0/my";
 const PRIVACY_URL = "https://privateclaw.us/privacy/";
 const SUPPORT_EMAIL = "msstore@liop.dev";
 const WEBSITE_URL = "https://privateclaw.us";
+
+// ── Marketing-version guard helpers ──────────────────────────────────
+// The Store packs semver into the first 16-bit Appx field as
+// major<<12 | minor<<6 | patch (see resolve-windows-store-version.mjs).
+
+function semverKey(versionName) {
+  const [major, minor, patch] = String(versionName).split(".").map(Number);
+  return (major << 12) | (minor << 6) | patch;
+}
+
+function semverFromPackages(packages) {
+  const live = (Array.isArray(packages) ? packages : []).filter(
+    (pkg) => pkg.fileStatus !== "PendingDelete",
+  );
+  for (const pkg of live) {
+    const first = String(pkg.version || "").split(".")[0];
+    if (/^\d+$/.test(first)) {
+      const packed = Number(first);
+      return `${packed >> 12}.${(packed >> 6) & 63}.${packed & 63}`;
+    }
+  }
+  return null;
+}
 
 // ── Credential loading ──────────────────────────────────────────────
 
@@ -383,6 +407,56 @@ async function main() {
   if (testOnly) {
     console.log("\n✅ Auth and app lookup succeeded. Use --submit to update listings.");
     return;
+  }
+
+  // ── Step 3b: Skip when this marketing version is already live or under certification ──
+  // A retriggered release (moved tag, rerun) rebuilds the same marketing version with a
+  // larger 4-part build number. The Store already carries that semver live (or in
+  // certification), so resubmitting is pointless and --fresh would 409 trying to delete
+  // a cert-bound submission. Only compare the semver; build numbers are irrelevant.
+  try {
+    const { versionName: targetVersion } = resolveWindowsStoreVersion();
+    const targetKey = semverKey(targetVersion);
+
+    const publishedRef = app.lastPublishedApplicationSubmission;
+    if (publishedRef?.id) {
+      const published = await api(
+        token,
+        "GET",
+        `applications/${appId}/submissions/${publishedRef.id}`,
+      );
+      const publishedVersion = semverFromPackages(published.applicationPackages);
+      if (publishedVersion && targetKey <= semverKey(publishedVersion)) {
+        console.log(
+          `\n✅ ${targetVersion} is already published on the Store (live: ${publishedVersion}) — nothing to submit.`,
+        );
+        return;
+      }
+    }
+
+    const pendingRef = app.pendingApplicationSubmission;
+    if (pendingRef?.id) {
+      const pending = await api(
+        token,
+        "GET",
+        `applications/${appId}/submissions/${pendingRef.id}`,
+      );
+      const pendingVersion = semverFromPackages(pending.applicationPackages);
+      // PendingCommit submissions are our own unfinished drafts: keep the original
+      // reuse path. Any other status with the same semver is already in certification.
+      if (
+        pendingVersion &&
+        semverKey(pendingVersion) === targetKey &&
+        pending.status !== "PendingCommit"
+      ) {
+        console.log(
+          `\n✅ ${targetVersion} is already in certification (submission ${pendingRef.id}, status ${pending.status}) — nothing to submit.`,
+        );
+        return;
+      }
+    }
+  } catch (e) {
+    console.log(`   (published-version check skipped: ${e.message})`);
   }
 
   // ── Step 4: Get or create submission ──

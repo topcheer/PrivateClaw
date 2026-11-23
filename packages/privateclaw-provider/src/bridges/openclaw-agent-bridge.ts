@@ -4,7 +4,7 @@ import type {
 } from "@privateclaw/protocol";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -24,6 +24,8 @@ interface OpenClawAgentBridgeExecOptions {
   maxBuffer: number;
   shell?: boolean;
   windowsHide?: boolean;
+  /** UTF-8 payload written to the child's stdin (used for --message-file -). */
+  stdin?: string;
 }
 
 type OpenClawAgentExecFile = (
@@ -221,10 +223,15 @@ export function resolveOpenClawLaunchCommand(options: {
     };
   }
 
+  // Security: never spawn the OpenClaw CLI through a shell. The bare-name
+  // fallback on Windows resolves to openclaw.cmd, which Node refuses to spawn
+  // without a shell (EINVAL); the caller then gets a clear error pointing at
+  // openclawAgentExecutable (an .exe or the Node CLI script) instead of a
+  // shell-interpretation path that could mangle session-derived arguments.
   return {
     file: "openclaw",
     args: [],
-    shell: platform === "win32",
+    shell: false,
   };
 }
 
@@ -414,7 +421,7 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
       ) => void | Promise<void>;
     },
   ): Promise<BridgeResponse> {
-    const args = this.buildArgs(sessionId, promptMessage);
+    const args = this.buildArgs(sessionId);
     this.verboseLog(
       `exec_start session=${sessionId} promptChars=${promptMessage.length} argCount=${args.length} includeArtifacts=${options?.includeArtifacts !== false} agent=${JSON.stringify(this.options.agentId ?? "default")} channel=${JSON.stringify(this.options.channel ?? "default")} local=${this.options.local === true} thinking=${JSON.stringify(this.options.thinking ?? "default")} timeoutSeconds=${this.options.timeoutSeconds ?? "default"}`,
     );
@@ -433,7 +440,7 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
         summary: summarizeThinkingTrace(latestTraceEntries),
       });
     };
-    const stdoutPromise = this.execOpenClaw(args);
+    const stdoutPromise = this.execOpenClaw(args, promptMessage);
     if (options?.onThinkingTrace) {
       let pending = true;
       void stdoutPromise.then(
@@ -890,8 +897,12 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
     return staged;
   }
 
-  private buildArgs(sessionId: string, message: string): string[] {
-    const args = ["agent", "--session-id", sessionId, "--message", message, "--json"];
+  private buildArgs(sessionId: string): string[] {
+    // Security: the message body is supplied over stdin (see execOpenClaw), so no
+    // remote-controlled text ever reaches the process argument list. This keeps
+    // Windows shell metacharacters in message text inert even if a configured
+    // launcher still needs a shell (e.g. an explicit .cmd executable).
+    const args = ["agent", "--session-id", sessionId, "--message-file", "-", "--json"];
 
     if (this.options.agentId) {
       args.push("--agent", this.options.agentId);
@@ -912,7 +923,7 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
     return args;
   }
 
-  private execOpenClaw(args: string[]): Promise<string> {
+  private execOpenClaw(args: string[], stdin?: string): Promise<string> {
     return new Promise((resolve, reject) => {
       this.execFileImpl(
         this.executable,
@@ -921,6 +932,7 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
           maxBuffer: DEFAULT_MAX_BUFFER,
           ...(this.executableUsesShell ? { shell: true } : {}),
           ...(process.platform === "win32" ? { windowsHide: true } : {}),
+          ...(stdin !== undefined ? { stdin } : {}),
         },
         (error, stdout, stderr) => {
           if (error) {
@@ -966,8 +978,15 @@ function defaultExecFileImpl(
   const child = spawn(file, args, {
     shell: options.shell,
     ...(typeof options.windowsHide === "boolean" ? { windowsHide: options.windowsHide } : {}),
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: [options.stdin !== undefined ? "pipe" : "ignore", "pipe", "pipe"],
   });
+
+  if (options.stdin !== undefined && child.stdin) {
+    child.stdin.on("error", () => {
+      // The child may exit before reading stdin (EPIPE); the exit code decides.
+    });
+    child.stdin.end(options.stdin);
+  }
 
   const append = (chunk: Buffer | string, target: "stdout" | "stderr") => {
     const text = typeof chunk === "string" ? chunk : chunk.toString("utf8");
@@ -1433,16 +1452,37 @@ function resolveStructuredAttachmentFilePath(
   workspaceDir: string,
 ): string | undefined {
   const trimmedPath = rawFilePath.trim();
-  if (trimmedPath === "") {
+  if (trimmedPath === "" || /^file:/iu.test(trimmedPath)) {
+    // file: URLs are rejected outright; only plain paths are considered.
     return undefined;
   }
 
-  if (path.isAbsolute(trimmedPath)) {
-    return path.normalize(trimmedPath);
-  }
-
+  // Security: every candidate (relative or absolute) must resolve inside the
+  // workspace after following symlinks. Absolute paths therefore no longer
+  // bypass containment, and a symlink inside the workspace cannot point out.
   const resolvedPath = normalizeMediaPath(trimmedPath, workspaceDir);
-  return isPathInsideDirectory(workspaceDir, resolvedPath) ? resolvedPath : undefined;
+  if (!isPathInsideDirectory(workspaceDir, resolvedPath)) {
+    return undefined;
+  }
+  const canonicalRoot = canonicalizePath(workspaceDir);
+  const canonicalTarget = canonicalizePath(resolvedPath);
+  if (!canonicalRoot || !canonicalTarget) {
+    return undefined;
+  }
+  return isPathInsideDirectory(canonicalRoot, canonicalTarget) ? resolvedPath : undefined;
+}
+
+/** realpath that tolerates a missing leaf (the root must exist, the file may not yet). */
+function canonicalizePath(targetPath: string): string | undefined {
+  try {
+    return realpathSync(targetPath);
+  } catch {
+    try {
+      return path.join(realpathSync(path.dirname(targetPath)), path.basename(targetPath));
+    } catch {
+      return undefined;
+    }
+  }
 }
 
 function parseStructuredResponseResult(
@@ -2014,9 +2054,37 @@ export function inferMimeTypeFromFileName(fileName: string): string | undefined 
   }
 }
 
+// Security: DOCX is a ZIP archive; expanding it synchronously without bounds
+// lets a small malicious file block the gateway event loop (CWE-409). Inspect
+// central-directory metadata first, then only inflate the Word XML entries we
+// actually need, each under a hard expanded-size cap.
+const DOCX_MAX_ENTRY_BYTES = 8 * 1024 * 1024;
+const DOCX_MAX_TOTAL_BYTES = 16 * 1024 * 1024;
+const DOCX_MAX_RATIO = 200;
+
 function extractDocxText(buffer: Buffer): string {
   try {
-    const archive = unzipSync(new Uint8Array(buffer));
+    const archive = unzipSync(new Uint8Array(buffer), {
+      filter: (entry) => {
+        if (!/^word\/(document|header\d+|footer\d+)\.xml$/u.test(entry.name)) {
+          return false;
+        }
+        if (entry.originalSize > DOCX_MAX_ENTRY_BYTES) {
+          throw new Error("docx entry exceeds size limit");
+        }
+        if (entry.originalSize > 0 && entry.originalSize / Math.max(entry.size, 1) > DOCX_MAX_RATIO) {
+          throw new Error("docx entry exceeds compression ratio limit");
+        }
+        return true;
+      },
+    });
+    let expandedBytes = 0;
+    for (const entry of Object.values(archive)) {
+      expandedBytes += entry.byteLength;
+      if (expandedBytes > DOCX_MAX_TOTAL_BYTES) {
+        return "";
+      }
+    }
     const sectionNames = Object.keys(archive)
       .filter((name) => /^word\/(document|header\d+|footer\d+)\.xml$/u.test(name))
       .sort((left, right) => {

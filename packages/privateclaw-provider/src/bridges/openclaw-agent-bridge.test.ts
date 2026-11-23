@@ -287,7 +287,7 @@ test("parseOpenClawAgentOutput preserves top-level structured attachments as a f
   );
 });
 
-test("parseOpenClawAgentOutput accepts structured absolute filePath attachments outside the workspace", async (t) => {
+test("parseOpenClawAgentOutput rejects structured absolute filePath attachments outside the workspace", async (t) => {
   const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "privateclaw-structured-workspace-"));
   const outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), "privateclaw-structured-outside-"));
   t.after(async () => {
@@ -300,55 +300,65 @@ test("parseOpenClawAgentOutput accepts structured absolute filePath attachments 
   const outsidePath = path.join(outsideDir, "outside.txt");
   await fs.writeFile(outsidePath, "should stay outside", "utf8");
 
-  const result = parseOpenClawAgentOutput(
-    JSON.stringify({
-      status: "ok",
-      result: {
-        payloads: [
-          {
-            text: [
-              "<privateclaw-response>",
-              JSON.stringify({
-                version: 1,
-                messages: [
-                  {
-                    text: "workspace-only",
-                    attachments: [
-                      {
-                        name: "outside.txt",
-                        mimeType: "text/plain",
-                        filePath: outsidePath,
-                      },
-                    ],
-                  },
-                ],
-              }),
-              "</privateclaw-response>",
-            ].join("\n"),
-          },
-        ],
-      },
-    }),
-    { workspaceDir },
-  );
+  const buildResponse = (attachments: unknown[]) =>
+    parseOpenClawAgentOutput(
+      JSON.stringify({
+        status: "ok",
+        result: {
+          payloads: [
+            {
+              text: [
+                "<privateclaw-response>",
+                JSON.stringify({ version: 1, messages: [{ text: "workspace-only", attachments }] }),
+                "</privateclaw-response>",
+              ].join("\n"),
+            },
+          ],
+        },
+      }),
+      { workspaceDir },
+    );
 
-  if (typeof result === "string") {
-    assert.fail("Expected an attachment-bearing bridge response.");
+  // Security (CWE-73/200): reply text must never authorize reading arbitrary host
+  // files. Absolute paths outside the workspace are dropped, not disclosed.
+  const outsideResult = buildResponse([
+    { name: "outside.txt", mimeType: "text/plain", filePath: outsidePath },
+  ]);
+  if (typeof outsideResult === "string") {
+    assert.equal(outsideResult, "workspace-only");
+    return;
   }
-  const [message] = result.messages;
-  assert(message && typeof message !== "string");
-  assert.equal(message.text, "workspace-only");
-  const [attachment] = message.attachments ?? [];
-  assert(attachment);
-  assert.equal(attachment.name, "outside.txt");
-  assert.equal(attachment.mimeType, "text/plain");
-  assert.equal(attachment.sizeBytes, Buffer.byteLength("should stay outside"));
-  assert.equal(attachment.dataBase64, Buffer.from("should stay outside").toString("base64"));
+  const [outsideMessage] = outsideResult.messages;
+  assert(outsideMessage && typeof outsideMessage !== "string");
+  assert.equal(outsideMessage.attachments ?? [], undefined);
+
+  // file: URLs are rejected outright regardless of where they point.
+  const fileUrlResult = buildResponse([
+    { name: "outside.txt", mimeType: "text/plain", filePath: `file://${outsidePath}` },
+  ]);
+  if (typeof fileUrlResult !== "string") {
+    const [fileUrlMessage] = fileUrlResult.messages;
+    assert(fileUrlMessage && typeof fileUrlMessage !== "string");
+    assert.equal(fileUrlMessage.attachments?.length ?? 0, 0);
+  }
+
+  // A symlink inside the workspace that points outside must not escape containment.
+  const linkPath = path.join(workspaceDir, "escape.txt");
+  await fs.symlink(outsidePath, linkPath);
+  const symlinkResult = buildResponse([
+    { name: "escape.txt", mimeType: "text/plain", filePath: linkPath },
+  ]);
+  if (typeof symlinkResult !== "string") {
+    const [symlinkMessage] = symlinkResult.messages;
+    assert(symlinkMessage && typeof symlinkMessage !== "string");
+    assert.equal(symlinkMessage.attachments?.length ?? 0, 0);
+  }
 });
 
 test("parseOpenClawAgentOutput tolerates malformed closing tags and qqimg markup inside structured text", async (t) => {
   const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "privateclaw-structured-workspace-"));
-  const mediaDir = await fs.mkdtemp(path.join(os.tmpdir(), "privateclaw-structured-media-"));
+  const mediaDir = path.join(workspaceDir, "media");
+  await fs.mkdir(mediaDir, { recursive: true });
   const imagePath = path.join(mediaDir, "video-frames-001.jpg");
   const imageBytes = Buffer.from("fake-jpg-binary");
   await fs.writeFile(imagePath, imageBytes);
@@ -410,7 +420,8 @@ test("parseOpenClawAgentOutput tolerates malformed closing tags and qqimg markup
 
 test("parseOpenClawAgentOutput extracts qqfile markup into standard attachments", async (t) => {
   const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "privateclaw-structured-workspace-"));
-  const mediaDir = await fs.mkdtemp(path.join(os.tmpdir(), "privateclaw-structured-media-"));
+  const mediaDir = path.join(workspaceDir, "media");
+  await fs.mkdir(mediaDir, { recursive: true });
   const filePath = path.join(mediaDir, "report.pdf");
   const fileBytes = Buffer.from("%PDF-privateclaw-test");
   await fs.writeFile(filePath, fileBytes);
@@ -464,7 +475,8 @@ test("parseOpenClawAgentOutput extracts qqfile markup into standard attachments"
 
 test("parseOpenClawAgentOutput extracts qqfile markup from plain-text fallbacks", async (t) => {
   const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "privateclaw-plain-workspace-"));
-  const mediaDir = await fs.mkdtemp(path.join(os.tmpdir(), "privateclaw-plain-media-"));
+  const mediaDir = path.join(workspaceDir, "media");
+  await fs.mkdir(mediaDir, { recursive: true });
   const filePath = path.join(mediaDir, "notes.txt");
   const fileBytes = Buffer.from("plain-fallback-file");
   await fs.writeFile(filePath, fileBytes);
@@ -565,6 +577,7 @@ test("parseOpenClawAgentOutput preserves mixed qqimg and qqfile markup in order"
 test("OpenClawAgentBridge invokes openclaw agent with session-aware arguments", async () => {
   let invokedFile = "";
   let invokedArgs: string[] = [];
+  let invokedStdin: string | undefined;
 
   const bridge = new OpenClawAgentBridge({
     executable: "openclaw-custom",
@@ -572,9 +585,10 @@ test("OpenClawAgentBridge invokes openclaw agent with session-aware arguments", 
     channel: "discord",
     thinking: "low",
     timeoutSeconds: 30,
-    execFileImpl: (file, args, _options, callback) => {
+    execFileImpl: (file, args, options, callback) => {
       invokedFile = file;
       invokedArgs = args;
+      invokedStdin = options.stdin;
       callback(
         null,
         JSON.stringify({
@@ -602,19 +616,24 @@ test("OpenClawAgentBridge invokes openclaw agent with session-aware arguments", 
   });
 
   assert.equal(invokedFile, "openclaw-custom");
-  const prompt = invokedArgs[4] ?? "";
-  assert.deepEqual(invokedArgs.slice(0, 4), [
+  // Security contract: the remote message never travels in argv; it is piped via
+  // stdin (`--message-file -`), so shell metacharacters in it stay inert.
+  assert.deepEqual(invokedArgs.slice(0, 6), [
     "agent",
     "--session-id",
     "privateclaw-session",
-    "--message",
+    "--message-file",
+    "-",
+    "--json",
   ]);
+  assert.equal(invokedArgs.includes("--message"), false);
+  assert.equal(invokedArgs.includes("hello"), false);
+  const prompt = invokedStdin ?? "";
   assert.match(prompt, /^hello\b/u);
   assert.match(prompt, /PrivateClaw response contract:/u);
   assert.match(prompt, /<privateclaw-response>/u);
   assert.match(prompt, /Never put channel-specific markup such as <qqimg>/u);
-  assert.deepEqual(invokedArgs.slice(5), [
-    "--json",
+  assert.deepEqual(invokedArgs.slice(6), [
     "--agent",
     "ops",
     "--channel",
@@ -625,6 +644,49 @@ test("OpenClawAgentBridge invokes openclaw agent with session-aware arguments", 
     "30",
   ]);
   assert.equal(result, "bridge-ok");
+});
+
+test("OpenClawAgentBridge keeps shell metacharacters in message text out of argv (CWE-78)", async () => {
+  let invokedArgs: string[] = [];
+  let invokedStdin: string | undefined;
+  let invokedShell: boolean | undefined;
+  // Windows command separators, pipes, quotes, percent expansion and newlines.
+  const hostile = 'hi & calc.exe | whoami > out.txt "%USERPROFILE%" \n\r; del *.*';
+
+  const bridge = new OpenClawAgentBridge({
+    // An explicit .cmd launcher is the only configuration that still needs a shell
+    // on Windows; even then nothing session-derived may reach the argument list.
+    executable: "openclaw.cmd",
+    execFileImpl: (_file, args, options, callback) => {
+      invokedArgs = args;
+      invokedStdin = options.stdin;
+      invokedShell = options.shell;
+      callback(null, JSON.stringify({ status: "ok", result: { payloads: [{ text: "ok" }] } }), "");
+    },
+  });
+
+  await bridge.handleUserMessage({
+    sessionId: "privateclaw-session",
+    message: hostile,
+    history: [],
+    invite: {
+      version: 1,
+      sessionId: "privateclaw-session",
+      sessionKey: "test",
+      appWsUrl: "ws://127.0.0.1/app?sessionId=privateclaw-session",
+      expiresAt: new Date().toISOString(),
+    },
+  });
+
+  assert.deepEqual(invokedArgs.slice(0, 5), ["agent", "--session-id", "privateclaw-session", "--message-file", "-"]);
+  for (const fragment of ["calc.exe", "whoami", "del *.*", "%USERPROFILE%", "&", "|", ">"]) {
+    assert.equal(invokedArgs.some((arg) => arg.includes(fragment)), false, `argv leaked ${JSON.stringify(fragment)}`);
+  }
+  assert.equal(invokedArgs.join(" ").includes("\n"), false);
+  assert.match(invokedStdin ?? "", /calc\.exe \| whoami/u);
+  // Non-win32 test hosts never request a shell for a .cmd executable; the
+  // assertion documents that the shell flag, when set, is launcher-only.
+  assert.notEqual(invokedShell, true);
 });
 
 test("OpenClawAgentBridge emits verbose execution logs when enabled", async () => {
@@ -1056,7 +1118,8 @@ test("OpenClawAgentBridge recovers structured assistant text from the session lo
 test("OpenClawAgentBridge recovers structured assistant attachments from absolute media paths in the session log", async (t) => {
   const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "privateclaw-openclaw-state-"));
   const workspaceDir = path.join(stateDir, "workspace");
-  const mediaDir = await fs.mkdtemp(path.join(os.tmpdir(), "privateclaw-browser-media-"));
+  const mediaDir = path.join(stateDir, "workspace", "media");
+  await fs.mkdir(mediaDir, { recursive: true });
   const imagePath = path.join(mediaDir, "slide-01-cover.png");
   const imageBytes = Buffer.from("fake-png-binary");
   const sessionLogPath = path.join(
@@ -1158,7 +1221,8 @@ test("OpenClawAgentBridge recovers structured assistant attachments from absolut
 test("OpenClawAgentBridge prefers structured session-log replies over earlier stdout text and dedupes recovered artifacts", async (t) => {
   const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "privateclaw-openclaw-state-"));
   const workspaceDir = path.join(stateDir, "workspace");
-  const mediaDir = await fs.mkdtemp(path.join(os.tmpdir(), "privateclaw-browser-media-"));
+  const mediaDir = path.join(stateDir, "workspace", "media");
+  await fs.mkdir(mediaDir, { recursive: true });
   const imagePath = path.join(mediaDir, "google-screenshot.png");
   const imageBytes = Buffer.from("fake-google-screenshot");
   const sessionLogPath = path.join(
@@ -1369,10 +1433,12 @@ test("OpenClawAgentBridge stages image and PDF attachments with tool hints", asy
   });
 
   let invokedArgs: string[] = [];
+  let invokedStdin: string | undefined;
   const bridge = new OpenClawAgentBridge({
     workspaceDir,
-    execFileImpl: (_file, args, _options, callback) => {
+    execFileImpl: (_file, args, options, callback) => {
       invokedArgs = args;
+      invokedStdin = options.stdin;
       callback(
         null,
         JSON.stringify({
@@ -1415,11 +1481,14 @@ test("OpenClawAgentBridge stages image and PDF attachments with tool hints", asy
     },
   });
 
-  const prompt = invokedArgs[4];
+  assert.equal(invokedArgs[3], "--message-file");
+  assert.equal(invokedArgs[4], "-");
+  const prompt = invokedStdin ?? "";
   assert.equal(invokedArgs[0], "agent");
   assert.equal(invokedArgs[1], "--session-id");
   assert.equal(invokedArgs[2], "privateclaw-session");
-  assert.equal(invokedArgs[3], "--message");
+  assert.equal(invokedArgs[3], "--message-file");
+  assert.equal(invokedArgs[4], "-");
   assert.match(prompt ?? "", /PrivateClaw staged the attachments into the OpenClaw workspace\./u);
   assert.match(prompt ?? "", /Use the image tool with "privateclaw\/privateclaw-session\//u);
   assert.match(prompt ?? "", /Use the pdf tool with "privateclaw\/privateclaw-session\//u);
@@ -1441,10 +1510,12 @@ test("OpenClawAgentBridge transcribes audio attachments through a dedicated STT 
   });
 
   let invokedArgs: string[] = [];
+  let invokedStdin: string | undefined;
   const bridge = new OpenClawAgentBridge({
     workspaceDir,
-    execFileImpl: (_file, args, _options, callback) => {
+    execFileImpl: (_file, args, options, callback) => {
       invokedArgs = args;
+      invokedStdin = options.stdin;
       callback(
         null,
         JSON.stringify({
@@ -1479,8 +1550,9 @@ test("OpenClawAgentBridge transcribes audio attachments through a dedicated STT 
     invokedArgs[2] ?? "",
     /^privateclaw-voice-stt-privateclaw-session-voice-message-1$/u,
   );
-  assert.equal(invokedArgs[3], "--message");
-  const prompt = invokedArgs[4] ?? "";
+  assert.equal(invokedArgs[3], "--message-file");
+  assert.equal(invokedArgs[4], "-");
+  const prompt = invokedStdin ?? "";
   assert.match(prompt, /PrivateClaw voice transcription request\./u);
   assert.match(prompt, /Return only the recognized spoken content/u);
   assert.match(
@@ -1497,10 +1569,12 @@ test("OpenClawAgentBridge extracts DOCX text and points the agent at the staged 
   });
 
   let invokedArgs: string[] = [];
+  let invokedStdin: string | undefined;
   const bridge = new OpenClawAgentBridge({
     workspaceDir,
-    execFileImpl: (_file, args, _options, callback) => {
+    execFileImpl: (_file, args, options, callback) => {
       invokedArgs = args;
+      invokedStdin = options.stdin;
       callback(
         null,
         JSON.stringify({
@@ -1537,7 +1611,9 @@ test("OpenClawAgentBridge extracts DOCX text and points the agent at the staged 
     },
   });
 
-  const prompt = invokedArgs[4] ?? "";
+  assert.equal(invokedArgs[3], "--message-file");
+  assert.equal(invokedArgs[4], "-");
+  const prompt = invokedStdin ?? "";
   assert.match(
     prompt,
     /The user sent one or more file attachments without additional text\./u,

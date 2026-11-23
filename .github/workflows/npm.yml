@@ -46,7 +46,17 @@ jobs:
           fi
       - name: Publish protocol package
         if: steps.protocol-release.outputs.publish == 'true'
-        run: npm publish --workspace @privateclaw/protocol --access public
+        shell: bash
+        run: |
+          # `npm view` can miss a version published seconds ago (registry propagation
+          # lag), so a retriggered tag may attempt to publish again. Treat E409 as
+          # "already staged" instead of failing the whole release.
+          set -o pipefail
+          if ! npm publish --workspace @privateclaw/protocol --access public 2>&1 | tee /tmp/publish-protocol.log; then
+            grep -qE "E409|Cannot publish over previously" /tmp/publish-protocol.log \
+              && echo "protocol version already staged on npm; treating as success." \
+              || exit 1
+          fi
       - name: Check provider release version
         id: provider-release
         shell: bash
@@ -77,10 +87,24 @@ jobs:
           fi
       - name: Publish relay package
         if: steps.relay-release.outputs.publish == 'true'
-        run: npm publish --workspace @privateclaw/privateclaw-relay --access public
+        shell: bash
+        run: |
+          set -o pipefail
+          if ! npm publish --workspace @privateclaw/privateclaw-relay --access public 2>&1 | tee /tmp/publish-relay.log; then
+            grep -qE "E409|Cannot publish over previously" /tmp/publish-relay.log \
+              && echo "relay version already staged on npm; treating as success." \
+              || exit 1
+          fi
       - name: Publish provider package
         if: steps.provider-release.outputs.publish == 'true'
-        run: npm publish --workspace @privateclaw/privateclaw --access public
+        shell: bash
+        run: |
+          set -o pipefail
+          if ! npm publish --workspace @privateclaw/privateclaw --access public 2>&1 | tee /tmp/publish-provider.log; then
+            grep -qE "E409|Cannot publish over previously" /tmp/publish-provider.log \
+              && echo "provider version already staged on npm; treating as success." \
+              || exit 1
+          fi
 
   # Mirror the provider package to ClawHub. Tag pushes publish for real (the CLI
   # needs a saved token for tag-triggered runs; trusted publishing only covers

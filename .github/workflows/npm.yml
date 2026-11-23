@@ -144,9 +144,12 @@ jobs:
             npx clawhub@0.27.0 login --token "$CLAWHUB_TOKEN"
             # Trusted publishing (OIDC) only covers workflow_dispatch today, so a
             # tag-push token publish is treated as manual and must carry a reason.
+            # No --wait here: ClawScan runs asynchronously (often >20 min) and the
+            # release is already staged once this command returns; the scan outcome
+            # is verified separately on the ClawHub audit page.
             npx clawhub@0.27.0 package publish packages/privateclaw-provider \
               --manual-override-reason "Tag-push release v${GITHUB_REF_NAME}; trusted publishing does not yet cover tag pushes" \
-              --wait --wait-timeout 1200 --json
+              --json
           else
             echo "Dry run (workflow_dispatch): no upload, no token needed."
             npx clawhub@0.27.0 package publish packages/privateclaw-provider --dry-run --json

@@ -157,6 +157,22 @@ The demo CLI auto-selects bridges in this order:
 3. Webhook bridge
 4. Echo bridge
 
+## Attachment export containment
+
+Files are only ever read and attached to a PrivateClaw reply when they resolve
+(through symlinks) inside one of two authorized roots:
+
+- the session workspace (`<stateDir>/workspace`), for agent-authored artifacts, and
+- OpenClaw's own media directory (`<stateDir>/media`), for TTS and other producers.
+
+This applies uniformly to structured `<privateclaw-response>` attachments, inline
+`<qqfile>`/`<qqimg>` markup, and `MEDIA:` lines or `details.audioPath` recovered
+from tool results. Absolute paths, `file:` URLs, traversal and symlinks that land
+outside both roots are dropped and logged as `artifact_rejected`; directories and
+files over 25 MiB are rejected as well. The OpenClaw agent is always spawned without
+a shell, and the remote message body travels over stdin (`--message-file -`), never
+in the process argument list.
+
 ## OpenClaw plugin entrypoint
 
 The package now ships a real OpenClaw extension entrypoint:

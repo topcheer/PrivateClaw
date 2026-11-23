@@ -118,7 +118,11 @@ jobs:
               exit 1
             fi
             npx clawhub@0.27.0 login --token "$CLAWHUB_TOKEN"
-            npx clawhub@0.27.0 package publish packages/privateclaw-provider --wait --wait-timeout 1200 --json
+            # Trusted publishing (OIDC) only covers workflow_dispatch today, so a
+            # tag-push token publish is treated as manual and must carry a reason.
+            npx clawhub@0.27.0 package publish packages/privateclaw-provider \
+              --manual-override-reason "Tag-push release v${GITHUB_REF_NAME}; trusted publishing does not yet cover tag pushes" \
+              --wait --wait-timeout 1200 --json
           else
             echo "Dry run (workflow_dispatch): no upload, no token needed."
             npx clawhub@0.27.0 package publish packages/privateclaw-provider --dry-run --json

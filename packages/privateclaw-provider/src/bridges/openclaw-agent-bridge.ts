@@ -619,7 +619,20 @@ export class OpenClawAgentBridge implements PrivateClawAgentBridge {
         if (seenPaths.has(normalizedPath)) {
           continue;
         }
-        const attachment = await buildAttachmentFromMediaPath(normalizedPath, this.workspaceDir);
+        seenPaths.add(normalizedPath);
+        const attachment = await buildAttachmentFromMediaPath(
+          normalizedPath,
+          this.workspaceDir,
+          this.stateDir,
+        );
+        if (!attachment) {
+          // Security (CWE-73/200): tool-result text is not authorization to read
+          // arbitrary host files; only artifacts inside the authorized roots ship.
+          this.log(
+            `artifact_rejected session=${sessionId} mediaPath=${JSON.stringify(mediaPath)} reason=outside-authorized-roots`,
+          );
+          continue;
+        }
         this.log(
           `artifact_recovered session=${sessionId} mediaPath=${JSON.stringify(mediaPath)} normalizedPath=${JSON.stringify(normalizedPath)} name=${JSON.stringify(attachment.name)} mimeType=${attachment.mimeType} sizeBytes=${attachment.sizeBytes}`,
         );
@@ -1898,11 +1911,55 @@ function extractBridgeResponseData(response: BridgeResponse): unknown {
   return typeof response === "string" ? undefined : response.data;
 }
 
+/** Maximum size of a single artifact exported from a tool result. */
+const MEDIA_ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024;
+
+/**
+ * Directories whose files may be exported as attachments: the session workspace
+ * (agent-authored artifacts) and OpenClaw's own media directory (TTS / audio
+ * producers). Everything else - arbitrary absolute paths, file: URLs pointing
+ * elsewhere, symlinks escaping - is rejected. Each root goes through the same
+ * realpath containment check as structured attachments.
+ */
+function resolveAuthorizedMediaFilePath(
+  rawMediaPath: string,
+  workspaceDir: string,
+  stateDir: string = DEFAULT_STATE_DIR,
+): string | undefined {
+  let candidate = rawMediaPath.trim();
+  if (candidate === "") {
+    return undefined;
+  }
+  if (/^file:/iu.test(candidate)) {
+    try {
+      candidate = fileURLToPath(candidate);
+    } catch {
+      return undefined;
+    }
+  }
+  const roots = [workspaceDir, path.join(stateDir, "media")];
+  for (const root of roots) {
+    const resolved = resolveStructuredAttachmentFilePath(candidate, path.resolve(root));
+    if (resolved) {
+      return resolved;
+    }
+  }
+  return undefined;
+}
+
 async function buildAttachmentFromMediaPath(
   mediaPath: string,
   workspaceDir: string = DEFAULT_WORKSPACE_DIR,
-): Promise<PrivateClawAttachment> {
-  const filePath = normalizeMediaPath(mediaPath, workspaceDir);
+  stateDir: string = DEFAULT_STATE_DIR,
+): Promise<PrivateClawAttachment | undefined> {
+  const filePath = resolveAuthorizedMediaFilePath(mediaPath, workspaceDir, stateDir);
+  if (!filePath) {
+    return undefined;
+  }
+  const stats = await fs.stat(filePath);
+  if (!stats.isFile() || stats.size > MEDIA_ATTACHMENT_MAX_BYTES) {
+    return undefined;
+  }
   const fileBytes = await fs.readFile(filePath);
   const fileName = path.basename(filePath) || `media-${randomUUID()}`;
   return {

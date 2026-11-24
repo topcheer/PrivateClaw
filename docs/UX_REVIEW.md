@@ -23,27 +23,16 @@ disconnect confirmation, timestamp format) plus one updated expectation in
 
 ## Next (needs a decision)
 
-1. **Session panel as a proper page on phones.** Today it is a floating overlay
-   (`_buildManagedSessionOverlay`): session id, expiry, relay, identity, members and
-   four buttons stacked in a card. A dedicated sheet/page with sections (Room /
-   Members / Relay) and a prominent "Renew" action would scale better and give the
-   renewal flow a home instead of the slash command.
-2. **Connecting and error states.** Connecting shows one status line; relay errors are
-   surfaced as raw text (`ECONNREFUSED`, `session_not_found`). Add step-wise progress
-   (relay → handshake → joined) with a Cancel action, humanize relay errors, and detect
-   an expired invite before connecting ("This invite expired 2h ago").
-3. **Message list polish.** Day separators, relative timestamps for yesterday, and
-   grouping of consecutive messages from the same sender (avatar/time shown once).
-4. **Notification permission explainer.** Permission is requested when the first room
-   is prepared (good), but with no context. One screen before the system prompt
-   ("Get notified when your assistant replies while the app is closed") lifts opt-in.
-5. **Composer affordances.** The emoji / voice / photo / file row is visible but
-   disabled before a room exists; consider hiding it until connected, and show the
-   available slash commands as tappable chips above the composer instead of only
-   inside the `/` sheet.
-6. **Desktop.** Keyboard-shortcut help (Cmd+Enter to send, Cmd+K for commands), and
-   bubbles constrained to ~480 px leave the macOS window empty on the right; a
-   centered, wider column would read better.
-7. **Store assets.** The screenshots shipped with 0.1.20 predate these changes; rerun
-   `python3 scripts/build-store-screenshots.py` for the next release so the listing
-   shows the onboarding state and the session pill.
+Priority key: **P0** = users hit it on the normal path and it costs them a room or
+leaves them stuck; **P1** = felt every session, but there is a workaround; **P2** =
+polish that only shows up with heavy use or on one platform.
+
+| # | Item | Priority | Why |
+| --- | --- | --- | --- |
+| 1 | **Connecting and error states.** Add step-wise progress (relay → handshake → joined) with Cancel, humanize relay errors (`ECONNREFUSED`, `session_not_found`), and detect an expired invite before connecting ("This invite expired 2h ago"). | **P0** | A failed join is the one path with no recovery hint; today the user sees a raw error string and no way back but to re-scan. |
+| 2 | **Session panel as a proper page on phones.** Replace the floating overlay (`_buildManagedSessionOverlay`: session id, expiry, relay, identity, members, four buttons) with a sheet/page split into Room / Members / Relay sections and a prominent "Renew" action. | **P1** | Every renewal currently depends on the banner or the `/renew-session` command; a dedicated page gives it a home. Workaround exists (banner), so not P0. |
+| 3 | **Notification permission explainer.** One screen before the system prompt ("Get notified when your assistant replies while the app is closed"); permission is already requested when the first room is prepared. | **P1** | Directly drives opt-in for the app's main value (assistant replies while away); skipping it just means fewer notifications, not a broken flow. |
+| 4 | **Message list polish.** Day separators, relative timestamps for yesterday, grouping of consecutive messages from the same sender (avatar/time shown once). | **P1** | Readability in long rooms is the core experience; today's time-only timestamps already removed the worst noise, so this refines rather than rescues. |
+| 5 | **Composer affordances.** Hide the disabled emoji / voice / photo / file row before a room exists; show available slash commands as tappable chips above the composer instead of only inside the `/` sheet. | **P2** | Discoverability improvement; all features remain reachable today. |
+| 6 | **Desktop.** Keyboard-shortcut help (Cmd+Enter to send, Cmd+K for commands); widen/center the message column (bubbles cap at ~480 px, leaving the right of a macOS window empty). | **P2** | Single-platform layout polish; no functional gap. |
+| 7 | **Store assets.** The screenshots shipped with 0.1.20 predate these changes; rerun `python3 scripts/build-store-screenshots.py` before the next release so the listing shows the onboarding state and the session pill. | **P2** | Release hygiene rather than in-app UX; must be done before the next submission but changes no code. |

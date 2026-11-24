@@ -40,7 +40,13 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    expect(find.byIcon(Icons.link_off), findsOneWidget);
+    // The group chat preview keeps the pairing panel collapsed, matching a real
+    // active session: on phones the expanded panel is a sheet that would hide
+    // the conversation, so the session handle is shown instead.
+    expect(
+      find.byKey(const ValueKey<String>('session-panel-handle')),
+      findsOneWidget,
+    );
     expect(
       find.byKey(const ValueKey<String>('voice-record-button')),
       findsOneWidget,
@@ -59,14 +65,9 @@ void main() {
     );
     expect(find.text('Aria'), findsWidgets);
     expect(find.textContaining('Renewal reminder'), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey<String>('current-identity-avatar')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey<String>('participant-avatar-app-aria')),
-      findsOneWidget,
-    );
+    // The identity card and participant chips live inside the collapsed panel;
+    // the message list still shows sender labels and avatars.
+    expect(find.text('Mei'), findsWidgets);
     expect(find.byType(PrivateClawAvatar), findsWidgets);
   });
 

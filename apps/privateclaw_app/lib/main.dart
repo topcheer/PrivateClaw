@@ -160,7 +160,7 @@ PrivateClawSessionClientFactory privateClawSessionClientFactory =
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final StoreScreenshotConfig screenshotConfig =
-      StoreScreenshotConfig.fromEnvironment();
+      await StoreScreenshotConfig.load();
   final bool skipNotificationsInDebug =
       privateClawShouldSkipNotificationsInDebug(
         debugSkipNotifications:

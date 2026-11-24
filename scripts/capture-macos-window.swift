@@ -10,12 +10,16 @@ func fail(_ message: String) -> Never {
 }
 
 let arguments = CommandLine.arguments
-guard arguments.count == 3 else {
-  fail("usage: capture-macos-window.swift <app-name> <output-path>")
+guard arguments.count == 3 || arguments.count == 4 else {
+  fail("usage: capture-macos-window.swift <app-name> <output-path> [scale=2]")
 }
 
 let appName = arguments[1].trimmingCharacters(in: .whitespacesAndNewlines)
 let outputPath = arguments[2].trimmingCharacters(in: .whitespacesAndNewlines)
+let scale = arguments.count == 4 ? (Double(arguments[3]) ?? 2) : 2
+guard scale > 0 else {
+  fail("scale must be a positive number")
+}
 guard !appName.isEmpty else {
   fail("app name cannot be empty")
 }
@@ -39,8 +43,8 @@ Task {
 
     let filter = SCContentFilter(desktopIndependentWindow: window)
     let configuration = SCStreamConfiguration()
-    configuration.width = max(1, Int(window.frame.width.rounded(.up)))
-    configuration.height = max(1, Int(window.frame.height.rounded(.up)))
+    configuration.width = max(1, Int((window.frame.width * scale).rounded(.up)))
+    configuration.height = max(1, Int((window.frame.height * scale).rounded(.up)))
     configuration.showsCursor = false
 
     let image = try await SCScreenshotManager.captureImage(

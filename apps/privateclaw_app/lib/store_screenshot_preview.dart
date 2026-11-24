@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
 
 import 'models/chat_attachment.dart';
 import 'models/chat_message.dart';
@@ -39,7 +41,46 @@ class StoreScreenshotConfig {
 
   final PrivateClawPreviewData? previewData;
   final Locale? localeOverride;
+
+  /// Resolves the config from `--dart-define`s, then from a
+  /// `privateclaw-screenshot.json` file in the app's Documents directory.
+  ///
+  /// iOS apps cannot read the process environment, so the capture tooling
+  /// writes `{"scenario": "group_chat", "locale": "en-US"}` into the
+  /// simulator's app container before launching a single shared build.
+  static Future<StoreScreenshotConfig> load() async {
+    final StoreScreenshotConfig fromBuild = StoreScreenshotConfig.fromEnvironment();
+    if (fromBuild.previewData != null) {
+      return fromBuild;
+    }
+    try {
+      final Directory documents = await getApplicationDocumentsDirectory();
+      final File file = File(
+        '${documents.path}${Platform.pathSeparator}'
+        '$_screenshotConfigFileName',
+      );
+      if (!await file.exists()) {
+        return const StoreScreenshotConfig();
+      }
+      final Object? decoded = jsonDecode(await file.readAsString());
+      if (decoded is! Map<String, dynamic>) {
+        return const StoreScreenshotConfig();
+      }
+      return StoreScreenshotConfig.fromEnvironment(
+        environment: <String, String>{
+          _privateClawScreenshotScenarioEnv:
+              (decoded['scenario'] as String? ?? '').trim(),
+          _privateClawScreenshotLocaleEnv:
+              (decoded['locale'] as String? ?? '').trim(),
+        },
+      );
+    } catch (_) {
+      return const StoreScreenshotConfig();
+    }
+  }
 }
+
+const String _screenshotConfigFileName = 'privateclaw-screenshot.json';
 
 const String _privateClawScreenshotScenarioEnv =
     'PRIVATECLAW_SCREENSHOT_SCENARIO';
@@ -506,6 +547,9 @@ PrivateClawPreviewData _buildGroupChatPreview(Locale? locale) {
     identity: identity,
     status: PrivateClawSessionStatus.active,
     statusText: strings.groupStatus,
+    // Keep the chat visible: on phones the expanded pairing panel is a modal
+    // sheet that would cover the conversation.
+    isPairingPanelCollapsed: true,
     participants: <PrivateClawParticipant>[
       PrivateClawParticipant(
         appId: identity.appId,

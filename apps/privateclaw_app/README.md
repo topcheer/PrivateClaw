@@ -50,7 +50,9 @@ When those files are present, device builds can exercise full push/background wa
 
 Official app builds only receive managed push out of the box when they keep using the default PrivateClaw relay `https://relay.privateclaw.us`. If you connect the app to a custom relay, push requires that relay and app build to use your own Firebase / FCM project.
 
-For screenshot / store-preview launches, the app can also load `PRIVATECLAW_SCREENSHOT_SCENARIO` and `PRIVATECLAW_SCREENSHOT_LOCALE` from the runtime environment. Those preview launches automatically skip Firebase notification bootstrap so simulator screenshot runs do not depend on push setup.
+For screenshot / store-preview launches, the app renders a deterministic preview of a real session when it finds a screenshot config, in this order: the `PRIVATECLAW_SCREENSHOT_SCENARIO` / `PRIVATECLAW_SCREENSHOT_LOCALE` `--dart-define`s, the same variables in the process environment (macOS), or a `privateclaw-screenshot.json` file (`{"scenario": "group_chat", "locale": "en-US"}`) in the app's Documents directory (iOS cannot read the process environment). Scenarios: `welcome`, `group_chat`, `rich_media`. Those preview launches automatically skip Firebase notification bootstrap so simulator screenshot runs do not depend on push setup.
+
+Store screenshots are produced by `python3 scripts/build-store-screenshots.py` from the repo root (after `flutter build ios --simulator` and `flutter build macos --debug` in this directory). It launches the real app once per locale x scenario, captures the simulator / macOS window, and composes the localized App Store frames into `ios/fastlane/screenshots/<locale>/` (iPhone 6.9" + iPad 13") and `macos/fastlane/screenshots/<locale>/`.
 
 To join a normal private session, scan a QR code created by `/privateclaw` or `openclaw privateclaw pair`.
 You can also paste the raw `privateclaw://connect?...` link or the full `Invite URI: ...` announcement text.

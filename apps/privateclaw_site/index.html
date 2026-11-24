@@ -7,7 +7,7 @@
     <meta name="description" content="PrivateClaw gives you beautiful, private rooms for the people you trust around one shared OpenClaw." />
     <title>PrivateClaw</title>
     <link rel="icon" type="image/png" href="./assets/privateclaw_app_icon.png?v=20260314-2" />
-    <link rel="stylesheet" href="./styles.css?v=20260329-2" />
+    <link rel="stylesheet" href="./styles.css?v=20261124-6" />
   </head>
   <body class="marketing-page">
     <div class="aurora aurora-a"></div>
@@ -48,7 +48,7 @@
       </header>
 
       <main>
-        <section class="hero-grid">
+        <section class="hero-grid hero-redesign">
           <div class="hero-copy-column">
             <div class="eyebrow-pill" data-i18n="site.heroBadge"></div>
             <h1 class="hero-title" data-i18n="site.heroTitle"></h1>
@@ -98,24 +98,96 @@
               </div>
               <p class="community-footnote" data-i18n="site.androidBetaNote"></p>
             </div>
-
-            <div class="hero-stats" id="hero-stats"></div>
           </div>
 
           <div class="hero-stage-column">
-            <div class="hero-stage-frame">
-              <div class="hero-stage-backdrop"></div>
-              <img src="./assets/privateclaw_feature_graphic.png?v=20260314-1" alt="PrivateClaw feature graphic" class="hero-stage-art" />
-              <div class="phone-shell">
-                <div class="phone-notch"></div>
-                <div class="phone-screen">
-                  <div class="preview-status-pill" data-i18n="site.previewStatus"></div>
-                  <h2 class="preview-title" data-i18n="site.previewTitle"></h2>
-                  <p class="preview-body" data-i18n="site.previewBody"></p>
-                  <div class="preview-chat" id="preview-chat"></div>
+            <div class="stage-3d" id="hero-stage" aria-label="PrivateClaw running on desktop and iPhone">
+              <div class="stage-halo"></div>
+              <div class="stage-orbit stage-orbit-a"></div>
+              <div class="stage-orbit stage-orbit-b"></div>
+              <div class="stage-particles" aria-hidden="true"></div>
+
+              <div class="macbook macbook-3d">
+                <div class="macbook-lid">
+                  <div class="macbook-screen">
+                    <img src="./assets/showcase/desktop-chat.png?v=20261124-2" alt="PrivateClaw web chat with an end-to-end encrypted conversation" class="macbook-shot" />
+                    <div class="screen-glare"></div>
+                  </div>
+                </div>
+                <div class="macbook-base"></div>
+              </div>
+
+              <div class="iphone iphone-3d">
+                <div class="iphone-frame">
+                  <div class="iphone-notch"></div>
+                  <video class="iphone-video" autoplay muted loop playsinline preload="auto" poster="./assets/showcase/iphone-welcome.jpg?v=20261124-2">
+                    <source src="./assets/showcase/iphone-demo.webm?v=20261124-2" type="video/webm" />
+                    <source src="./assets/showcase/iphone-demo.mp4?v=20261124-2" type="video/mp4" />
+                  </video>
                 </div>
               </div>
+
+              <div class="stage-float-card stage-float-lock">
+                <span class="float-icon">🔐</span>
+                <span data-i18n="site.stageLockLabel"></span>
+              </div>
+              <div class="stage-float-card stage-float-ai">
+                <span class="float-dot"></span>
+                <span data-i18n="site.stageAiLabel"></span>
+              </div>
             </div>
+          </div>
+
+          <div class="hero-stats" id="hero-stats"></div>
+        </section>
+
+        <section class="section-block showcase-section">
+          <div class="section-heading showcase-heading">
+            <span class="section-kicker" data-i18n="site.showcaseKicker"></span>
+            <h2 data-i18n="site.showcaseTitle"></h2>
+            <p data-i18n="site.showcaseBody"></p>
+          </div>
+          <div class="showcase-rail">
+            <article class="showcase-card showcase-tilt" data-reveal>
+              <div class="showcase-media showcase-media-phone">
+                <img src="./assets/showcase/iphone-welcome.jpg?v=20261124-2" alt="Inviting people into a PrivateClaw session on iPhone" loading="lazy" />
+              </div>
+              <div class="showcase-copy">
+                <span class="showcase-num">01</span>
+                <h3 data-i18n="site.showcase1Title"></h3>
+                <p data-i18n="site.showcase1Body"></p>
+              </div>
+            </article>
+            <article class="showcase-card showcase-tilt" data-reveal>
+              <div class="showcase-media showcase-media-phone">
+                <img src="./assets/showcase/iphone-group.jpg?v=20261124-2" alt="Encrypted group chat on iPhone with three members" loading="lazy" />
+              </div>
+              <div class="showcase-copy">
+                <span class="showcase-num">02</span>
+                <h3 data-i18n="site.showcase2Title"></h3>
+                <p data-i18n="site.showcase2Body"></p>
+              </div>
+            </article>
+            <article class="showcase-card showcase-tilt" data-reveal>
+              <div class="showcase-media showcase-media-phone">
+                <img src="./assets/showcase/iphone-media.jpg?v=20261124-2" alt="Rich media shared inside an encrypted session" loading="lazy" />
+              </div>
+              <div class="showcase-copy">
+                <span class="showcase-num">03</span>
+                <h3 data-i18n="site.showcase3Title"></h3>
+                <p data-i18n="site.showcase3Body"></p>
+              </div>
+            </article>
+            <article class="showcase-card showcase-tilt showcase-card-wide" data-reveal>
+              <div class="showcase-media showcase-media-desktop">
+                <img src="./assets/showcase/desktop-chat.png?v=20261124-2" alt="PrivateClaw web chat on desktop with an OpenClaw reply" loading="lazy" />
+              </div>
+              <div class="showcase-copy">
+                <span class="showcase-num">04</span>
+                <h3 data-i18n="site.showcase4Title"></h3>
+                <p data-i18n="site.showcase4Body"></p>
+              </div>
+            </article>
           </div>
         </section>
 
@@ -264,6 +336,6 @@
       </footer>
     </div>
 
-    <script type="module" src="./scripts/site.js?v=20260328-2"></script>
+    <script type="module" src="./scripts/site.js?v=20261124-2"></script>
   </body>
 </html>

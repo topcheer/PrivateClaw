@@ -1,10 +1,9 @@
-import { applyTranslations, bindLocaleSelect, getValue, onLocaleChange, t } from "./i18n.js?v=20260328-2";
+import { applyTranslations, bindLocaleSelect, getValue, onLocaleChange, t } from "./i18n.js?v=20261124-2";
 
 const localeSelect = document.getElementById("locale-select");
 const webEntry = document.getElementById("web-entry");
 const deviceHintCopy = document.getElementById("device-hint-copy");
 const heroStats = document.getElementById("hero-stats");
-const previewChat = document.getElementById("preview-chat");
 const featureGrid = document.getElementById("feature-grid");
 const scenarioGrid = document.getElementById("scenario-grid");
 const setupGrid = document.getElementById("setup-grid");
@@ -36,28 +35,6 @@ function renderStats() {
 
     card.append(title, body);
     heroStats.append(card);
-  }
-}
-
-function renderPreview() {
-  previewChat.replaceChildren();
-  const messages = getValue("site.previewMessages");
-  if (!Array.isArray(messages)) {
-    return;
-  }
-  for (const item of messages) {
-    const bubble = document.createElement("div");
-    bubble.className = `preview-bubble ${item.role === "assistant" ? "assistant" : "member"}`;
-
-    const label = document.createElement("span");
-    label.className = "preview-name";
-    label.textContent = item.speaker;
-
-    const text = document.createElement("div");
-    text.textContent = item.text;
-
-    bubble.append(label, text);
-    previewChat.append(bubble);
   }
 }
 
@@ -153,12 +130,106 @@ function renderPage() {
   document.title = t("site.documentTitle");
   renderWebEntry();
   renderStats();
-  renderPreview();
   renderCards(featureGrid, getValue("site.features"), "feature-card");
   renderCards(scenarioGrid, getValue("site.scenarios"), "scenario-card");
   renderSetupSteps();
 }
 
 window.addEventListener("resize", renderWebEntry);
+
+// --- Hero 3D stage: pointer-driven parallax with gentle idle drift ---
+(() => {
+  const stage = document.getElementById("hero-stage");
+  if (!stage) {
+    return;
+  }
+  const reduceMotion = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
+  if (reduceMotion) {
+    return;
+  }
+  let targetX = 0;
+  let targetY = 0;
+  let currentX = 0;
+  let currentY = 0;
+  let pointerActive = false;
+
+  const applyFrame = () => {
+    // Idle drift when the pointer is away keeps the scene alive.
+    const idleX = pointerActive ? 0 : Math.sin(Date.now() / 2600) * 2.2;
+    const idleY = pointerActive ? 0 : Math.cos(Date.now() / 3100) * 1.6;
+    currentX += (targetX - currentX) * 0.08;
+    currentY += (targetY - currentY) * 0.08;
+    stage.style.setProperty("--rx", `${currentY + idleY}deg`);
+    stage.style.setProperty("--ry", `${currentX + idleX}deg`);
+    globalThis.requestAnimationFrame(applyFrame);
+  };
+  globalThis.requestAnimationFrame(applyFrame);
+
+  const hero = stage.closest(".hero-redesign") ?? stage.parentElement;
+  hero.addEventListener("pointermove", (event) => {
+    const rect = stage.getBoundingClientRect();
+    const nx = (event.clientX - rect.left) / rect.width - 0.5;
+    const ny = (event.clientY - rect.top) / rect.height - 0.5;
+    pointerActive = true;
+    targetX = Math.max(-10, Math.min(10, nx * 14));
+    targetY = Math.max(-6, Math.min(6, -ny * 8));
+  });
+  hero.addEventListener("pointerleave", () => {
+    pointerActive = false;
+    targetX = 0;
+    targetY = 0;
+  });
+})();
+
+// --- Scroll reveal for showcase cards ---
+(() => {
+  const targets = document.querySelectorAll("[data-reveal]");
+  if (!targets.length) {
+    return;
+  }
+  if (!("IntersectionObserver" in globalThis)) {
+    for (const el of targets) {
+      el.classList.add("is-visible");
+    }
+    return;
+  }
+  const observer = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          const siblings = [...entry.target.parentElement.children].filter((c) => c.hasAttribute("data-reveal"));
+          const index = siblings.indexOf(entry.target);
+          entry.target.style.transitionDelay = `${Math.max(0, index) * 110}ms`;
+          entry.target.classList.add("is-visible");
+          observer.unobserve(entry.target);
+        }
+      }
+    },
+    { threshold: 0.18, rootMargin: "0px 0px -40px 0px" },
+  );
+  for (const el of targets) {
+    observer.observe(el);
+  }
+})();
+
+// --- Showcase cards: subtle 3D tilt toward the pointer ---
+(() => {
+  const reduceMotion = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
+  if (reduceMotion || globalThis.matchMedia?.("(pointer: coarse)")?.matches) {
+    return;
+  }
+  for (const card of document.querySelectorAll(".showcase-tilt")) {
+    card.addEventListener("pointermove", (event) => {
+      const rect = card.getBoundingClientRect();
+      const nx = (event.clientX - rect.left) / rect.width - 0.5;
+      const ny = (event.clientY - rect.top) / rect.height - 0.5;
+      card.style.transform = `translateY(-6px) rotateX(${-ny * 6}deg) rotateY(${nx * 8}deg) scale(1.01)`;
+    });
+    card.addEventListener("pointerleave", () => {
+      card.style.transform = "";
+    });
+  }
+})();
+
 onLocaleChange(renderPage);
 renderPage();

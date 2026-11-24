@@ -164,7 +164,9 @@ interface PrivateClawSessionsQrCliOptions {
 
 const DEFAULT_PROVIDER_LABEL = "PrivateClaw";
 const DEFAULT_BRIDGE_MODE: PrivateClawBridgeMode = "openclaw-agent";
-const DEFAULT_OPENCLAW_AGENT_CHANNEL = "privateclaw";
+// No default delivery channel: `openclaw agent --channel` only accepts the host's
+// channel whitelist, and "privateclaw" is not in it. PrivateClaw reads the reply
+// from stdout, so the channel is only forwarded when explicitly configured.
 const QQ_INLINE_IMAGE_REPLY_CHANNELS = new Set(["qqbot", "qq", "qqguild", "qq-guild"]);
 const ALLOWED_THINKING_LEVELS = new Set<OpenClawThinkingLevel>([
   "off",
@@ -307,8 +309,7 @@ function resolvePluginConfig(
     readString(process.env.PRIVATECLAW_OPENCLAW_AGENT_ID);
   const openclawAgentChannel =
     readString(pluginConfig?.openclawAgentChannel) ??
-    readString(process.env.PRIVATECLAW_OPENCLAW_AGENT_CHANNEL) ??
-    DEFAULT_OPENCLAW_AGENT_CHANNEL;
+    readString(process.env.PRIVATECLAW_OPENCLAW_AGENT_CHANNEL);
   const openclawAgentLocal =
     readBoolean(pluginConfig?.openclawAgentLocal) ??
     readBoolean(process.env.PRIVATECLAW_OPENCLAW_AGENT_LOCAL);

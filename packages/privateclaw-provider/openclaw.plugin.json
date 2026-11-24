@@ -2,7 +2,7 @@
   "id": "privateclaw",
   "name": "PrivateClaw",
   "description": "Ephemeral end-to-end encrypted private session plugin for OpenClaw.",
-  "version": "0.1.58",
+  "version": "0.1.59",
   "cliCommands": [
     {
       "name": "privateclaw",
@@ -77,8 +77,7 @@
       },
       "openclawAgentChannel": {
         "type": "string",
-        "description": "Optional OpenClaw channel id forwarded to `openclaw agent`.",
-        "default": "privateclaw"
+        "description": "Optional OpenClaw delivery channel id forwarded to `openclaw agent --channel`. Must be a channel the host accepts (telegram, discord, slack, ...). Leave unset: PrivateClaw reads the agent reply from stdout and does not need a delivery channel, and an unknown value makes the host reject the whole agent call."
       },
       "openclawAgentLocal": {
         "type": "boolean",

@@ -64,8 +64,8 @@ export const privateClawConfigSchema = {
     },
     openclawAgentChannel: {
       type: "string",
-      description: "Optional OpenClaw channel id forwarded to `openclaw agent`.",
-      default: "privateclaw",
+      description:
+        "Optional OpenClaw delivery channel id forwarded to `openclaw agent --channel`. Must be a channel the host accepts. Leave unset; PrivateClaw reads the agent reply from stdout and an unknown value makes the host reject the whole agent call.",
     },
     openclawAgentLocal: {
       type: "boolean",

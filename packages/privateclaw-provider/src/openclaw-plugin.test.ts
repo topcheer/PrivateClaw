@@ -166,9 +166,12 @@ test("privateclaw schema advertises the public relay default", () => {
     privateClawConfigSchema.properties.relayBaseUrl.default,
     DEFAULT_RELAY_BASE_URL,
   );
+  // `privateclaw` is not a delivery channel the OpenClaw agent CLI accepts; a default
+  // here made every agent call fail with "unknown channel: privateclaw" on hosts
+  // that validate --channel. Leave it to explicit user configuration only.
   assert.equal(
     privateClawConfigSchema.properties.openclawAgentChannel.default,
-    "privateclaw",
+    undefined,
   );
   assert.equal(privateClawConfigSchema.properties.botMode.type, "boolean");
   assert.equal(privateClawConfigSchema.properties.botModeSilentJoinDelayMs.minimum, 0);

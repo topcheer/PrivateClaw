@@ -1,12 +1,17 @@
-PrivateClaw は、ユーザーとセルフホストまたはクラウド上の OpenClaw デプロイメントを結ぶ、プライベートなエンドツーエンド暗号化チャネルを提供します。
+Hearth Room は PrivateClaw の iPhone / iPad クライアントです。PrivateClaw は、自分でホストする AI アシスタントのために、信頼できる人だけが集まる招待制の暗号化ルームを提供するオープンソースのチャットシステムです。
 
-ワンタイム QR 招待でセッションに参加し、リレーにはメッセージ本文を見せず、センシティブな会話を公開チャット面から切り離せます。
+仕組み：
+- PrivateClaw のデスクトップコンポーネント（無料、Windows / macOS / Linux）は、自分のコンピュータ上でお好みの AI アシスタントと並べて動作し、ルームの作成とワンタイム QR 招待の発行を行います。
+- Hearth Room はスマートフォンからルームに参加します。招待をスキャン（または招待リンクを貼り付け）すれば、仲間やアシスタントとチャットできます。写真・ボイスメモ・ファイルも同じ暗号化ルーム内でやり取りされます。
+- リレーは暗号文のみを転送し、メッセージ内容を見ることはありません。アカウント登録も不要です。
 
-主な機能：
-- ワンタイム招待リンクのスキャンまたは貼り付け
-- エンドツーエンド暗号化リレー
-- 自宅サーバーやクラウドのカスタムリレーに対応
-- プライベートな OpenClaw 会話向けに設計
-- 軽量で安全なセッション接続フロー
+機能：
+- スキャンまたはリンクの貼り付けで簡単参加
+- リレー経由のエンドツーエンド暗号化
+- 信頼する人だけを招けるグループルーム
+- 自宅 / クラウドのカスタムリレーに対応
+- スラッシュコマンド、メディア、参加者の状態表示
 
-Push notifications are only available out of the box on the official relay `relay.privateclaw.us`. If you switch to a custom relay, wire the relay and app build to your own Firebase / FCM project.
+Hearth Room は PrivateClaw のルームがないと接続できません。デスクトップコンポーネントは無料でオープンソース：https://github.com/topcheer/PrivateClaw（Windows 版は Microsoft Store にあります）。
+
+プッシュ通知は公式リレー relay.privateclaw.us でのみ初期状態で利用できます。カスタムリレーを使う場合は、リレーとアプリビルドを独自の Firebase / FCM プロジェクトに接続してください。

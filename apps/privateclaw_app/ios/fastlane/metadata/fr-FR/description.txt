@@ -1,12 +1,17 @@
-PrivateClaw crée un canal privé chiffré de bout en bout entre un utilisateur et un déploiement OpenClaw auto-hébergé ou dans le cloud.
+Hearth Room est le client iPhone et iPad de PrivateClaw, un système de conversation open source sur invitation qui offre à votre assistant IA auto-hébergé un salon privé, chiffré de bout en bout, réservé aux personnes en qui vous avez vraiment confiance.
 
-Rejoignez une session via une invitation QR à usage unique, gardez le relais aveugle au contenu des messages et déplacez les conversations sensibles hors des surfaces de chat publiques.
+Fonctionnement :
+- Le composant de bureau PrivateClaw (gratuit, Windows/macOS/Linux) fonctionne sur votre propre ordinateur, à côté de l'assistant IA de votre choix ; il crée les salons et génère des invitations QR à usage unique.
+- Hearth Room rejoint un salon depuis votre téléphone : scannez l'invitation (ou collez le lien d'invitation) et discutez avec vos proches et votre assistant. Photos, messages vocaux et fichiers circulent dans le même salon chiffré.
+- Le relais ne transmet que du texte chiffré et ne voit jamais le contenu des messages. Aucun compte ni inscription.
 
 Fonctionnalités :
-- Scanner ou coller des liens d’invitation à usage unique
-- Transport relais chiffré de bout en bout
-- Compatible avec des relais personnalisés à la maison ou dans le cloud
-- Conçu pour des conversations OpenClaw privées
-- Flux de session léger et sécurisé
+- Rejoindre en un scan ou via un lien collé
+- Transport chiffré de bout en bout via le relais
+- Salons de groupe avec les personnes de votre choix
+- Compatible avec vos propres relais (domicile ou cloud)
+- Commandes slash, médias et présence des participants
 
-Push notifications are only available out of the box on the official relay `relay.privateclaw.us`. If you switch to a custom relay, wire the relay and app build to your own Firebase / FCM project.
+Hearth Room a besoin d'un salon PrivateClaw pour se connecter. Le composant de bureau est gratuit et open source : https://github.com/topcheer/PrivateClaw (l'app Windows est disponible sur le Microsoft Store).
+
+Les notifications push ne fonctionnent par défaut qu'avec le relais officiel relay.privateclaw.us. Avec un relais personnalisé, reliez le relais et la build de l'app à votre propre projet Firebase / FCM.

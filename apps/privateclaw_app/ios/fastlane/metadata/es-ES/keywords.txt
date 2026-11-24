@@ -1,1 +1,1 @@
-privado,cifrado,chat IA,OpenClaw,relay,QR,autoalojado
+privateclaw,hearth,cifrado,chat IA,relay,QR,autoalojado,chat seguro,chat de grupo

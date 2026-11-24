@@ -1,12 +1,17 @@
-PrivateClaw 為使用者與自架或雲端 OpenClaw 部署之間建立一條私密的端對端加密通道。
+Hearth Room 是 PrivateClaw 的 iPhone / iPad 用戶端。PrivateClaw 是一套開源、僅限邀請的聊天系統，讓你自己託管的 AI 助手擁有一個只屬於信任之人的私密房間，訊息全程端對端加密。
 
-透過一次性 QR 邀請加入會話，讓中繼伺服器始終看不到訊息明文，並把敏感對話從公開聊天介面中移開。
+運作方式：
+- PrivateClaw 桌面組件（免費，支援 Windows / macOS / Linux）運行在你自己的電腦上，與你選擇的 AI 助手放在一起，負責建立房間並產生一次性 QR Code 邀請。
+- Hearth Room 在手機上加入房間：掃描邀請（或貼上邀請連結），即可與你的圈子以及你的助手聊天。照片、語音和檔案都在同一個加密房間內傳輸。
+- 中繼伺服器只轉發密文，永遠看不到訊息內容；無需註冊帳號。
 
-功能亮點：
-- 掃碼或貼上一次性邀請連結
-- 端對端加密的中繼傳輸
-- 支援家中伺服器或雲端自訂中繼
-- 專為私有 OpenClaw 對話設計
-- 輕量部署，安全接入流程簡單
+功能：
+- 掃碼或貼上連結一鍵加入
+- 經中繼傳輸的端對端加密
+- 只邀請你信任的人的群聊房間
+- 支援自建或雲端中繼
+- 斜線指令、媒體與成員狀態，熟悉聊天應用的版面
 
-推送預設僅在官方 relay `relay.privateclaw.us` 上可直接使用；如果改用自訂 relay，請把 relay 端與 App 建置一起接入你自己的 Firebase / FCM 設定。
+Hearth Room 需要一個 PrivateClaw 房間才能連線。桌面組件免費開源：https://github.com/topcheer/PrivateClaw（Windows 版已在 Microsoft Store 上架）。
+
+推播通知僅在官方中繼 relay.privateclaw.us 下開箱可用；若使用自訂中繼，請將中繼與 App 建置接入你自己的 Firebase / FCM 專案。

@@ -1,6 +1,6 @@
 {
   "@@locale": "en",
-  "appTitle": "PrivateClaw",
+  "appTitle": "Hearth Room",
   "disconnectTooltip": "Disconnect",
   "entryTitle": "One-time private session",
   "inviteInputLabel": "Invite link or QR payload",

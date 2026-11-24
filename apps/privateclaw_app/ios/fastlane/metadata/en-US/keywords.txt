@@ -1,1 +1,1 @@
-private,encrypted,ai chat,openclaw,relay,qr,self-hosted
+privateclaw,hearth room,encrypted,ai chat,relay,qr,self-hosted,secure chat,group chat

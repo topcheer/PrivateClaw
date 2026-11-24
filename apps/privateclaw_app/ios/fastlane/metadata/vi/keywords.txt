@@ -1,1 +1,1 @@
-riêng tư,mã hóa,trò chuyện ai,OpenClaw,relay,QR,tự lưu trữ
+privateclaw,hearth,mã hóa,trò chuyện ai,relay,QR,tự lưu trữ,chat an toàn,chat nhóm

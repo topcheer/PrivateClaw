@@ -9,7 +9,7 @@ class AppLocalizationsEn extends AppLocalizations {
   AppLocalizationsEn([String locale = 'en']) : super(locale);
 
   @override
-  String get appTitle => 'PrivateClaw';
+  String get appTitle => 'Hearth Room';
 
   @override
   String get disconnectTooltip => 'Disconnect';

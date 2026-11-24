@@ -1,12 +1,17 @@
-PrivateClaw tạo một đường kết nối riêng tư được mã hóa đầu cuối giữa người dùng và hệ triển khai OpenClaw tự lưu trữ hoặc trên đám mây.
+Hearth Room for Mac là ứng dụng khách Mac cho PrivateClaw, một hệ thống nhắn tin mã nguồn mở chỉ cho phép mời, mang lại cho trợ lý AI tự lưu trữ của bạn một phòng riêng tư được mã hóa đầu cuối, chỉ dành cho những người bạn thực sự tin tưởng.
 
-Tham gia bằng mã QR dùng một lần, giữ cho relay không thể đọc nội dung tin nhắn, và đưa các cuộc trò chuyện nhạy cảm ra khỏi bề mặt chat công khai.
+Cách hoạt động:
+- Thành phần máy tính để bàn của PrivateClaw (miễn phí, Windows/macOS/Linux) chạy trên chính máy tính của bạn, cạnh trợ lý AI mà bạn chọn; nó tạo phòng và cấp lời mời QR dùng một lần.
+- Hearth Room tham gia phòng từ máy Mac: dán liên kết mời (hoặc mở ảnh QR đã lưu) rồi trò chuyện với nhóm của bạn và với trợ lý. Ảnh, ghi âm và tệp được gửi trong cùng phòng mã hóa.
+- Relay chỉ chuyển tiếp bản mã và không bao giờ thấy nội dung tin nhắn. Không cần tài khoản hay đăng ký.
 
 Tính năng:
-- Quét hoặc dán liên kết mời dùng một lần
-- Truyền relay được mã hóa đầu cuối
-- Hỗ trợ relay tùy chỉnh tại nhà hoặc trên cloud
-- Thiết kế cho hội thoại OpenClaw riêng tư
-- Luồng phiên nhẹ và an toàn
+- Tham gia bằng một lần quét hoặc dán liên kết
+- Truyền tải mã hóa đầu cuối qua relay
+- Phòng nhóm chỉ với những người bạn chọn
+- Hoạt động với relay tự đặt tại nhà hoặc trên đám mây
+- Lệnh slash, đa phương tiện và trạng thái thành viên
 
-Push notifications are only available out of the box on the official relay `relay.privateclaw.us`. If you switch to a custom relay, wire the relay and app build to your own Firebase / FCM project.
+Hearth Room cần một phòng PrivateClaw để kết nối. Thành phần máy tính để bàn miễn phí và mã nguồn mở: https://github.com/topcheer/PrivateClaw (ứng dụng Windows có trên Microsoft Store).
+
+Thông báo đẩy theo mặc định chỉ hoạt động với relay chính thức relay.privateclaw.us. Nếu dùng relay tùy chỉnh, hãy kết nối relay và bản build ứng dụng với dự án Firebase / FCM của riêng bạn.

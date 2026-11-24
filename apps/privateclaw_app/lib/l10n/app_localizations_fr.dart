@@ -9,7 +9,7 @@ class AppLocalizationsFr extends AppLocalizations {
   AppLocalizationsFr([String locale = 'fr']) : super(locale);
 
   @override
-  String get appTitle => 'PrivateClaw';
+  String get appTitle => 'Hearth Room';
 
   @override
   String get disconnectTooltip => 'Déconnecter';

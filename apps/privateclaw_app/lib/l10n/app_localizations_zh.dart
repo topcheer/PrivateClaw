@@ -9,7 +9,7 @@ class AppLocalizationsZh extends AppLocalizations {
   AppLocalizationsZh([String locale = 'zh']) : super(locale);
 
   @override
-  String get appTitle => 'PrivateClaw';
+  String get appTitle => 'Hearth Room';
 
   @override
   String get disconnectTooltip => '断开连接';
@@ -322,7 +322,7 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
   AppLocalizationsZhHant() : super('zh_Hant');
 
   @override
-  String get appTitle => 'PrivateClaw';
+  String get appTitle => 'Hearth Room';
 
   @override
   String get disconnectTooltip => '中斷連線';

@@ -234,6 +234,13 @@ platform :mac do
     privateclaw_apply_review_upload_options(options)
   end
 
+  desc "Upload the built pkg (and metadata) to App Store Connect without submitting for review"
+  lane :upload_build do
+    options = privateclaw_release_upload_options
+    options[:submit_for_review] = false
+    upload_to_app_store(**options)
+  end
+
   desc "Submit the existing macOS App Store Connect build for App Store review"
   lane :upload_release do
     upload_to_app_store(**privateclaw_release_upload_options(skip_binary_upload: true))

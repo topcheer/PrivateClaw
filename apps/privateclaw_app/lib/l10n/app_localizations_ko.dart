@@ -9,7 +9,7 @@ class AppLocalizationsKo extends AppLocalizations {
   AppLocalizationsKo([String locale = 'ko']) : super(locale);
 
   @override
-  String get appTitle => 'PrivateClaw';
+  String get appTitle => 'Hearth Room';
 
   @override
   String get disconnectTooltip => '연결 끊기';

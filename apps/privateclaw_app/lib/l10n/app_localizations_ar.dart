@@ -9,7 +9,7 @@ class AppLocalizationsAr extends AppLocalizations {
   AppLocalizationsAr([String locale = 'ar']) : super(locale);
 
   @override
-  String get appTitle => 'PrivateClaw';
+  String get appTitle => 'Hearth Room';
 
   @override
   String get disconnectTooltip => 'قطع الاتصال';

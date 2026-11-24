@@ -1,1 +1,1 @@
-비공개,암호화,AI채팅,OpenClaw,릴레이,QR,셀프호스팅
+privateclaw,hearth,암호화,AI채팅,릴레이,QR,셀프호스팅,보안채팅,그룹채팅

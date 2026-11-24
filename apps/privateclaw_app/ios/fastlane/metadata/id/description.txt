@@ -1,12 +1,17 @@
-PrivateClaw membuat jalur privat terenkripsi end-to-end antara pengguna dan deployment OpenClaw yang di-host sendiri atau di cloud.
+Hearth Room adalah klien iPhone dan iPad untuk PrivateClaw, sistem chat open source berbasis undangan yang memberi asisten AI yang Anda host sendiri ruang privat terenkripsi ujung ke ujung hanya untuk orang yang benar-benar Anda percaya.
 
-Gabung dengan undangan QR sekali pakai, biarkan relay tetap buta terhadap isi pesan, dan pindahkan percakapan sensitif dari permukaan chat publik.
+Cara kerja:
+- Komponen desktop PrivateClaw (gratis, Windows/macOS/Linux) berjalan di komputer Anda sendiri di samping asisten AI pilihan Anda; ia membuat ruang dan menerbitkan undangan QR sekali pakai.
+- Hearth Room bergabung ke ruang dari ponsel Anda: pindai undangan (atau tempel tautan undangan) lalu mengobrol dengan lingkaran Anda dan asisten Anda. Foto, pesan suara, dan file dikirim di dalam ruang terenkripsi yang sama.
+- Relay hanya meneruskan teks tersandi dan tidak pernah melihat isi pesan. Tanpa akun, tanpa pendaftaran.
 
 Fitur:
-- Pindai atau tempel tautan undangan sekali pakai
-- Transport relay terenkripsi end-to-end
-- Mendukung relay kustom di rumah atau cloud
-- Dirancang untuk percakapan OpenClaw yang privat
-- Alur sesi yang ringan dan aman
+- Bergabung dengan satu scan atau menempel tautan
+- Transport terenkripsi ujung ke ujung melalui relay
+- Ruang grup hanya dengan orang yang Anda pilih
+- Mendukung relay kustom di rumah atau di cloud
+- Perintah slash, media, dan status kehadiran peserta
 
-Push notifications are only available out of the box on the official relay `relay.privateclaw.us`. If you switch to a custom relay, wire the relay and app build to your own Firebase / FCM project.
+Hearth Room membutuhkan ruang PrivateClaw untuk terhubung. Komponen desktop gratis dan open source: https://github.com/topcheer/PrivateClaw (aplikasi Windows tersedia di Microsoft Store).
+
+Notifikasi push secara bawaan hanya tersedia di relay resmi relay.privateclaw.us. Jika menggunakan relay kustom, hubungkan relay dan build aplikasi ke proyek Firebase / FCM Anda sendiri.

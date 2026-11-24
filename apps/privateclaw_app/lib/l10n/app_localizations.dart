@@ -121,7 +121,7 @@ abstract class AppLocalizations {
   /// No description provided for @appTitle.
   ///
   /// In en, this message translates to:
-  /// **'PrivateClaw'**
+  /// **'Hearth Room'**
   String get appTitle;
 
   /// No description provided for @disconnectTooltip.

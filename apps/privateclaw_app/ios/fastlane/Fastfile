@@ -39,6 +39,7 @@ platform :ios do
   def privateclaw_signing_xcargs
     [
       "-allowProvisioningUpdates",
+      "DEVELOPMENT_TEAM=#{Shellwords.escape(ENV.fetch('PRIVATECLAW_APPLE_TEAM_ID'))}",
       "-authenticationKeyPath #{Shellwords.escape(ENV.fetch('PRIVATECLAW_APP_STORE_CONNECT_KEY_FILE'))}",
       "-authenticationKeyID #{Shellwords.escape(ENV.fetch('PRIVATECLAW_APP_STORE_CONNECT_KEY_ID'))}",
       "-authenticationKeyIssuerID #{Shellwords.escape(ENV.fetch('PRIVATECLAW_APP_STORE_CONNECT_ISSUER_ID'))}"

@@ -1,1 +1,1 @@
-privat,terenkripsi,chat ai,OpenClaw,relay,QR,self-hosted
+privateclaw,hearth,terenkripsi,chat ai,relay,QR,self-hosted,chat aman,chat grup

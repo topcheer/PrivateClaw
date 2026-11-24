@@ -1,12 +1,17 @@
-PrivateClaw creates a private, end-to-end encrypted path between a user and a self-hosted or cloud OpenClaw deployment.
+Hearth Room for Mac is the Mac client for PrivateClaw, an open-source, invite-only chat system that gives your own self-hosted AI assistant a private, end-to-end encrypted room for the people you actually trust.
 
-Use a one-time QR invite to join a session, keep the relay blind to message contents, and move sensitive conversations away from public chat surfaces.
+How it works:
+- The PrivateClaw desktop component (free, Windows/macOS/Linux) runs on your own computer next to the AI assistant of your choice. It creates rooms and issues one-time QR invites.
+- Hearth Room joins a room from your Mac: paste the invite link (or open a saved QR image), and chat with your circle and with your assistant. Photos, voice notes, and files travel inside the same encrypted room.
+- The relay only routes ciphertext. It never sees message contents, and no account or sign-up is required.
 
 Features:
-- Scan or paste one-time invite links
-- End-to-end encrypted relay transport
+- Join with one scan or a pasted invite link
+- End-to-end encrypted transport through the relay
+- Group rooms with the people you choose
 - Works with custom home or cloud relays
-- Designed for private OpenClaw conversations
-- Lightweight session flow for secure access
+- Slash commands, media, and participant presence in a familiar chat layout
 
-Push notifications are only available out of the box on the official relay `relay.privateclaw.us`. If you switch to a custom relay, wire the relay and app build to your own Firebase / FCM project.
+Hearth Room needs a PrivateClaw room to connect to. The desktop component is free and open source: https://github.com/topcheer/PrivateClaw (the Windows app is on the Microsoft Store).
+
+Push notifications are only available out of the box on the official relay relay.privateclaw.us. If you switch to a custom relay, wire the relay and app build to your own Firebase / FCM project.

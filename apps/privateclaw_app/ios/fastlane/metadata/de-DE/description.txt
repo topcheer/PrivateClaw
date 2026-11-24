@@ -1,12 +1,17 @@
-PrivateClaw schafft einen privaten, Ende-zu-Ende-verschlüsselten Kanal zwischen einem Nutzer und einer selbst gehosteten oder cloudbasierten OpenClaw-Instanz.
+Hearth Room ist der iPhone- und iPad-Client für PrivateClaw, ein Open-Source-Chatsystem mit Einladung, das Ihrem selbst gehosteten KI-Assistenten einen privaten, Ende-zu-Ende-verschlüsselten Raum für die Menschen gibt, denen Sie wirklich vertrauen.
 
-Treten Sie per Einmal-QR-Code bei, halten Sie den Relay-Server blind für Nachrichteninhalte und verlagern Sie sensible Gespräche aus öffentlichen Chats.
+So funktioniert es:
+- Die PrivateClaw-Desktopkomponente (kostenlos, Windows/macOS/Linux) läuft auf Ihrem eigenen Computer neben dem KI-Assistenten Ihrer Wahl, erstellt Räume und stellt einmalige QR-Einladungen aus.
+- Hearth Room tritt von Ihrem Telefon aus einem Raum bei: Einladung scannen (oder Einladungslink einfügen) und mit Ihrem Kreis und Ihrem Assistenten chatten. Fotos, Sprachnachrichten und Dateien bleiben im selben verschlüsselten Raum.
+- Das Relay leitet nur Chiffretext weiter und sieht nie Nachrichteninhalte. Kein Konto, keine Anmeldung.
 
 Funktionen:
-- Einmalige Einladungslinks scannen oder einfügen
-- Ende-zu-Ende-verschlüsselter Relay-Transport
-- Funktioniert mit Heimservern oder Cloud-Relays
-- Für private OpenClaw-Unterhaltungen entwickelt
-- Leichter und sicherer Sitzungsfluss
+- Beitritt per Scan oder eingefügtem Einladungslink
+- Ende-zu-Ende-verschlüsselter Transport über das Relay
+- Gruppenräume mit den Menschen Ihrer Wahl
+- Funktioniert mit eigenen Relay-Servern zu Hause oder in der Cloud
+- Slash-Befehle, Medien und Teilnehmerstatus
 
-Push notifications are only available out of the box on the official relay `relay.privateclaw.us`. If you switch to a custom relay, wire the relay and app build to your own Firebase / FCM project.
+Hearth Room braucht einen PrivateClaw-Raum, mit dem es sich verbinden kann. Die Desktopkomponente ist kostenlos und Open Source: https://github.com/topcheer/PrivateClaw (die Windows-App gibt es im Microsoft Store).
+
+Push-Benachrichtigungen sind ab Werk nur über das offizielle Relay relay.privateclaw.us verfügbar. Bei einem eigenen Relay verbinden Sie Relay und App-Build mit Ihrem eigenen Firebase-/FCM-Projekt.

@@ -1,1 +1,1 @@
-privat,verschlüsselt,KI-Chat,OpenClaw,Relay,QR,self-hosted
+privateclaw,hearth,verschlüsselt,KI-Chat,Relay,QR,self-hosted,sicherer Chat,gruppenchat

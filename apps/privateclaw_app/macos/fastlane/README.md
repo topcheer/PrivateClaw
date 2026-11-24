@@ -31,6 +31,14 @@ Build an App Store signed macOS package for PrivateClaw
 
 Upload localized macOS metadata only
 
+### mac upload_build
+
+```sh
+[bundle exec] fastlane mac upload_build
+```
+
+Upload the built pkg (and metadata) to App Store Connect without submitting for review
+
 ### mac upload_release
 
 ```sh

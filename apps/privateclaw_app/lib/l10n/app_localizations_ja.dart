@@ -15,6 +15,12 @@ class AppLocalizationsJa extends AppLocalizations {
   String get disconnectTooltip => '切断';
 
   @override
+  String get disconnectConfirmTitle => 'この部屋を退出しますか？';
+
+  @override
+  String get disconnectConfirmBody => '戻るには新しい招待が必要で、この端末のメッセージは消去されます。';
+
+  @override
   String get entryTitle => 'ワンタイムのプライベートセッション';
 
   @override
@@ -67,10 +73,23 @@ class AppLocalizationsJa extends AppLocalizations {
       'セッションの接続が完了すると、エンドツーエンドで暗号化されたチャットがここに表示されます。';
 
   @override
+  String get emptyStateTitle => '最初の招待をスキャンしよう';
+
+  @override
+  String get emptyStateBody =>
+      '部屋はコンピューター上の PrivateClaw で作成します。そこで /privateclaw を実行し、表示されるワンタイム QR コードをスキャンするか、上に招待リンクを貼り付けてください。';
+
+  @override
+  String get getPrivateClawButton => 'デスクトップ版 PrivateClaw を入手';
+
+  @override
   String get sendHintActive => '暗号化メッセージを送信…';
 
   @override
   String get sendHintInactive => 'セッション接続の完了を待っています…';
+
+  @override
+  String get sendHintIdle => '部屋に参加するとチャットを始められます…';
 
   @override
   String get sendTooltip => '送信';

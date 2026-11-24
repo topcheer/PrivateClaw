@@ -15,6 +15,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get disconnectTooltip => 'Disconnect';
 
   @override
+  String get disconnectConfirmTitle => 'Leave this room?';
+
+  @override
+  String get disconnectConfirmBody =>
+      'You will need a new invite to come back, and the messages on this device will be cleared.';
+
+  @override
   String get entryTitle => 'One-time private session';
 
   @override
@@ -68,10 +75,23 @@ class AppLocalizationsEn extends AppLocalizations {
       'End-to-end encrypted chat will appear here after the session connects.';
 
   @override
+  String get emptyStateTitle => 'Scan your first invite';
+
+  @override
+  String get emptyStateBody =>
+      'Rooms are created by PrivateClaw on your computer. Run /privateclaw there, then scan the one-time QR code it shows, or paste the invite link above.';
+
+  @override
+  String get getPrivateClawButton => 'Get PrivateClaw for desktop';
+
+  @override
   String get sendHintActive => 'Send an encrypted message…';
 
   @override
   String get sendHintInactive => 'Wait for the session to finish connecting…';
+
+  @override
+  String get sendHintIdle => 'Join a room to start chatting…';
 
   @override
   String get sendTooltip => 'Send';

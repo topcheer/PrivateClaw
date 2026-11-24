@@ -15,6 +15,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get disconnectTooltip => '断开连接';
 
   @override
+  String get disconnectConfirmTitle => '离开这个房间？';
+
+  @override
+  String get disconnectConfirmBody => '返回需要新的邀请，本设备上的消息将被清除。';
+
+  @override
   String get entryTitle => '一次性私有会话入口';
 
   @override
@@ -65,10 +71,23 @@ class AppLocalizationsZh extends AppLocalizations {
   String get encryptedChatPlaceholder => '会话连接成功后，这里会显示端到端加密的聊天记录。';
 
   @override
+  String get emptyStateTitle => '扫描你的第一个邀请';
+
+  @override
+  String get emptyStateBody =>
+      '房间由电脑上的 PrivateClaw 创建。在那里运行 /privateclaw，扫描它显示的一次性二维码，或把邀请链接粘贴到上方。';
+
+  @override
+  String get getPrivateClawButton => '获取电脑版 PrivateClaw';
+
+  @override
   String get sendHintActive => '发送加密消息…';
 
   @override
   String get sendHintInactive => '等待会话完成连接…';
+
+  @override
+  String get sendHintIdle => '加入房间后即可开始聊天…';
 
   @override
   String get sendTooltip => '发送';
@@ -328,6 +347,12 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
   String get disconnectTooltip => '中斷連線';
 
   @override
+  String get disconnectConfirmTitle => '離開這個房間？';
+
+  @override
+  String get disconnectConfirmBody => '返回需要新的邀請，此裝置上的訊息將被清除。';
+
+  @override
   String get entryTitle => '一次性私密會話入口';
 
   @override
@@ -378,10 +403,23 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
   String get encryptedChatPlaceholder => '會話連線成功後，這裡會顯示端對端加密的聊天內容。';
 
   @override
+  String get emptyStateTitle => '掃描你的第一個邀請';
+
+  @override
+  String get emptyStateBody =>
+      '房間由電腦上的 PrivateClaw 建立。在那裡執行 /privateclaw，掃描它顯示的一次性 QR 碼，或把邀請連結貼到上方。';
+
+  @override
+  String get getPrivateClawButton => '取得電腦版 PrivateClaw';
+
+  @override
   String get sendHintActive => '傳送加密訊息…';
 
   @override
   String get sendHintInactive => '等待會話完成連線…';
+
+  @override
+  String get sendHintIdle => '加入房間後即可開始聊天…';
 
   @override
   String get sendTooltip => '傳送';

@@ -2,6 +2,8 @@
   "@@locale": "pt",
   "appTitle": "Hearth Room",
   "disconnectTooltip": "Desconectar",
+  "disconnectConfirmTitle": "Sair desta sala?",
+  "disconnectConfirmBody": "Você precisará de um novo convite para voltar, e as mensagens neste dispositivo serão apagadas.",
   "entryTitle": "Sessão privada de uso único",
   "inviteInputLabel": "Link de convite ou conteúdo do QR",
   "inviteInputHint": "privateclaw://connect?payload=...",
@@ -22,8 +24,12 @@
     }
   },
   "encryptedChatPlaceholder": "O chat com criptografia de ponta a ponta aparecerá aqui quando a sessão se conectar.",
+  "emptyStateTitle": "Escaneie seu primeiro convite",
+  "emptyStateBody": "As salas são criadas pelo PrivateClaw no seu computador. Execute /privateclaw lá e escaneie o código QR de uso único exibido, ou cole o link de convite acima.",
+  "getPrivateClawButton": "Obter PrivateClaw para desktop",
   "sendHintActive": "Enviar mensagem criptografada…",
   "sendHintInactive": "Aguarde a sessão terminar de se conectar…",
+  "sendHintIdle": "Entre em uma sala para começar a conversar…",
   "sendTooltip": "Enviar",
   "sendFailed": "Falha no envio: {error}",
   "@sendFailed": {

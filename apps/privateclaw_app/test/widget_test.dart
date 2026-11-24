@@ -293,8 +293,10 @@ void main() {
         find.byKey(const ValueKey<String>('composer-file-button')),
       );
       await tester.pump();
+      // No room has been joined yet, so the status nudges toward joining
+      // instead of claiming a session is still connecting.
       expect(
-        find.text('Wait for the session to finish connecting…'),
+        find.text('Join a room to start chatting…'),
         findsWidgets,
       );
     },

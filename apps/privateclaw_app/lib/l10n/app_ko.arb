@@ -2,6 +2,8 @@
   "@@locale": "ko",
   "appTitle": "Hearth Room",
   "disconnectTooltip": "연결 끊기",
+  "disconnectConfirmTitle": "이 방에서 나갈까요?",
+  "disconnectConfirmBody": "다시 들어오려면 새 초대가 필요하며 이 기기의 메시지는 지워집니다.",
   "entryTitle": "일회성 비공개 세션",
   "inviteInputLabel": "초대 링크 또는 QR 페이로드",
   "inviteInputHint": "privateclaw://connect?payload=...",
@@ -22,8 +24,12 @@
     }
   },
   "encryptedChatPlaceholder": "세션이 연결되면 종단간 암호화된 대화가 여기에 표시됩니다.",
+  "emptyStateTitle": "첫 초대를 스캔하세요",
+  "emptyStateBody": "방은 컴퓨터의 PrivateClaw에서 만듭니다. 거기서 /privateclaw를 실행한 뒤 표시된 일회용 QR 코드를 스캔하거나 위에 초대 링크를 붙여넣으세요.",
+  "getPrivateClawButton": "데스크톱용 PrivateClaw 받기",
   "sendHintActive": "암호화된 메시지 보내기…",
   "sendHintInactive": "세션 연결이 완료되기를 기다리는 중…",
+  "sendHintIdle": "방에 참여하면 채팅을 시작할 수 있습니다…",
   "sendTooltip": "보내기",
   "sendFailed": "전송 실패: {error}",
   "@sendFailed": {

@@ -2,6 +2,8 @@
   "@@locale": "vi",
   "appTitle": "Hearth Room",
   "disconnectTooltip": "Ngắt kết nối",
+  "disconnectConfirmTitle": "Rời khỏi phòng này?",
+  "disconnectConfirmBody": "Bạn sẽ cần lời mời mới để quay lại và các tin nhắn trên thiết bị này sẽ bị xóa.",
   "entryTitle": "Phiên riêng tư dùng một lần",
   "inviteInputLabel": "Liên kết mời hoặc nội dung QR",
   "inviteInputHint": "privateclaw://connect?payload=...",
@@ -22,8 +24,12 @@
     }
   },
   "encryptedChatPlaceholder": "Đoạn chat được mã hóa đầu cuối sẽ xuất hiện ở đây sau khi phiên kết nối.",
+  "emptyStateTitle": "Quét lời mời đầu tiên",
+  "emptyStateBody": "Phòng được tạo bởi PrivateClaw trên máy tính của bạn. Chạy /privateclaw ở đó rồi quét mã QR dùng một lần được hiển thị, hoặc dán liên kết mời ở trên.",
+  "getPrivateClawButton": "Tải PrivateClaw cho máy tính",
   "sendHintActive": "Gửi tin nhắn được mã hóa…",
   "sendHintInactive": "Chờ phiên hoàn tất kết nối…",
+  "sendHintIdle": "Tham gia phòng để bắt đầu trò chuyện…",
   "sendTooltip": "Gửi",
   "sendFailed": "Gửi thất bại: {error}",
   "@sendFailed": {

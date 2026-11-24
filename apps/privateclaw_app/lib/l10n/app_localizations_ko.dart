@@ -15,6 +15,12 @@ class AppLocalizationsKo extends AppLocalizations {
   String get disconnectTooltip => '연결 끊기';
 
   @override
+  String get disconnectConfirmTitle => '이 방에서 나갈까요?';
+
+  @override
+  String get disconnectConfirmBody => '다시 들어오려면 새 초대가 필요하며 이 기기의 메시지는 지워집니다.';
+
+  @override
   String get entryTitle => '일회성 비공개 세션';
 
   @override
@@ -66,10 +72,23 @@ class AppLocalizationsKo extends AppLocalizations {
   String get encryptedChatPlaceholder => '세션이 연결되면 종단간 암호화된 대화가 여기에 표시됩니다.';
 
   @override
+  String get emptyStateTitle => '첫 초대를 스캔하세요';
+
+  @override
+  String get emptyStateBody =>
+      '방은 컴퓨터의 PrivateClaw에서 만듭니다. 거기서 /privateclaw를 실행한 뒤 표시된 일회용 QR 코드를 스캔하거나 위에 초대 링크를 붙여넣으세요.';
+
+  @override
+  String get getPrivateClawButton => '데스크톱용 PrivateClaw 받기';
+
+  @override
   String get sendHintActive => '암호화된 메시지 보내기…';
 
   @override
   String get sendHintInactive => '세션 연결이 완료되기를 기다리는 중…';
+
+  @override
+  String get sendHintIdle => '방에 참여하면 채팅을 시작할 수 있습니다…';
 
   @override
   String get sendTooltip => '보내기';

@@ -15,6 +15,13 @@ class AppLocalizationsEs extends AppLocalizations {
   String get disconnectTooltip => 'Desconectar';
 
   @override
+  String get disconnectConfirmTitle => '¿Salir de esta sala?';
+
+  @override
+  String get disconnectConfirmBody =>
+      'Necesitarás una nueva invitación para volver y los mensajes de este dispositivo se borrarán.';
+
+  @override
   String get entryTitle => 'Sesión privada de un solo uso';
 
   @override
@@ -68,11 +75,24 @@ class AppLocalizationsEs extends AppLocalizations {
       'El chat cifrado de extremo a extremo aparecerá aquí cuando la sesión se conecte.';
 
   @override
+  String get emptyStateTitle => 'Escanea tu primera invitación';
+
+  @override
+  String get emptyStateBody =>
+      'Las salas se crean con PrivateClaw en tu ordenador. Ejecuta /privateclaw ahí y escanea el código QR de un solo uso que muestra, o pega arriba el enlace de invitación.';
+
+  @override
+  String get getPrivateClawButton => 'Obtener PrivateClaw para escritorio';
+
+  @override
   String get sendHintActive => 'Enviar un mensaje cifrado…';
 
   @override
   String get sendHintInactive =>
       'Espera a que la sesión termine de conectarse…';
+
+  @override
+  String get sendHintIdle => 'Únete a una sala para empezar a chatear…';
 
   @override
   String get sendTooltip => 'Enviar';

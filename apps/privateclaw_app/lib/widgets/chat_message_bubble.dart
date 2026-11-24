@@ -214,7 +214,16 @@ class ChatMessageBubble extends StatelessWidget {
 
   String _formatMessageTimestamp(BuildContext context, DateTime value) {
     final Locale locale = Localizations.localeOf(context);
-    return DateFormat.yMd(locale.toString()).add_jm().format(value.toLocal());
+    final DateTime local = value.toLocal();
+    final DateTime now = DateTime.now();
+    final bool sameDay =
+        local.year == now.year && local.month == now.month && local.day == now.day;
+    // Today's messages only need the time; the full date is noise in a
+    // short-lived room and makes every bubble heavier than it needs to be.
+    final DateFormat format = sameDay
+        ? DateFormat.jm(locale.toString())
+        : DateFormat.yMd(locale.toString()).add_jm();
+    return format.format(local);
   }
 }
 

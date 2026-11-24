@@ -130,6 +130,18 @@ abstract class AppLocalizations {
   /// **'Disconnect'**
   String get disconnectTooltip;
 
+  /// Title of the confirmation dialog before leaving a room.
+  ///
+  /// In en, this message translates to:
+  /// **'Leave this room?'**
+  String get disconnectConfirmTitle;
+
+  /// Body of the confirmation dialog before leaving a room.
+  ///
+  /// In en, this message translates to:
+  /// **'You will need a new invite to come back, and the messages on this device will be cleared.'**
+  String get disconnectConfirmBody;
+
   /// No description provided for @entryTitle.
   ///
   /// In en, this message translates to:
@@ -226,6 +238,24 @@ abstract class AppLocalizations {
   /// **'End-to-end encrypted chat will appear here after the session connects.'**
   String get encryptedChatPlaceholder;
 
+  /// Title of the first-run empty state shown before a room is joined.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan your first invite'**
+  String get emptyStateTitle;
+
+  /// Explains where invites come from (PrivateClaw on the user's computer).
+  ///
+  /// In en, this message translates to:
+  /// **'Rooms are created by PrivateClaw on your computer. Run /privateclaw there, then scan the one-time QR code it shows, or paste the invite link above.'**
+  String get emptyStateBody;
+
+  /// Button in the first-run empty state that opens the PrivateClaw website.
+  ///
+  /// In en, this message translates to:
+  /// **'Get PrivateClaw for desktop'**
+  String get getPrivateClawButton;
+
   /// No description provided for @sendHintActive.
   ///
   /// In en, this message translates to:
@@ -237,6 +267,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Wait for the session to finish connecting…'**
   String get sendHintInactive;
+
+  /// Composer placeholder before any room has been joined.
+  ///
+  /// In en, this message translates to:
+  /// **'Join a room to start chatting…'**
+  String get sendHintIdle;
 
   /// No description provided for @sendTooltip.
   ///

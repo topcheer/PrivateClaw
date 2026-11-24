@@ -15,6 +15,13 @@ class AppLocalizationsVi extends AppLocalizations {
   String get disconnectTooltip => 'Ngắt kết nối';
 
   @override
+  String get disconnectConfirmTitle => 'Rời khỏi phòng này?';
+
+  @override
+  String get disconnectConfirmBody =>
+      'Bạn sẽ cần lời mời mới để quay lại và các tin nhắn trên thiết bị này sẽ bị xóa.';
+
+  @override
   String get entryTitle => 'Phiên riêng tư dùng một lần';
 
   @override
@@ -68,10 +75,23 @@ class AppLocalizationsVi extends AppLocalizations {
       'Đoạn chat được mã hóa đầu cuối sẽ xuất hiện ở đây sau khi phiên kết nối.';
 
   @override
+  String get emptyStateTitle => 'Quét lời mời đầu tiên';
+
+  @override
+  String get emptyStateBody =>
+      'Phòng được tạo bởi PrivateClaw trên máy tính của bạn. Chạy /privateclaw ở đó rồi quét mã QR dùng một lần được hiển thị, hoặc dán liên kết mời ở trên.';
+
+  @override
+  String get getPrivateClawButton => 'Tải PrivateClaw cho máy tính';
+
+  @override
   String get sendHintActive => 'Gửi tin nhắn được mã hóa…';
 
   @override
   String get sendHintInactive => 'Chờ phiên hoàn tất kết nối…';
+
+  @override
+  String get sendHintIdle => 'Tham gia phòng để bắt đầu trò chuyện…';
 
   @override
   String get sendTooltip => 'Gửi';

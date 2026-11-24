@@ -15,6 +15,13 @@ class AppLocalizationsAr extends AppLocalizations {
   String get disconnectTooltip => 'قطع الاتصال';
 
   @override
+  String get disconnectConfirmTitle => 'هل تريد مغادرة هذه الغرفة؟';
+
+  @override
+  String get disconnectConfirmBody =>
+      'ستحتاج إلى دعوة جديدة للعودة، وسيتم مسح الرسائل على هذا الجهاز.';
+
+  @override
   String get entryTitle => 'جلسة خاصة لمرة واحدة';
 
   @override
@@ -67,10 +74,23 @@ class AppLocalizationsAr extends AppLocalizations {
       'ستظهر هنا المحادثة المشفرة من الطرف إلى الطرف بعد اتصال الجلسة.';
 
   @override
+  String get emptyStateTitle => 'امسح دعوتك الأولى';
+
+  @override
+  String get emptyStateBody =>
+      'يُنشئ PrivateClaw الغرف على حاسوبك. شغّل /privateclaw هناك، ثم امسح رمز QR لمرة واحدة الذي يعرضه، أو الصق رابط الدعوة في الأعلى.';
+
+  @override
+  String get getPrivateClawButton => 'احصل على PrivateClaw لسطح المكتب';
+
+  @override
   String get sendHintActive => 'إرسال رسالة مشفرة…';
 
   @override
   String get sendHintInactive => 'انتظر حتى يكتمل اتصال الجلسة…';
+
+  @override
+  String get sendHintIdle => 'انضم إلى غرفة لبدء الدردشة…';
 
   @override
   String get sendTooltip => 'إرسال';

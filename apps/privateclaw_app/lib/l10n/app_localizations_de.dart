@@ -15,6 +15,13 @@ class AppLocalizationsDe extends AppLocalizations {
   String get disconnectTooltip => 'Trennen';
 
   @override
+  String get disconnectConfirmTitle => 'Diesen Raum verlassen?';
+
+  @override
+  String get disconnectConfirmBody =>
+      'Du brauchst eine neue Einladung, um zurückzukommen, und die Nachrichten auf diesem Gerät werden gelöscht.';
+
+  @override
   String get entryTitle => 'Einmalige private Sitzung';
 
   @override
@@ -69,10 +76,23 @@ class AppLocalizationsDe extends AppLocalizations {
       'Der Ende-zu-Ende-verschlüsselte Chat wird hier angezeigt, sobald die Sitzung verbunden ist.';
 
   @override
+  String get emptyStateTitle => 'Scanne deine erste Einladung';
+
+  @override
+  String get emptyStateBody =>
+      'Räume werden von PrivateClaw auf deinem Computer erstellt. Führe dort /privateclaw aus und scanne dann den angezeigten Einmal-QR-Code oder füge den Einladungslink oben ein.';
+
+  @override
+  String get getPrivateClawButton => 'PrivateClaw für den Desktop holen';
+
+  @override
   String get sendHintActive => 'Verschlüsselte Nachricht senden…';
 
   @override
   String get sendHintInactive => 'Warten Sie, bis die Sitzung verbunden ist…';
+
+  @override
+  String get sendHintIdle => 'Tritt einem Raum bei, um zu chatten…';
 
   @override
   String get sendTooltip => 'Senden';

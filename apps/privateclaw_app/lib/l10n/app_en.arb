@@ -2,6 +2,14 @@
   "@@locale": "en",
   "appTitle": "Hearth Room",
   "disconnectTooltip": "Disconnect",
+  "disconnectConfirmTitle": "Leave this room?",
+  "@disconnectConfirmTitle": {
+    "description": "Title of the confirmation dialog before leaving a room."
+  },
+  "disconnectConfirmBody": "You will need a new invite to come back, and the messages on this device will be cleared.",
+  "@disconnectConfirmBody": {
+    "description": "Body of the confirmation dialog before leaving a room."
+  },
   "entryTitle": "One-time private session",
   "inviteInputLabel": "Invite link or QR payload",
   "inviteInputHint": "privateclaw://connect?payload=...",
@@ -26,8 +34,24 @@
     }
   },
   "encryptedChatPlaceholder": "End-to-end encrypted chat will appear here after the session connects.",
+  "emptyStateTitle": "Scan your first invite",
+  "@emptyStateTitle": {
+    "description": "Title of the first-run empty state shown before a room is joined."
+  },
+  "emptyStateBody": "Rooms are created by PrivateClaw on your computer. Run /privateclaw there, then scan the one-time QR code it shows, or paste the invite link above.",
+  "@emptyStateBody": {
+    "description": "Explains where invites come from (PrivateClaw on the user's computer)."
+  },
+  "getPrivateClawButton": "Get PrivateClaw for desktop",
+  "@getPrivateClawButton": {
+    "description": "Button in the first-run empty state that opens the PrivateClaw website."
+  },
   "sendHintActive": "Send an encrypted message…",
   "sendHintInactive": "Wait for the session to finish connecting…",
+  "sendHintIdle": "Join a room to start chatting…",
+  "@sendHintIdle": {
+    "description": "Composer placeholder before any room has been joined."
+  },
   "sendTooltip": "Send",
   "sendFailed": "Send failed: {error}",
   "@sendFailed": {

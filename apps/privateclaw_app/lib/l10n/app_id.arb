@@ -2,6 +2,8 @@
   "@@locale": "id",
   "appTitle": "Hearth Room",
   "disconnectTooltip": "Putuskan",
+  "disconnectConfirmTitle": "Keluar dari ruang ini?",
+  "disconnectConfirmBody": "Kamu memerlukan undangan baru untuk kembali, dan pesan di perangkat ini akan dihapus.",
   "entryTitle": "Sesi privat sekali pakai",
   "inviteInputLabel": "Tautan undangan atau payload QR",
   "inviteInputHint": "privateclaw://connect?payload=...",
@@ -22,8 +24,12 @@
     }
   },
   "encryptedChatPlaceholder": "Chat terenkripsi end-to-end akan muncul di sini setelah sesi terhubung.",
+  "emptyStateTitle": "Pindai undangan pertamamu",
+  "emptyStateBody": "Ruang dibuat oleh PrivateClaw di komputermu. Jalankan /privateclaw di sana, lalu pindai kode QR sekali pakai yang ditampilkan, atau tempel tautan undangan di atas.",
+  "getPrivateClawButton": "Dapatkan PrivateClaw untuk desktop",
   "sendHintActive": "Kirim pesan terenkripsi…",
   "sendHintInactive": "Tunggu sesi selesai terhubung…",
+  "sendHintIdle": "Gabung ke ruang untuk mulai mengobrol…",
   "sendTooltip": "Kirim",
   "sendFailed": "Gagal mengirim: {error}",
   "@sendFailed": {

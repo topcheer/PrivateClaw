@@ -15,6 +15,13 @@ class AppLocalizationsId extends AppLocalizations {
   String get disconnectTooltip => 'Putuskan';
 
   @override
+  String get disconnectConfirmTitle => 'Keluar dari ruang ini?';
+
+  @override
+  String get disconnectConfirmBody =>
+      'Kamu memerlukan undangan baru untuk kembali, dan pesan di perangkat ini akan dihapus.';
+
+  @override
   String get entryTitle => 'Sesi privat sekali pakai';
 
   @override
@@ -68,10 +75,23 @@ class AppLocalizationsId extends AppLocalizations {
       'Chat terenkripsi end-to-end akan muncul di sini setelah sesi terhubung.';
 
   @override
+  String get emptyStateTitle => 'Pindai undangan pertamamu';
+
+  @override
+  String get emptyStateBody =>
+      'Ruang dibuat oleh PrivateClaw di komputermu. Jalankan /privateclaw di sana, lalu pindai kode QR sekali pakai yang ditampilkan, atau tempel tautan undangan di atas.';
+
+  @override
+  String get getPrivateClawButton => 'Dapatkan PrivateClaw untuk desktop';
+
+  @override
   String get sendHintActive => 'Kirim pesan terenkripsi…';
 
   @override
   String get sendHintInactive => 'Tunggu sesi selesai terhubung…';
+
+  @override
+  String get sendHintIdle => 'Gabung ke ruang untuk mulai mengobrol…';
 
   @override
   String get sendTooltip => 'Kirim';

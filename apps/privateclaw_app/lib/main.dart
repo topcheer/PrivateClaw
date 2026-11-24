@@ -327,6 +327,9 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       _messageController.text.trim().isNotEmpty ||
       _selectedAttachments.isNotEmpty;
   bool get _hasSessionSetup => _invite != null;
+  bool get _canSubmitInviteInput => _inviteController.text.trim().isNotEmpty;
+  String _inactiveComposerHint(AppLocalizations l10n) =>
+      _hasSessionSetup ? l10n.sendHintInactive : l10n.sendHintIdle;
   bool get _hasManagedSessionContext =>
       _invite != null &&
       (_hasConnectedSession ||
@@ -426,8 +429,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       !_isRenewingSession &&
       _showsSessionRenewPrompt;
 
-  double get _sessionRenewBannerRightInset =>
-      _canCollapsePairingPanel && _isPairingPanelCollapsed ? 56 : 16;
+  double get _sessionRenewBannerRightInset => 16;
 
   Widget _buildRelayServerInfo(BuildContext context) {
     final String? relayLabel = _currentRelayLabel;
@@ -850,6 +852,8 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
   void _handleInviteInputChanged(String nextText) {
     final String previousText = _previousInviteInputText;
     _previousInviteInputText = nextText;
+    // Keep the Join session button in sync with the invite input.
+    setState(() {});
     if (!_shouldAutoConnectInvitePaste(previousText, nextText)) {
       return;
     }
@@ -2069,6 +2073,33 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
 
   Future<void> _disconnect() async {
     final AppLocalizations l10n = AppLocalizations.of(context)!;
+    if (_hasManagedSessionContext) {
+      final bool? confirmed = await showDialog<bool>(
+        context: context,
+        builder: (BuildContext dialogContext) {
+          return AlertDialog(
+            key: const ValueKey<String>('disconnect-confirm-dialog'),
+            title: Text(l10n.disconnectConfirmTitle),
+            content: Text(l10n.disconnectConfirmBody),
+            actions: <Widget>[
+              TextButton(
+                key: const ValueKey<String>('disconnect-confirm-cancel'),
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: Text(l10n.relayWarningCancelButton),
+              ),
+              FilledButton(
+                key: const ValueKey<String>('disconnect-confirm-button'),
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: Text(l10n.disconnectTooltip),
+              ),
+            ],
+          );
+        },
+      );
+      if (confirmed != true || !mounted) {
+        return;
+      }
+    }
     await _cancelVoiceRecording(updateStatus: false);
     final PrivateClawSessionClient? client = _client;
     if (client != null) {
@@ -2294,7 +2325,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
   void _showInactiveComposerStatus() {
     final AppLocalizations l10n = AppLocalizations.of(context)!;
     setState(() {
-      _statusText = l10n.sendHintInactive;
+      _statusText = _inactiveComposerHint(l10n);
     });
   }
 
@@ -2830,6 +2861,10 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
         automaticallyImplyLeading: false,
         centerTitle: true,
         title: const PrivateClawAppBarIcon(),
+        actions: <Widget>[
+          if (_canCollapsePairingPanel && _isPairingPanelCollapsed)
+            _buildCollapsedSessionHandle(context, l10n),
+        ],
       ),
       body: GestureDetector(
         onTap: () {
@@ -3012,33 +3047,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     final ThemeData theme = Theme.of(context);
     final ColorScheme colorScheme = theme.colorScheme;
     if (_isPairingPanelCollapsed) {
-      return Positioned(
-        top: 20,
-        right: 0,
-        child: Tooltip(
-          message: l10n.sessionLabel,
-          child: Material(
-            color: colorScheme.primaryContainer,
-            elevation: 4,
-            borderRadius: const BorderRadius.horizontal(
-              left: Radius.circular(18),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: InkWell(
-              key: const ValueKey<String>('session-panel-handle'),
-              onTap: () {
-                setState(() {
-                  _isPairingPanelCollapsed = false;
-                });
-              },
-              child: const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 10, vertical: 16),
-                child: Icon(Icons.chevron_left),
-              ),
-            ),
-          ),
-        ),
-      );
+      return const SizedBox.shrink();
     }
 
     final double overlayWidth = MediaQuery.sizeOf(context).width > 420
@@ -3235,6 +3244,65 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     );
   }
 
+  /// AppBar pill that replaces the bare edge chevron: shows whether the room
+  /// is a group, how long it stays open, and opens the session panel on tap.
+  Widget _buildCollapsedSessionHandle(
+    BuildContext context,
+    AppLocalizations l10n,
+  ) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme colorScheme = theme.colorScheme;
+    final Duration? remaining = _sessionRemainingDuration;
+    final bool expiring = _showsSessionRenewPrompt;
+    final Color accent = expiring ? colorScheme.error : colorScheme.primary;
+    return Padding(
+      padding: const EdgeInsets.only(right: 12),
+      child: Tooltip(
+        message: l10n.sessionLabel,
+        child: Material(
+          color: expiring ? colorScheme.errorContainer : colorScheme.primaryContainer,
+          borderRadius: BorderRadius.circular(18),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            key: const ValueKey<String>('session-panel-handle'),
+            onTap: () {
+              setState(() {
+                _isPairingPanelCollapsed = false;
+              });
+            },
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(10, 8, 4, 8),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Icon(
+                    _invite?.groupMode == true
+                        ? Icons.groups_2_outlined
+                        : Icons.lock_outline,
+                    size: 18,
+                    color: accent,
+                  ),
+                  if (remaining != null) ...<Widget>[
+                    const SizedBox(width: 6),
+                    Text(
+                      _formatRemainingCompact(remaining),
+                      key: const ValueKey<String>('session-handle-remaining'),
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: accent,
+                      ),
+                    ),
+                  ],
+                  Icon(Icons.chevron_left, color: accent),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildPairingSection(BuildContext context, AppLocalizations l10n) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
@@ -3289,9 +3357,13 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
                   else
                     FilledButton.tonalIcon(
                       key: const ValueKey<String>('connect-session-button'),
-                      onPressed: () {
-                        unawaited(_connectFromInput(_inviteController.text));
-                      },
+                      onPressed: _canSubmitInviteInput
+                          ? () {
+                              unawaited(
+                                _connectFromInput(_inviteController.text),
+                              );
+                            }
+                          : null,
                       icon: const Icon(Icons.login),
                       label: Text(l10n.connectSessionButton),
                     ),
@@ -3358,6 +3430,9 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
 
   Widget _buildMessageList(AppLocalizations l10n) {
     if (_messages.isEmpty) {
+      if (!_hasSessionSetup) {
+        return _buildFirstRunEmptyState(context, l10n);
+      }
       return Center(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -3457,7 +3532,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
                         decoration: InputDecoration(
                           hintText: _canSend
                               ? l10n.sendHintActive
-                              : l10n.sendHintInactive,
+                              : _inactiveComposerHint(l10n),
                           border: InputBorder.none,
                           enabledBorder: InputBorder.none,
                           focusedBorder: InputBorder.none,
@@ -3775,7 +3850,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
                 title: l10n.composerFullscreenTitle,
                 hintText: _canSend
                     ? l10n.sendHintActive
-                    : l10n.sendHintInactive,
+                    : _inactiveComposerHint(l10n),
               );
             },
           ),
@@ -3836,6 +3911,66 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       return '${hours}h';
     }
     return '${hours}h ${minutes}m';
+  }
+
+  /// Compact form for the always-visible session handle: "7h", "28m", "40s".
+  String _formatRemainingCompact(Duration value) {
+    final Duration safeValue = value.isNegative ? Duration.zero : value;
+    if (safeValue.inHours > 0) {
+      return '${safeValue.inHours}h';
+    }
+    if (safeValue.inMinutes > 0) {
+      return '${safeValue.inMinutes}m';
+    }
+    return '${math.max(safeValue.inSeconds, 1)}s';
+  }
+
+  Widget _buildFirstRunEmptyState(
+    BuildContext context,
+    AppLocalizations l10n,
+  ) {
+    final ThemeData theme = Theme.of(context);
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+        child: Column(
+          key: const ValueKey<String>('empty-state-onboarding'),
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(
+              Icons.qr_code_scanner,
+              size: 48,
+              color: theme.colorScheme.primary,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              l10n.emptyStateTitle,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              l10n.emptyStateBody,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 16),
+            FilledButton.tonalIcon(
+              key: const ValueKey<String>('empty-state-get-privateclaw'),
+              onPressed: () {
+                unawaited(_openPrivateClawWebsite());
+              },
+              icon: const Icon(Icons.open_in_new, size: 18),
+              label: Text(l10n.getPrivateClawButton),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   String _nextSystemMessageId(String label) {

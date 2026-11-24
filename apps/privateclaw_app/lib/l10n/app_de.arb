@@ -2,6 +2,8 @@
   "@@locale": "de",
   "appTitle": "Hearth Room",
   "disconnectTooltip": "Trennen",
+  "disconnectConfirmTitle": "Diesen Raum verlassen?",
+  "disconnectConfirmBody": "Du brauchst eine neue Einladung, um zurückzukommen, und die Nachrichten auf diesem Gerät werden gelöscht.",
   "entryTitle": "Einmalige private Sitzung",
   "inviteInputLabel": "Einladungslink oder QR-Inhalt",
   "inviteInputHint": "privateclaw://connect?payload=...",
@@ -22,8 +24,12 @@
     }
   },
   "encryptedChatPlaceholder": "Der Ende-zu-Ende-verschlüsselte Chat wird hier angezeigt, sobald die Sitzung verbunden ist.",
+  "emptyStateTitle": "Scanne deine erste Einladung",
+  "emptyStateBody": "Räume werden von PrivateClaw auf deinem Computer erstellt. Führe dort /privateclaw aus und scanne dann den angezeigten Einmal-QR-Code oder füge den Einladungslink oben ein.",
+  "getPrivateClawButton": "PrivateClaw für den Desktop holen",
   "sendHintActive": "Verschlüsselte Nachricht senden…",
   "sendHintInactive": "Warten Sie, bis die Sitzung verbunden ist…",
+  "sendHintIdle": "Tritt einem Raum bei, um zu chatten…",
   "sendTooltip": "Senden",
   "sendFailed": "Senden fehlgeschlagen: {error}",
   "@sendFailed": {

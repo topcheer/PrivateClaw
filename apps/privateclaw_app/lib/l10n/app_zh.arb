@@ -2,6 +2,8 @@
   "@@locale": "zh",
   "appTitle": "Hearth Room",
   "disconnectTooltip": "断开连接",
+  "disconnectConfirmTitle": "离开这个房间？",
+  "disconnectConfirmBody": "返回需要新的邀请，本设备上的消息将被清除。",
   "entryTitle": "一次性私有会话入口",
   "inviteInputLabel": "邀请链接或二维码内容",
   "inviteInputHint": "privateclaw://connect?payload=...",
@@ -26,8 +28,12 @@
     }
   },
   "encryptedChatPlaceholder": "会话连接成功后，这里会显示端到端加密的聊天记录。",
+  "emptyStateTitle": "扫描你的第一个邀请",
+  "emptyStateBody": "房间由电脑上的 PrivateClaw 创建。在那里运行 /privateclaw，扫描它显示的一次性二维码，或把邀请链接粘贴到上方。",
+  "getPrivateClawButton": "获取电脑版 PrivateClaw",
   "sendHintActive": "发送加密消息…",
   "sendHintInactive": "等待会话完成连接…",
+  "sendHintIdle": "加入房间后即可开始聊天…",
   "sendTooltip": "发送",
   "sendFailed": "发送失败：{error}",
   "@sendFailed": {

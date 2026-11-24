@@ -15,6 +15,13 @@ class AppLocalizationsPt extends AppLocalizations {
   String get disconnectTooltip => 'Desconectar';
 
   @override
+  String get disconnectConfirmTitle => 'Sair desta sala?';
+
+  @override
+  String get disconnectConfirmBody =>
+      'Você precisará de um novo convite para voltar, e as mensagens neste dispositivo serão apagadas.';
+
+  @override
   String get entryTitle => 'Sessão privada de uso único';
 
   @override
@@ -68,10 +75,23 @@ class AppLocalizationsPt extends AppLocalizations {
       'O chat com criptografia de ponta a ponta aparecerá aqui quando a sessão se conectar.';
 
   @override
+  String get emptyStateTitle => 'Escaneie seu primeiro convite';
+
+  @override
+  String get emptyStateBody =>
+      'As salas são criadas pelo PrivateClaw no seu computador. Execute /privateclaw lá e escaneie o código QR de uso único exibido, ou cole o link de convite acima.';
+
+  @override
+  String get getPrivateClawButton => 'Obter PrivateClaw para desktop';
+
+  @override
   String get sendHintActive => 'Enviar mensagem criptografada…';
 
   @override
   String get sendHintInactive => 'Aguarde a sessão terminar de se conectar…';
+
+  @override
+  String get sendHintIdle => 'Entre em uma sala para começar a conversar…';
 
   @override
   String get sendTooltip => 'Enviar';
@@ -348,6 +368,13 @@ class AppLocalizationsPtBr extends AppLocalizationsPt {
   String get disconnectTooltip => 'Desconectar';
 
   @override
+  String get disconnectConfirmTitle => 'Sair desta sala?';
+
+  @override
+  String get disconnectConfirmBody =>
+      'Você precisará de um novo convite para voltar, e as mensagens neste dispositivo serão apagadas.';
+
+  @override
   String get entryTitle => 'Sessão privada de uso único';
 
   @override
@@ -389,10 +416,23 @@ class AppLocalizationsPtBr extends AppLocalizationsPt {
       'O chat com criptografia de ponta a ponta aparecerá aqui quando a sessão se conectar.';
 
   @override
+  String get emptyStateTitle => 'Escaneie seu primeiro convite';
+
+  @override
+  String get emptyStateBody =>
+      'As salas são criadas pelo PrivateClaw no seu computador. Execute /privateclaw lá e escaneie o código QR de uso único exibido, ou cole o link de convite acima.';
+
+  @override
+  String get getPrivateClawButton => 'Obter PrivateClaw para desktop';
+
+  @override
   String get sendHintActive => 'Enviar mensagem criptografada…';
 
   @override
   String get sendHintInactive => 'Aguarde a sessão terminar de se conectar…';
+
+  @override
+  String get sendHintIdle => 'Entre em uma sala para começar a conversar…';
 
   @override
   String get sendTooltip => 'Enviar';

@@ -15,6 +15,13 @@ class AppLocalizationsFr extends AppLocalizations {
   String get disconnectTooltip => 'Déconnecter';
 
   @override
+  String get disconnectConfirmTitle => 'Quitter ce salon ?';
+
+  @override
+  String get disconnectConfirmBody =>
+      'Il faudra une nouvelle invitation pour revenir, et les messages de cet appareil seront effacés.';
+
+  @override
   String get entryTitle => 'Session privée à usage unique';
 
   @override
@@ -68,11 +75,24 @@ class AppLocalizationsFr extends AppLocalizations {
       'Le chat chiffré de bout en bout apparaîtra ici une fois la session connectée.';
 
   @override
+  String get emptyStateTitle => 'Scannez votre première invitation';
+
+  @override
+  String get emptyStateBody =>
+      'Les salons sont créés par PrivateClaw sur votre ordinateur. Lancez /privateclaw là-bas, puis scannez le QR code à usage unique affiché, ou collez le lien d\'invitation ci-dessus.';
+
+  @override
+  String get getPrivateClawButton => 'Obtenir PrivateClaw pour ordinateur';
+
+  @override
   String get sendHintActive => 'Envoyer un message chiffré…';
 
   @override
   String get sendHintInactive =>
       'Patientez pendant la connexion de la session…';
+
+  @override
+  String get sendHintIdle => 'Rejoignez un salon pour commencer à discuter…';
 
   @override
   String get sendTooltip => 'Envoyer';

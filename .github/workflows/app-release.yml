@@ -275,11 +275,15 @@ jobs:
         working-directory: apps/privateclaw_app
         run: |
           set -euo pipefail
-          APP_PATH="build/macos/Build/Products/Release/PrivateClaw.app"
-          if [ ! -d "${APP_PATH}" ]; then
+          # The product name follows the store name (now "Hearth Room"), so
+          # locate the bundle instead of hard-coding PrivateClaw.app.
+          APP_PATH="$(find build/macos/Build/Products/Release -maxdepth 1 -type d -name '*.app' | head -n 1)"
+          if [ -z "${APP_PATH}" ] || [ ! -d "${APP_PATH}" ]; then
             echo "::error::macOS app bundle not found."
+            ls -la build/macos/Build/Products/Release || true
             exit 1
           fi
+          echo "Packaging ${APP_PATH}"
           STAGING_DIR="build/macos/dmg-staging"
           rm -rf "${STAGING_DIR}"
           mkdir -p "${STAGING_DIR}"

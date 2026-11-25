@@ -32,10 +32,12 @@ disconnect confirmation, timestamp format) plus one updated expectation in
 | The notification permission prompt appeared out of nowhere on first join. | A one-time explainer ("Get notified about replies", Enable / Not now) precedes the system prompt; the choice is persisted in `privateclaw_preferences.json`. | `_shouldShowNotificationExplainer`, `PrivateClawAppPreferences` |
 | Long rooms were a wall of bubbles, each repeating avatar and name. | Date separators (Today / Yesterday / date) and grouping: a follow-up from the same sender within two minutes hides its avatar and name. | `_buildMessageList`, `_isGroupedWithPrevious`, `ChatMessageBubble.groupedWithPrevious` |
 | On small screens / the connecting state the pairing card could overflow the column. | The card keeps its natural height up to 55% of the screen and scrolls internally beyond that. | `build` |
+| Before a room is joined the composer showed a row of greyed-out emoji / voice / photo / file / send buttons that could do nothing. | The whole row (and the expand button) is only built once a room is live; before that the composer is just the hint field ("Join a room to start chatting…"). During a first join it stays hidden, so there is never a tappable send button; after a live room drops it stays visible but disabled so the composer does not jump. | `_showsComposerActions`, `_buildComposer` (`composer-toolbar`) |
 
-Tests: 11 in `test/user_experience_test.dart` (expired invite, invalid invite, progress +
+Tests: 12 in `test/user_experience_test.dart` (expired invite, invalid invite, progress +
 cancel, humanized errors, reconnect with reason, notification explainer, date
-separators + grouping, plus the first-pass cases); full suite 81 green.
+separators + grouping, composer toolbar visibility, plus the first-pass cases);
+full suite 82 green.
 
 ## Next (needs a decision)
 
@@ -46,6 +48,6 @@ polish that only shows up with heavy use or on one platform.
 | # | Item | Priority | Why |
 | --- | --- | --- | --- |
 | 1 | **Session panel as a proper page on phones.** Replace the floating overlay (`_buildManagedSessionOverlay`: session id, expiry, relay, identity, members, four buttons) with a sheet/page split into Room / Members / Relay sections and a prominent "Renew" action. | **P1** | Every renewal currently depends on the banner or the `/renew-session` command; a dedicated page gives it a home. Workaround exists (banner), so not P0. |
-| 2 | **Composer affordances.** Hide the disabled emoji / voice / photo / file row before a room exists; show available slash commands as tappable chips above the composer instead of only inside the `/` sheet. | **P2** | Discoverability improvement; all features remain reachable today. |
+| 2 | **Slash command chips.** Show the available slash commands as tappable chips above the composer instead of only inside the `/` sheet. (Hiding the disabled composer row before a room exists shipped in the second pass.) | **P2** | Discoverability improvement; all commands remain reachable today. |
 | 3 | **Desktop.** Keyboard-shortcut help (Cmd+Enter to send, Cmd+K for commands); widen/center the message column (bubbles cap at ~480 px, leaving the right of a macOS window empty). | **P2** | Single-platform layout polish; no functional gap. |
 | 4 | **Store assets.** The screenshots shipped with 0.1.20 predate these changes; rerun `python3 scripts/build-store-screenshots.py` before the next release so the listing shows the onboarding state and the session pill. | **P2** | Release hygiene rather than in-app UX; must be done before the next submission but changes no code. |

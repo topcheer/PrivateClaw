@@ -146,13 +146,13 @@ PrivateClawUrlLauncher privateClawWebsiteLauncher =
 PrivateClawActiveSessionStoreFactory privateClawActiveSessionStoreFactory =
     () => const PrivateClawActiveSessionStore();
 
-PrivateClawAppPreferencesFactory privateClawAppPreferencesFactory =
-    () => const PrivateClawAppPreferences();
+PrivateClawAppPreferencesFactory privateClawAppPreferencesFactory = () =>
+    const PrivateClawAppPreferences();
 
 /// Whether this build can show notifications at all; the permission explainer
 /// is only worth showing when the system prompt will follow.
-bool Function() privateClawNotificationsExplainerEnabled =
-    () => PrivateClawNotificationService.instance.isConfigured;
+bool Function() privateClawNotificationsExplainerEnabled = () =>
+    PrivateClawNotificationService.instance.isConfigured;
 
 PrivateClawIdentityStoreFactory privateClawIdentityStoreFactory = () =>
     const PrivateClawIdentityStore();
@@ -296,6 +296,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
   StreamSubscription<PrivateClawSessionEvent>? _clientSubscription;
   PrivateClawSessionStatus _sessionStatus = PrivateClawSessionStatus.idle;
   String _statusText = '';
+
   /// Human-readable reason of the last connect failure, kept on screen while
   /// the client retries so the user knows why nothing is happening.
   String? _lastConnectErrorText;
@@ -337,6 +338,12 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
   String? _inFlightConnectInput;
 
   bool get _canSend => _sessionStatus == PrivateClawSessionStatus.active;
+
+  /// The emoji / voice / photo / file / send row and the expand button only
+  /// exist once a room is live. Before that the composer is just the hint
+  /// field; during a reconnect of a live room they stay (disabled).
+  bool get _showsComposerActions =>
+      _canSend || (_hasConnectedSession && _hasLiveSessionContext);
   bool get _hasPendingReply =>
       _messages.any((ChatMessage message) => message.isPending);
   bool get _hasDraftContent =>
@@ -344,6 +351,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       _selectedAttachments.isNotEmpty;
   bool get _hasSessionSetup => _invite != null;
   bool get _canSubmitInviteInput => _inviteController.text.trim().isNotEmpty;
+
   /// Fresh joins and reconnects: the status panel shows progress + Cancel.
   bool get _isConnectingPhase =>
       _sessionStatus == PrivateClawSessionStatus.connecting ||
@@ -3343,7 +3351,9 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       child: Tooltip(
         message: l10n.sessionLabel,
         child: Material(
-          color: expiring ? colorScheme.errorContainer : colorScheme.primaryContainer,
+          color: expiring
+              ? colorScheme.errorContainer
+              : colorScheme.primaryContainer,
           borderRadius: BorderRadius.circular(18),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
@@ -3635,63 +3645,67 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
                     ),
                   ),
                   const SizedBox(width: 8),
-                  IconButton(
-                    key: const ValueKey<String>('composer-expand-button'),
-                    visualDensity: VisualDensity.compact,
-                    onPressed: _canSend ? _openFullscreenComposer : null,
-                    icon: const Icon(Icons.open_in_full),
-                    tooltip: l10n.composerExpandTooltip,
-                  ),
+                  if (_showsComposerActions)
+                    IconButton(
+                      key: const ValueKey<String>('composer-expand-button'),
+                      visualDensity: VisualDensity.compact,
+                      onPressed: _canSend ? _openFullscreenComposer : null,
+                      icon: const Icon(Icons.open_in_full),
+                      tooltip: l10n.composerExpandTooltip,
+                    ),
                 ],
               ),
             ),
           ),
-          const SizedBox(height: 10),
-          Row(
-            children: <Widget>[
-              _buildComposerActionButton(
-                key: const ValueKey<String>('emoji-picker-button'),
-                icon: Icons.emoji_emotions_outlined,
-                tooltip: l10n.emojiPickerTooltip,
-                isActive: _isEmojiPickerVisible,
-                onPressed: _canSend ? _openEmojiPicker : null,
-              ),
-              if (_supportsVoiceRecording) ...<Widget>[
+          if (_showsComposerActions) ...<Widget>[
+            const SizedBox(height: 10),
+            Row(
+              key: const ValueKey<String>('composer-toolbar'),
+              children: <Widget>[
+                _buildComposerActionButton(
+                  key: const ValueKey<String>('emoji-picker-button'),
+                  icon: Icons.emoji_emotions_outlined,
+                  tooltip: l10n.emojiPickerTooltip,
+                  isActive: _isEmojiPickerVisible,
+                  onPressed: _canSend ? _openEmojiPicker : null,
+                ),
+                if (_supportsVoiceRecording) ...<Widget>[
+                  const SizedBox(width: 8),
+                  _buildVoiceComposerButton(l10n),
+                ],
                 const SizedBox(width: 8),
-                _buildVoiceComposerButton(l10n),
+                _buildComposerActionButton(
+                  key: const ValueKey<String>('composer-photo-button'),
+                  icon: Icons.photo_library_outlined,
+                  tooltip: l10n.photoTrayTooltip,
+                  isActive: _supportsRecentPhotoTray && _isPhotoTrayVisible,
+                  isEnabled: _canSend,
+                  onPressed: _handlePhotoComposerButtonPressed,
+                ),
+                const SizedBox(width: 8),
+                _buildComposerActionButton(
+                  key: const ValueKey<String>('composer-file-button'),
+                  icon: Icons.attach_file,
+                  tooltip: l10n.filePickerTooltip,
+                  isEnabled: _canSend,
+                  onPressed: _handleFileComposerButtonPressed,
+                ),
+                const Spacer(),
+                IconButton.filled(
+                  key: const ValueKey<String>('composer-send-button'),
+                  onPressed: _canSend && _hasDraftContent ? _sendMessage : null,
+                  icon: _hasPendingReply
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.arrow_upward_rounded),
+                  tooltip: l10n.sendTooltip,
+                ),
               ],
-              const SizedBox(width: 8),
-              _buildComposerActionButton(
-                key: const ValueKey<String>('composer-photo-button'),
-                icon: Icons.photo_library_outlined,
-                tooltip: l10n.photoTrayTooltip,
-                isActive: _supportsRecentPhotoTray && _isPhotoTrayVisible,
-                isEnabled: _canSend,
-                onPressed: _handlePhotoComposerButtonPressed,
-              ),
-              const SizedBox(width: 8),
-              _buildComposerActionButton(
-                key: const ValueKey<String>('composer-file-button'),
-                icon: Icons.attach_file,
-                tooltip: l10n.filePickerTooltip,
-                isEnabled: _canSend,
-                onPressed: _handleFileComposerButtonPressed,
-              ),
-              const Spacer(),
-              IconButton.filled(
-                key: const ValueKey<String>('composer-send-button'),
-                onPressed: _canSend && _hasDraftContent ? _sendMessage : null,
-                icon: _hasPendingReply
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.arrow_upward_rounded),
-                tooltip: l10n.sendTooltip,
-              ),
-            ],
-          ),
+            ),
+          ],
         ],
       ),
     );
@@ -4047,16 +4061,16 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       return l10n.connectErrorRefused(relay);
     }
     if (lower.contains('socketexception') ||
-      lower.contains('failed host lookup') ||
-      lower.contains('nodename') ||
-      lower.contains('unreachable') ||
-      lower.contains('no route') ||
-      lower.contains('network')) {
+        lower.contains('failed host lookup') ||
+        lower.contains('nodename') ||
+        lower.contains('unreachable') ||
+        lower.contains('no route') ||
+        lower.contains('network')) {
       return l10n.connectErrorNetwork(relay);
     }
     if (lower.contains('timeout') ||
-      lower.contains('timed out') ||
-      lower.contains('websocket')) {
+        lower.contains('timed out') ||
+        lower.contains('websocket')) {
       return l10n.connectErrorTimeout(relay);
     }
     final String trimmed = raw.length > 120 ? '${raw.substring(0, 120)}…' : raw;
@@ -4073,14 +4087,19 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
         (lower.contains('expire') && !lower.contains('socket'))) {
       return l10n.connectErrorSessionExpired;
     }
-    if (lower.contains('unknown_session') || lower.contains('session_not_found')) {
+    if (lower.contains('unknown_session') ||
+        lower.contains('session_not_found')) {
       return l10n.connectErrorSessionNotFound;
     }
     if ((lower.contains('invalid') || lower.contains('bad')) &&
-        (lower.contains('key') || lower.contains('auth') || lower.contains('token'))) {
+        (lower.contains('key') ||
+            lower.contains('auth') ||
+            lower.contains('token'))) {
       return l10n.connectErrorInvalidKey;
     }
-    if (lower.contains('rate_limited') || lower.contains('rate limited') || lower.contains('429')) {
+    if (lower.contains('rate_limited') ||
+        lower.contains('rate limited') ||
+        lower.contains('429')) {
       return l10n.connectErrorRateLimited;
     }
     return null;
@@ -4146,10 +4165,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
   }
 
   /// Relay → Handshake → Joined, with a way out while the relay is slow.
-  Widget _buildConnectionProgress(
-    BuildContext context,
-    AppLocalizations l10n,
-  ) {
+  Widget _buildConnectionProgress(BuildContext context, AppLocalizations l10n) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme colorScheme = theme.colorScheme;
     final int current = _connectStepIndex;
@@ -4194,7 +4210,11 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
                   spacing: 6,
                   runSpacing: 4,
                   children: <Widget>[
-                    for (int index = 0; index < steps.length; index += 1) ...<Widget>[
+                    for (
+                      int index = 0;
+                      index < steps.length;
+                      index += 1
+                    ) ...<Widget>[
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: <Widget>[
@@ -4299,7 +4319,9 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
         key: ValueKey<String>('date-separator-$label'),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.7),
+          color: theme.colorScheme.surfaceContainerHighest.withValues(
+            alpha: 0.7,
+          ),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Text(
@@ -4366,10 +4388,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     );
   }
 
-  Widget _buildFirstRunEmptyState(
-    BuildContext context,
-    AppLocalizations l10n,
-  ) {
+  Widget _buildFirstRunEmptyState(BuildContext context, AppLocalizations l10n) {
     final ThemeData theme = Theme.of(context);
     return Center(
       child: SingleChildScrollView(

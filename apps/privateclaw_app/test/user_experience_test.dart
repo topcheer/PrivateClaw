@@ -622,6 +622,127 @@ void main() {
     expect(find.textContaining('SocketException'), findsNothing);
   });
 
+  testWidgets('composer toolbar only exists once a room is live', (
+    WidgetTester tester,
+  ) async {
+    final List<String> toolbarKeys = <String>[
+      'emoji-picker-button',
+      'voice-record-button',
+      'composer-photo-button',
+      'composer-file-button',
+      'composer-expand-button',
+      'composer-send-button',
+    ];
+    Finder toolbarFinder() =>
+        find.byKey(const ValueKey<String>('composer-toolbar'));
+
+    final _ScriptedSessionClient client = _ScriptedSessionClient(
+      _invite(),
+      identity: _JoinHarness._identity,
+    );
+    final _JoinHarness harness = _JoinHarness(client);
+    addTearDown(harness.restore);
+
+    await tester.pumpWidget(
+      const PrivateClawApp(
+        skipNotificationsInDebug: true,
+        screenshotConfig: StoreScreenshotConfig(localeOverride: Locale('en')),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // No room: the row is not built at all (not just greyed out).
+    expect(toolbarFinder(), findsNothing);
+    for (final String key in toolbarKeys) {
+      expect(find.byKey(ValueKey<String>(key)), findsNothing);
+    }
+    expect(
+      find.text('Join a room to start chatting…'),
+      findsWidgets,
+    );
+
+    // First join in progress: still hidden, so no tappable send button exists.
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('invite-input-field')),
+      encodePrivateClawInviteUri(_invite()),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(
+      find.byKey(const ValueKey<String>('session-connect-progress')),
+      findsOneWidget,
+    );
+    expect(toolbarFinder(), findsNothing);
+    expect(find.byKey(const ValueKey<String>('composer-send-button')), findsNothing);
+
+    // Live room: everything is there and enabled.
+    await tester.pumpWidget(
+      PrivateClawApp(
+        screenshotConfig: StoreScreenshotConfig(
+          previewData: screenshotPreviewDataForScenario(
+            'group_chat',
+            const Locale('en'),
+          ),
+          localeOverride: const Locale('en'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(toolbarFinder(), findsOneWidget);
+    for (final String key in toolbarKeys) {
+      expect(find.byKey(ValueKey<String>(key)), findsOneWidget);
+    }
+    IconButton sendButton = tester.widget<IconButton>(
+      find.byKey(const ValueKey<String>('composer-send-button')),
+    );
+    expect(sendButton.onPressed, isNull, reason: 'nothing typed yet');
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('composer-input-field')),
+      'hello',
+    );
+    await tester.pump();
+    sendButton = tester.widget<IconButton>(
+      find.byKey(const ValueKey<String>('composer-send-button')),
+    );
+    expect(sendButton.onPressed, isNotNull);
+
+    // Reconnecting after the room was live: the row stays (disabled) so the
+    // composer does not jump around.
+    await tester.pumpWidget(
+      PrivateClawApp(
+        screenshotConfig: StoreScreenshotConfig(
+          previewData: PrivateClawPreviewData(
+            status: PrivateClawSessionStatus.reconnecting,
+            statusText: 'Connecting to the relay…',
+            invite: _invite(),
+            identity: PrivateClawIdentity(
+              appId: 'app-me',
+              createdAt: DateTime.utc(2030, 1, 1),
+              displayName: 'Mei',
+            ),
+            isPairingPanelCollapsed: true,
+          ),
+          localeOverride: const Locale('en'),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(toolbarFinder(), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('composer-send-button')),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<IconButton>(
+            find.byKey(const ValueKey<String>('composer-send-button')),
+          )
+          .onPressed,
+      isNull,
+    );
+  });
+
   testWidgets('a first join that keeps retrying stays in the pairing card with its reason', (
     WidgetTester tester,
   ) async {

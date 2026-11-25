@@ -99,37 +99,64 @@ void main() {
       );
       expect(find.text('Scan QR code'), findsOneWidget);
       expect(find.text('Join session'), findsOneWidget);
-      expect(
-        find.byKey(const ValueKey<String>('composer-file-button')),
-        findsOneWidget,
-      );
-      expect(
-        find.byKey(const ValueKey<String>('voice-record-button')),
-        findsOneWidget,
-      );
-      expect(
-        find.byKey(const ValueKey<String>('emoji-picker-button')),
-        findsOneWidget,
-      );
-      expect(
-        find.byKey(const ValueKey<String>('composer-photo-button')),
-        findsOneWidget,
-      );
-      expect(
-        find.byKey(const ValueKey<String>('composer-expand-button')),
-        findsOneWidget,
-      );
-      expect(
-        find.byKey(const ValueKey<String>('composer-send-button')),
-        findsOneWidget,
-      );
       expect(find.text('privateclaw.us'), findsOneWidget);
 
-      final TextField composerField = tester.widget<TextField>(
+      // Before a room is live the composer is just the hint field: the
+      // emoji / voice / photo / file / send row is not rendered at all.
+      expect(
+        find.byKey(const ValueKey<String>('composer-toolbar')),
+        findsNothing,
+      );
+      for (final String key in <String>[
+        'composer-file-button',
+        'voice-record-button',
+        'emoji-picker-button',
+        'composer-photo-button',
+        'composer-expand-button',
+        'composer-send-button',
+      ]) {
+        expect(find.byKey(ValueKey<String>(key)), findsNothing);
+      }
+
+      TextField composerField = tester.widget<TextField>(
         find.byKey(const ValueKey<String>('composer-input-field')),
       );
       expect(composerField.minLines, 1);
       expect(composerField.maxLines, 4);
+      expect(composerField.enabled, isFalse);
+
+      // Once a room is live the full toolbar appears.
+      await tester.pumpWidget(
+        PrivateClawApp(
+          screenshotConfig: StoreScreenshotConfig(
+            previewData: screenshotPreviewDataForScenario(
+              'group_chat',
+              const Locale('en'),
+            ),
+            localeOverride: const Locale('en'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey<String>('composer-toolbar')),
+        findsOneWidget,
+      );
+      for (final String key in <String>[
+        'composer-file-button',
+        'voice-record-button',
+        'emoji-picker-button',
+        'composer-photo-button',
+        'composer-expand-button',
+        'composer-send-button',
+      ]) {
+        expect(find.byKey(ValueKey<String>(key)), findsOneWidget);
+      }
+      composerField = tester.widget<TextField>(
+        find.byKey(const ValueKey<String>('composer-input-field')),
+      );
+      expect(composerField.enabled, isTrue);
     },
   );
 
@@ -262,6 +289,30 @@ void main() {
 
       await tester.pumpWidget(const PrivateClawApp());
 
+      // No room yet: the attachment / voice row is hidden, not greyed out,
+      // and the hint says why.
+      expect(
+        find.byKey(const ValueKey<String>('composer-toolbar')),
+        findsNothing,
+      );
+      expect(
+        find.text('Join a room to start chatting…'),
+        findsWidgets,
+      );
+
+      await tester.pumpWidget(
+        PrivateClawApp(
+          screenshotConfig: StoreScreenshotConfig(
+            previewData: screenshotPreviewDataForScenario(
+              'group_chat',
+              const Locale('en'),
+            ),
+            localeOverride: const Locale('en'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
       expect(
         find.byKey(const ValueKey<String>('voice-record-button')),
         findsOneWidget,
@@ -279,25 +330,14 @@ void main() {
           tester,
           find.byKey(const ValueKey<String>('composer-photo-button')),
         ).opacity,
-        0.45,
+        1,
       );
       expect(
         _nearestOpacityFor(
           tester,
           find.byKey(const ValueKey<String>('composer-file-button')),
         ).opacity,
-        0.45,
-      );
-
-      await tester.tap(
-        find.byKey(const ValueKey<String>('composer-file-button')),
-      );
-      await tester.pump();
-      // No room has been joined yet, so the status nudges toward joining
-      // instead of claiming a session is still connecting.
-      expect(
-        find.text('Join a room to start chatting…'),
-        findsWidgets,
+        1,
       );
     },
   );
@@ -517,9 +557,10 @@ void main() {
     await tester.tap(find.text('Scan QR code').first);
     await tester.pumpAndSettle();
 
+    // Still no room: the composer row stays hidden after the scanner hint.
     expect(
       find.byKey(const ValueKey<String>('voice-record-button')),
-      findsOneWidget,
+      findsNothing,
     );
     expect(launchedScanner, isFalse);
     expect(
@@ -705,7 +746,18 @@ void main() {
       privateClawTargetPlatformResolver = originalResolver;
     });
 
-    await tester.pumpWidget(const PrivateClawApp());
+    await tester.pumpWidget(
+      PrivateClawApp(
+        screenshotConfig: StoreScreenshotConfig(
+          previewData: screenshotPreviewDataForScenario(
+            'group_chat',
+            const Locale('en'),
+          ),
+          localeOverride: const Locale('en'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
 
     final Finder voiceButton = find.byKey(
       const ValueKey<String>('voice-record-button'),
@@ -719,7 +771,7 @@ void main() {
           .message,
       'Tap to start recording',
     );
-    expect(_nearestOpacityFor(tester, voiceButton).opacity, 0.45);
+    expect(_nearestOpacityFor(tester, voiceButton).opacity, 1);
   });
 
   testWidgets('connection status page opens privateclaw.us', (

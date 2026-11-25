@@ -338,6 +338,16 @@ def status_bar(udid: str, clear: bool = False) -> None:
         "--cellularMode", "active", "--cellularBars", "4", "--batteryState", "discharging", "--batteryLevel", "100"])
 
 
+def retouch_ipad_status_bar(path: Path) -> None:
+    """iPad simulators print the real date next to the clock (no simctl override
+    for it); paint it over with the status bar colour so listings show only 9:41."""
+    shot = Image.open(path).convert("RGB")
+    width, height = shot.size
+    bg = shot.getpixel((int(width * 0.45), 20))
+    ImageDraw.Draw(shot).rectangle((int(width * 0.064), 8, int(width * 0.162), 58), fill=bg)
+    shot.save(path, optimize=True)
+
+
 def capture_ios(raw_dir: Path, locales: list[str], scenarios: list[tuple[str, str]]) -> None:
     app = APP_DIR / "build" / "ios" / "iphonesimulator" / "Runner.app"
     if not app.exists():
@@ -367,6 +377,8 @@ def capture_ios(raw_dir: Path, locales: list[str], scenarios: list[tuple[str, st
                 out = raw_dir / locale / f"{file_name}-{suffix}.png"
                 out.parent.mkdir(parents=True, exist_ok=True)
                 run(["xcrun", "simctl", "io", udid, "screenshot", str(out)])
+                if suffix == "ipad":
+                    retouch_ipad_status_bar(out)
                 print(f"captured {out.relative_to(raw_dir)}")
     for suffix, name in targets:
         (containers[suffix] / CONFIG_FILE_NAME).unlink(missing_ok=True)

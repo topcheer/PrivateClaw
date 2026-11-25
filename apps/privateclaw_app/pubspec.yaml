@@ -1,7 +1,7 @@
 name: privateclaw_app
 description: "PrivateClaw ephemeral encrypted chat client"
 publish_to: 'none'
-version: 0.1.20+70864491
+version: 0.1.21+70864491
 environment:
   sdk: ^3.10.7
 

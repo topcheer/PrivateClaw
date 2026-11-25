@@ -1,2 +1,4 @@
-Les réponses mêlant photos et fichiers sont plus fiables, et l’ouverture des pièces jointes a été améliorée.
-L’appairage, l’analyse des invitations et les messages de session sont désormais plus fluides.
+Premier lancement plus clair : l'app explique d'où viennent les invitations et guide vers le premier salon.
+La connexion affiche les étapes relai, négociation et rejoint avec Annuler ; les erreurs indiquent quoi faire ensuite.
+Les sessions ont un panneau dédié avec Renouvellement en un geste, temps restant visible et confirmation avant de quitter.
+Les messages d'un même expéditeur sont groupés et séparés par jour ; la zone de saisie ne propose que ce qui fonctionne.

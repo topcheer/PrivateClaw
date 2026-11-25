@@ -1,2 +1,4 @@
-Trả lời kèm cả ảnh và tệp nay ổn định hơn, đồng thời việc mở tệp đính kèm cũng được cải thiện.
-Ghép đôi, phân tích lời mời và thông báo phiên giờ đây mượt mà hơn.
+Lần mở đầu tiên rõ ràng hơn: ứng dụng giải thích lời mời đến từ đâu và dẫn bạn vào phòng đầu tiên.
+Khi tham gia hiển thị các bước relay, bắt tay, đã vào kèm nút Hủy; lỗi kết nối cho biết việc cần làm tiếp theo.
+Phiên có bảng riêng với Gia hạn một chạm, thời gian còn lại luôn hiển thị và xác nhận trước khi rời phòng.
+Tin nhắn cùng người gửi được gộp và ngăn cách theo ngày; ô soạn chỉ hiện những gì dùng được ngay.

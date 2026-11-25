@@ -1,2 +1,4 @@
-Mixed photo + file replies are more reliable, with better attachment delivery and opening.
-Pairing, invite parsing, and session feedback are smoother across the app and provider.
+A clearer first run: the app explains where invites come from and guides you to your first room.
+Joining shows relay, handshake and joined steps with a Cancel button, and connection errors explain what to do next.
+Sessions live in a dedicated panel with a one-tap Renew action, a visible remaining time, and a confirmation before leaving.
+Messages group runs from the same sender and separate days; the composer only offers what works right now.

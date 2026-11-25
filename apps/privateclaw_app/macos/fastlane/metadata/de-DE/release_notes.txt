@@ -1,2 +1,4 @@
-Antworten mit Fotos und Dateien zusammen sind jetzt zuverlässiger, ebenso das Öffnen von Anhängen.
-Pairing, Einladungslink-Erkennung und Sitzungshinweise laufen jetzt reibungsloser.
+Der erste Start ist klarer: Die App erklärt, wo Einladungen herkommen, und führt zum ersten Raum.
+Beim Beitritt werden Relay, Handshake und Beigetreten als Schritte angezeigt, mit Abbrechen; Verbindungsfehler sagen, was als Nächstes zu tun ist.
+Sitzungen liegen in einem eigenen Bereich mit Renew per Fingertipp, sichtbarer Restzeit und Bestätigung vor dem Verlassen.
+Nachrichten gleicher Absender werden gruppiert und nach Tagen getrennt; der Composer bietet nur, was gerade funktioniert.

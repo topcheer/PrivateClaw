@@ -1,2 +1,4 @@
-Balasan yang berisi foto dan file sekaligus kini lebih andal, dan membuka lampiran juga lebih baik.
-Proses pairing, parsing undangan, dan info sesi kini lebih mulus.
+Pembukaan pertama lebih jelas: aplikasi menjelaskan asal undangan dan memandu ke ruang pertama.
+Saat bergabung, langkah relay, handshake, dan bergabung ditampilkan dengan tombol Batal; galat koneksi menjelaskan langkah berikutnya.
+Sesi punya panel khusus dengan Perpanjang sekali ketuk, sisa waktu selalu terlihat, dan konfirmasi sebelum keluar.
+Pesan dari pengirim yang sama dikelompokkan dan dipisah per hari; komposer hanya menampilkan yang bisa dipakai sekarang.

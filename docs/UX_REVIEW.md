@@ -53,7 +53,7 @@ Cmd+Enter, plus the earlier cases); full suite 85 green.
 
 ## Next
 
-The roadmap from the first review is fully shipped. What remains is release work,
-not UX: regenerate the store screenshots (`python3 scripts/build-store-screenshots.py`)
-so the listing shows the current UI, and decide whether the iPad status-bar date
-(a simulator limitation) should be retouched or accepted.
+The roadmap from the first review is fully shipped. Store screenshots were
+regenerated for 0.1.21 from the real app (the iPad status-bar date, a simulator
+limitation, is now painted over by `retouch_ipad_status_bar`). Nothing is
+pending on the UX side.

@@ -1,2 +1,4 @@
-Las respuestas que combinan fotos y archivos son más fiables, y la apertura de adjuntos ha mejorado.
-El emparejamiento, el análisis de invitaciones y los avisos de sesión ahora son más fluidos.
+El primer arranque es más claro: la app explica de dónde vienen las invitaciones y guía hacia la primera sala.
+Al unirse se muestran los pasos relay, handshake y unido, con Cancelar; los errores de conexión indican qué hacer después.
+Las sesiones tienen un panel propio con Renovar en un toque, tiempo restante visible y confirmación antes de salir.
+Los mensajes del mismo remitente se agrupan y se separan por días; el compositor solo ofrece lo que funciona ahora.

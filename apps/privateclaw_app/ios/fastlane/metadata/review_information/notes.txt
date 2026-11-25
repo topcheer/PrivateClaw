@@ -24,3 +24,6 @@ https://github.com/topcheer/PrivateClaw/releases/download/review-demo/hearth-v1/
 The desktop component is free and open source: https://github.com/topcheer/PrivateClaw (Windows build on the Microsoft Store: https://apps.microsoft.com/detail/9P12LL1LT8RD). Privacy policy: https://privateclaw.us/privacy/
 
 If you would like a live invite for this build, reply through App Store Connect review messaging and we will provide a fresh one within a few hours (it can be made permanent for review).
+
+WHAT'S NEW IN 0.1.21
+This version refreshes the app's user experience only: a first-run guide, step-wise connection progress with Cancel, readable connection errors, a dedicated session panel with a Renew button, grouped messages with date separators, and a composer that only shows actions that work in the current state. No new account, purchase, data collection, or permission is involved.

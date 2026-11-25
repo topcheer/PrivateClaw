@@ -1,2 +1,4 @@
-Respostas com foto e arquivo juntos estão mais confiáveis, e a abertura de anexos foi melhorada.
-Pareamento, leitura de convites e avisos de sessão agora estão mais suaves.
+A primeira execução ficou mais clara: o app explica de onde vêm os convites e orienta até a primeira sala.
+Ao entrar, são exibidos os passos relay, handshake e entrou, com Cancelar; erros de conexão dizem o que fazer a seguir.
+As sessões têm um painel próprio com Renovar em um toque, tempo restante visível e confirmação antes de sair.
+Mensagens do mesmo remetente são agrupadas e separadas por dia; o compositor só oferece o que funciona agora.

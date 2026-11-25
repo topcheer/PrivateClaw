@@ -39,15 +39,21 @@ cancel, humanized errors, reconnect with reason, notification explainer, date
 separators + grouping, composer toolbar visibility, plus the first-pass cases);
 full suite 82 green.
 
-## Next (needs a decision)
+## Shipped in the third pass (remaining P1 + P2)
 
-Priority key: **P0** = users hit it on the normal path and it costs them a room or
-leaves them stuck; **P1** = felt every session, but there is a workaround; **P2** =
-polish that only shows up with heavy use or on one platform.
+| Problem | Change | Where |
+| --- | --- | --- |
+| The session panel was a floating overlay stacking session id, expiry, relay, identity, members and four buttons in one card; renewing depended on the expiring banner or typing `/renew-session`. | Sectioned panel page: **Room** (status, remaining time + absolute expiry, session id, relay, a prominent **Renew session** button whenever the command is available), **Members** (you + participant chips), **Actions** (scan, show QR, saved sessions, leave in error colour). Phones (< 600 px) get it as a drag-dismissable bottom sheet; wide screens keep the anchored overlay. Both render the same content. | `_buildSessionPanelContent`, `_showSessionSheet`, `_openSessionPanel` |
+| The notification explainer's "Not now" only closed the dialog and the system prompt still appeared; the copy said "iOS will ask" although macOS shows it too. | "Not now" skips the permission request for that join (the next join asks normally, the explainer is not repeated); copy is platform-neutral. | `_showNotificationExplainer`, `prepareForSession(requestPermission:)` |
+| Slash commands were only reachable through the `/` sheet. | Tappable slash chips above the composer (only once commands are known); tapping inserts the command and focuses the field. | `_buildComposer` (`slash-command-chips`), `_insertSlashCommand` |
+| On a 1440 px macOS window bubbles hugged the two edges with a ~480 px cap, leaving the middle empty; Cmd+Enter did nothing (only Ctrl+Enter was bound) and nothing told the user. | Message column centered at max 860 px on wide screens, bubbles up to 720 px; Cmd+Enter (plus Ctrl+Enter) sends on macOS; the toolbar shows "⌘⏎ to send" / "Ctrl+⏎ to send" on desktop widths. | `_buildMessageList`, `ChatMessageBubble`, `PrivateClawComposerSubmitShortcuts` |
 
-| # | Item | Priority | Why |
-| --- | --- | --- | --- |
-| 1 | **Session panel as a proper page on phones.** Replace the floating overlay (`_buildManagedSessionOverlay`: session id, expiry, relay, identity, members, four buttons) with a sheet/page split into Room / Members / Relay sections and a prominent "Renew" action. | **P1** | Every renewal currently depends on the banner or the `/renew-session` command; a dedicated page gives it a home. Workaround exists (banner), so not P0. |
-| 2 | **Slash command chips.** Show the available slash commands as tappable chips above the composer instead of only inside the `/` sheet. (Hiding the disabled composer row before a room exists shipped in the second pass.) | **P2** | Discoverability improvement; all commands remain reachable today. |
-| 3 | **Desktop.** Keyboard-shortcut help (Cmd+Enter to send, Cmd+K for commands); widen/center the message column (bubbles cap at ~480 px, leaving the right of a macOS window empty). | **P2** | Single-platform layout polish; no functional gap. |
-| 4 | **Store assets.** The screenshots shipped with 0.1.20 predate these changes; rerun `python3 scripts/build-store-screenshots.py` before the next release so the listing shows the onboarding state and the session pill. | **P2** | Release hygiene rather than in-app UX; must be done before the next submission but changes no code. |
+Tests: 15 in `test/user_experience_test.dart` (sheet page + Renew, slash chips,
+Cmd+Enter, plus the earlier cases); full suite 85 green.
+
+## Next
+
+The roadmap from the first review is fully shipped. What remains is release work,
+not UX: regenerate the store screenshots (`python3 scripts/build-store-screenshots.py`)
+so the listing shows the current UI, and decide whether the iPad status-bar date
+(a simulator limitation) should be retouched or accepted.

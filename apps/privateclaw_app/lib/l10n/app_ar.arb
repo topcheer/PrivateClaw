@@ -9,6 +9,9 @@
   "inviteInputHint": "privateclaw://connect?payload=...",
   "scanQrButton": "مسح رمز QR",
   "connectSessionButton": "الانضمام إلى الجلسة",
+  "sessionSectionRoom": "الغرفة",
+  "sessionSectionMembers": "الأعضاء",
+  "sessionSectionActions": "الإجراءات",
   "sessionLabel": "الجلسة",
   "expiresLabel": "ينتهي في",
   "initialStatus": "امسح رمز PrivateClaw QR أو الصق رابط الدعوة لبدء جلسة لمرة واحدة.",
@@ -199,6 +202,8 @@
       }
     }
   },
+  "sendShortcutHintMac": "⌘⏎ للإرسال",
+  "sendShortcutHintControl": "Ctrl+⏎ للإرسال",
   "composerExpandTooltip": "Expand editor",
   "composerFullscreenTitle": "Expanded composer",
   "emojiPickerFrequentTab": "Frequent",

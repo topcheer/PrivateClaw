@@ -48,6 +48,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get savedSessionsEmpty => '暂时还没有可切换的历史会话。';
 
   @override
+  String get sessionSectionRoom => '房间';
+
+  @override
+  String get sessionSectionMembers => '成员';
+
+  @override
+  String get sessionSectionActions => '操作';
+
+  @override
   String get sessionLabel => '会话';
 
   @override
@@ -353,6 +362,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get emojiPickerTitle => '常用表情';
 
   @override
+  String get sendShortcutHintMac => '⌘⏎ 发送';
+
+  @override
+  String get sendShortcutHintControl => 'Ctrl+⏎ 发送';
+
+  @override
   String get composerExpandTooltip => '展开编辑';
 
   @override
@@ -446,6 +461,15 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get savedSessionsEmpty => '暫時還沒有可切換的歷史會話。';
+
+  @override
+  String get sessionSectionRoom => '房間';
+
+  @override
+  String get sessionSectionMembers => '成員';
+
+  @override
+  String get sessionSectionActions => '操作';
 
   @override
   String get sessionLabel => '會話';
@@ -731,6 +755,12 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get emojiPickerTitle => '常用表情';
+
+  @override
+  String get sendShortcutHintMac => '⌘⏎ 傳送';
+
+  @override
+  String get sendShortcutHintControl => 'Ctrl+⏎ 傳送';
 
   @override
   String get composerExpandTooltip => '展開編輯';

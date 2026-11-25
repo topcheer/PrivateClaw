@@ -9,6 +9,9 @@
   "inviteInputHint": "privateclaw://connect?payload=...",
   "scanQrButton": "Quét mã QR",
   "connectSessionButton": "Tham gia phiên",
+  "sessionSectionRoom": "Phòng",
+  "sessionSectionMembers": "Thành viên",
+  "sessionSectionActions": "Thao tác",
   "sessionLabel": "Phiên",
   "expiresLabel": "Hết hạn",
   "initialStatus": "Quét mã QR PrivateClaw hoặc dán liên kết mời để bắt đầu một phiên dùng một lần.",
@@ -199,6 +202,8 @@
       }
     }
   },
+  "sendShortcutHintMac": "⌘⏎ để gửi",
+  "sendShortcutHintControl": "Ctrl+⏎ để gửi",
   "composerExpandTooltip": "Expand editor",
   "composerFullscreenTitle": "Expanded composer",
   "emojiPickerFrequentTab": "Frequent",

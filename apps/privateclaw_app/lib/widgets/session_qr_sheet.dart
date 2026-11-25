@@ -19,10 +19,9 @@ class SessionQrSheet extends StatelessWidget {
     final String expiresAt = DateFormat.yMd(
       locale.toString(),
     ).add_jm().format(invite.expiresAt.toLocal());
-    final double qrSize =
-        (MediaQuery.sizeOf(context).shortestSide - 96)
-            .clamp(220.0, 320.0)
-            .toDouble();
+    final double qrSize = (MediaQuery.sizeOf(context).shortestSide - 96)
+        .clamp(220.0, 320.0)
+        .toDouble();
 
     return SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(

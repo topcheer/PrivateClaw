@@ -14,6 +14,7 @@ import 'package:privateclaw_app/services/privateclaw_platform_utils.dart';
 import 'package:privateclaw_app/services/privateclaw_quick_actions.dart';
 import 'package:privateclaw_app/services/privateclaw_session_client.dart';
 import 'package:privateclaw_app/store_screenshot_preview.dart';
+import 'package:privateclaw_app/widgets/slash_commands_sheet.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'test_support/privateclaw_directory_overrides.dart';
@@ -948,7 +949,10 @@ void main() {
       expect(find.text('Scan QR code'), findsOneWidget);
       expect(find.text('Disconnect'), findsOneWidget);
       expect(find.text('relay.privateclaw.us'), findsOneWidget);
-      expect(find.text('privateclaw.us'), findsOneWidget);
+      // The website link belongs to the first-run card, not a live session.
+      expect(find.text('privateclaw.us'), findsNothing);
+      expect(find.text('Room'), findsOneWidget);
+      expect(find.text('Actions'), findsOneWidget);
       expect(
         find.byKey(const ValueKey<String>('session-disconnect-button')),
         findsOneWidget,
@@ -994,6 +998,10 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
 
+      await tester.ensureVisible(
+        find.byKey(const ValueKey<String>('session-qr-trigger')),
+      );
+      await tester.pump();
       await tester.tap(
         find.byKey(const ValueKey<String>('session-qr-trigger')),
       );
@@ -1192,8 +1200,13 @@ void main() {
       find.byKey(const ValueKey<String>('slash-command-search')),
       findsOneWidget,
     );
-    expect(find.text('/renew-session'), findsOneWidget);
-    expect(find.text('/mute-bot'), findsOneWidget);
+    // Scoped to the sheet: the composer behind it now shows slash chips too.
+    Finder inSheet(String text) => find.descendant(
+      of: find.byType(SlashCommandsSheet),
+      matching: find.text(text),
+    );
+    expect(inSheet('/renew-session'), findsOneWidget);
+    expect(inSheet('/mute-bot'), findsOneWidget);
 
     await tester.enterText(
       find.byKey(const ValueKey<String>('slash-command-search')),
@@ -1201,8 +1214,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('/renew-session'), findsOneWidget);
-    expect(find.text('/mute-bot'), findsNothing);
+    expect(inSheet('/renew-session'), findsOneWidget);
+    expect(inSheet('/mute-bot'), findsNothing);
   });
 
   testWidgets('composer keeps hold-to-record and inline actions visible', (

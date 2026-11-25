@@ -19,6 +19,18 @@
   "savedSessionsButton": "Saved sessions",
   "savedSessionsTitle": "Saved sessions",
   "savedSessionsEmpty": "No saved sessions yet.",
+  "sessionSectionRoom": "Room",
+  "@sessionSectionRoom": {
+    "description": "Section header in the session panel page."
+  },
+  "sessionSectionMembers": "Members",
+  "@sessionSectionMembers": {
+    "description": "Section header in the session panel page."
+  },
+  "sessionSectionActions": "Actions",
+  "@sessionSectionActions": {
+    "description": "Section header in the session panel page."
+  },
   "sessionLabel": "Session",
   "expiresLabel": "Expires",
   "initialStatus": "Scan a PrivateClaw QR code or paste an invite link to start a one-time session.",
@@ -314,6 +326,14 @@
         "example": "SolarFox"
       }
     }
+  },
+  "sendShortcutHintMac": "⌘⏎ to send",
+  "@sendShortcutHintMac": {
+    "description": "Desktop composer hint showing the keyboard shortcut that sends the message."
+  },
+  "sendShortcutHintControl": "Ctrl+⏎ to send",
+  "@sendShortcutHintControl": {
+    "description": "Desktop composer hint showing the keyboard shortcut that sends the message."
   },
   "composerExpandTooltip": "Expand editor",
   "composerFullscreenTitle": "Expanded composer",

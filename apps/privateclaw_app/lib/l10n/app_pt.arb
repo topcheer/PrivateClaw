@@ -9,6 +9,9 @@
   "inviteInputHint": "privateclaw://connect?payload=...",
   "scanQrButton": "Escanear QR code",
   "connectSessionButton": "Entrar na sessão",
+  "sessionSectionRoom": "Sala",
+  "sessionSectionMembers": "Membros",
+  "sessionSectionActions": "Ações",
   "sessionLabel": "Sessão",
   "expiresLabel": "Expira em",
   "initialStatus": "Escaneie um QR code do PrivateClaw ou cole um link de convite para iniciar uma sessão de uso único.",
@@ -199,6 +202,8 @@
       }
     }
   },
+  "sendShortcutHintMac": "⌘⏎ para enviar",
+  "sendShortcutHintControl": "Ctrl+⏎ para enviar",
   "composerExpandTooltip": "Expand editor",
   "composerFullscreenTitle": "Expanded composer",
   "emojiPickerFrequentTab": "Frequent",

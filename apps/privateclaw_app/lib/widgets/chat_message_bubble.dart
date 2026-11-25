@@ -75,8 +75,13 @@ class ChatMessageBubble extends StatelessWidget {
       alignment = Alignment.centerLeft;
     }
 
+    // Phones keep the 480 px cap; on desktop windows bubbles may use more of
+    // the (centered) message column.
+    final double maxBubbleWidth = MediaQuery.sizeOf(context).width >= 900
+        ? 720
+        : 480;
     final Widget bubble = ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 480),
+      constraints: BoxConstraints(maxWidth: maxBubbleWidth),
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: bubbleColor,
@@ -236,7 +241,9 @@ class ChatMessageBubble extends StatelessWidget {
     final DateTime local = value.toLocal();
     final DateTime now = DateTime.now();
     final bool sameDay =
-        local.year == now.year && local.month == now.month && local.day == now.day;
+        local.year == now.year &&
+        local.month == now.month &&
+        local.day == now.day;
     // Today's messages only need the time; the full date is noise in a
     // short-lived room and makes every bubble heavier than it needs to be.
     final DateFormat format = sameDay

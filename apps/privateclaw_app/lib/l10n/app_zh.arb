@@ -13,6 +13,9 @@
   "savedSessionsButton": "历史会话",
   "savedSessionsTitle": "历史会话",
   "savedSessionsEmpty": "暂时还没有可切换的历史会话。",
+  "sessionSectionRoom": "房间",
+  "sessionSectionMembers": "成员",
+  "sessionSectionActions": "操作",
   "sessionLabel": "会话",
   "expiresLabel": "过期时间",
   "initialStatus": "扫描 PrivateClaw 二维码或粘贴邀请链接，开始一次性会话。",
@@ -255,6 +258,8 @@
       }
     }
   },
+  "sendShortcutHintMac": "⌘⏎ 发送",
+  "sendShortcutHintControl": "Ctrl+⏎ 发送",
   "composerExpandTooltip": "展开编辑",
   "composerFullscreenTitle": "全屏编辑",
   "emojiPickerFrequentTab": "常用",

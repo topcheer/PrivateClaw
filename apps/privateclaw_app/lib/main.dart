@@ -300,6 +300,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
   /// Human-readable reason of the last connect failure, kept on screen while
   /// the client retries so the user knows why nothing is happening.
   String? _lastConnectErrorText;
+
   /// Whether the system permission prompt may be shown for the session being
   /// joined. Reset on every join; the explainer's "Not now" sets it to false.
   bool _requestNotificationPermissionThisSession = true;
@@ -2279,6 +2280,12 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       return;
     }
 
+    _insertSlashCommand(command);
+  }
+
+  /// Puts the slash command into the composer (with a trailing space when it
+  /// takes arguments) and focuses the field.
+  void _insertSlashCommand(PrivateClawSlashCommand command) {
     final String nextText = command.acceptsArgs
         ? '${command.slash} '
         : command.slash;
@@ -3154,6 +3161,39 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     );
   }
 
+  /// Phones get a dedicated sheet page; wide screens keep the anchored
+  /// overlay. Both render the same sectioned content.
+  bool get _usesSessionSheet => MediaQuery.sizeOf(context).width < 600;
+
+  void _openSessionPanel() {
+    if (_usesSessionSheet) {
+      unawaited(_showSessionSheet());
+      return;
+    }
+    setState(() {
+      _isPairingPanelCollapsed = false;
+    });
+  }
+
+  Future<void> _showSessionSheet() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (BuildContext sheetContext) {
+        return SafeArea(
+          top: false,
+          child: SingleChildScrollView(
+            key: const ValueKey<String>('session-panel-sheet'),
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+            child: _buildSessionPanelContent(sheetContext),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildManagedSessionOverlay(
     BuildContext context,
     AppLocalizations l10n,
@@ -3183,94 +3223,164 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
           clipBehavior: Clip.antiAlias,
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Row(
-                  children: <Widget>[
-                    const Icon(Icons.lock_clock_outlined),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        l10n.sessionLabel,
-                        style: theme.textTheme.titleMedium,
-                      ),
-                    ),
-                    IconButton(
-                      key: const ValueKey<String>('session-panel-close'),
-                      tooltip: MaterialLocalizations.of(
-                        context,
-                      ).closeButtonTooltip,
-                      onPressed: () {
-                        setState(() {
-                          _isPairingPanelCollapsed = true;
-                        });
-                      },
-                      icon: const Icon(Icons.close),
-                    ),
-                  ],
-                ),
-                if (_invite?.groupMode == true) ...<Widget>[
-                  const SizedBox(height: 8),
-                  Text(
-                    l10n.groupChatSummary(_participants.length),
-                    style: theme.textTheme.bodyMedium,
-                  ),
-                ],
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
-                  children: <Widget>[
-                    FilledButton.icon(
-                      onPressed: _openScanner,
-                      icon: const Icon(Icons.qr_code_scanner),
-                      label: Text(l10n.scanQrButton),
-                    ),
-                    FilledButton.tonalIcon(
-                      key: const ValueKey<String>('session-disconnect-button'),
-                      onPressed: _disconnect,
-                      icon: const Icon(Icons.link_off),
-                      label: Text(l10n.disconnectTooltip),
-                    ),
-                    if (_canShowSessionQr)
-                      FilledButton.tonalIcon(
-                        key: const ValueKey<String>('session-qr-trigger'),
-                        onPressed: _showSessionQrSheet,
-                        icon: const Icon(Icons.qr_code_2),
-                        label: Text(l10n.showSessionQrButton),
-                      ),
-                    if (_hasSavedSessions) _buildSavedSessionsTrigger(l10n),
-                  ],
-                ),
-                if (_invite != null) ...<Widget>[
-                  const SizedBox(height: 12),
-                  Text(
-                    '${l10n.sessionLabel}: ${_invite!.sessionId}',
-                    style: theme.textTheme.bodyMedium,
-                  ),
-                  Text(
-                    '${l10n.expiresLabel}: ${_formatDateTime(_invite!.expiresAt)}',
-                    style: theme.textTheme.bodySmall,
-                  ),
-                  _buildRelayServerInfo(context),
-                ],
-                if (_identity != null) ...<Widget>[
-                  const SizedBox(height: 8),
-                  _buildCurrentIdentitySummary(context, l10n),
-                ],
-                if (_invite?.groupMode == true &&
-                    _participants.isNotEmpty) ...<Widget>[
-                  const SizedBox(height: 12),
-                  _buildParticipantChips(),
-                ],
-                const SizedBox(height: 12),
-                _buildStatusPanel(context, l10n),
-              ],
-            ),
+            child: _buildSessionPanelContent(context),
           ),
         ),
       ),
+    );
+  }
+
+  /// Sectioned session details shared by the overlay and the sheet page:
+  /// header, Room (status, id, expiry, relay, renew), Members, Actions.
+  Widget _buildSessionPanelContent(BuildContext context) {
+    final AppLocalizations l10n = AppLocalizations.of(context)!;
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme colorScheme = theme.colorScheme;
+    final PrivateClawInvite? invite = _invite;
+    final Duration? remaining = _sessionRemainingDuration;
+    final bool canRenew =
+        _sessionRenewCommand != null &&
+        _sessionStatus == PrivateClawSessionStatus.active;
+
+    Widget sectionHeader(IconData icon, String title) => Row(
+      children: <Widget>[
+        Icon(icon, size: 18, color: colorScheme.primary),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w700,
+            color: colorScheme.onSurface,
+          ),
+        ),
+      ],
+    );
+
+    return Column(
+      key: const ValueKey<String>('session-panel-content'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: Text(l10n.sessionLabel, style: theme.textTheme.titleLarge),
+            ),
+            if (!_usesSessionSheet)
+              IconButton(
+                key: const ValueKey<String>('session-panel-close'),
+                tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+                onPressed: () {
+                  setState(() {
+                    _isPairingPanelCollapsed = true;
+                  });
+                },
+                icon: const Icon(Icons.close),
+              ),
+          ],
+        ),
+        if (invite?.groupMode == true) ...<Widget>[
+          const SizedBox(height: 4),
+          Text(
+            l10n.groupChatSummary(_participants.length),
+            style: theme.textTheme.bodyMedium,
+          ),
+        ],
+        const SizedBox(height: 16),
+        sectionHeader(Icons.lock_clock_outlined, l10n.sessionSectionRoom),
+        const SizedBox(height: 10),
+        _buildStatusPanel(context, l10n, showWebsiteLink: false),
+        if (invite != null) ...<Widget>[
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 16,
+            runSpacing: 4,
+            children: <Widget>[
+              if (remaining != null)
+                Text(
+                  '${l10n.expiresLabel}: ${_formatRemainingCompact(remaining)}',
+                  key: const ValueKey<String>('session-panel-remaining'),
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              Text(
+                _formatDateTime(invite.expiresAt),
+                style: theme.textTheme.bodySmall,
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            invite.sessionId,
+            style: theme.textTheme.bodySmall?.copyWith(
+              fontFamily: 'Menlo',
+              fontFamilyFallback: const <String>['monospace'],
+            ),
+          ),
+          const SizedBox(height: 4),
+          _buildRelayServerInfo(context),
+        ],
+        if (canRenew) ...<Widget>[
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            key: const ValueKey<String>('session-panel-renew-button'),
+            onPressed: _isRenewingSession ? null : _sendSessionRenewCommand,
+            icon: _isRenewingSession
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.more_time),
+            label: Text(
+              _isRenewingSession
+                  ? l10n.sessionRenewButtonPending
+                  : l10n.sessionRenewButton,
+            ),
+          ),
+        ],
+        if (_identity != null ||
+            (invite?.groupMode == true &&
+                _participants.isNotEmpty)) ...<Widget>[
+          const SizedBox(height: 20),
+          sectionHeader(Icons.people_outline, l10n.sessionSectionMembers),
+          const SizedBox(height: 10),
+          if (_identity != null) _buildCurrentIdentitySummary(context, l10n),
+          if (invite?.groupMode == true && _participants.isNotEmpty)
+            _buildParticipantChips(),
+        ],
+        const SizedBox(height: 20),
+        sectionHeader(Icons.tune, l10n.sessionSectionActions),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: <Widget>[
+            FilledButton.tonalIcon(
+              onPressed: _openScanner,
+              icon: const Icon(Icons.qr_code_scanner),
+              label: Text(l10n.scanQrButton),
+            ),
+            if (_canShowSessionQr)
+              FilledButton.tonalIcon(
+                key: const ValueKey<String>('session-qr-trigger'),
+                onPressed: _showSessionQrSheet,
+                icon: const Icon(Icons.qr_code_2),
+                label: Text(l10n.showSessionQrButton),
+              ),
+            if (_hasSavedSessions) _buildSavedSessionsTrigger(l10n),
+            FilledButton.tonalIcon(
+              key: const ValueKey<String>('session-disconnect-button'),
+              onPressed: _disconnect,
+              style: FilledButton.styleFrom(
+                backgroundColor: colorScheme.errorContainer,
+                foregroundColor: colorScheme.onErrorContainer,
+              ),
+              icon: const Icon(Icons.link_off),
+              label: Text(l10n.disconnectTooltip),
+            ),
+          ],
+        ),
+      ],
     );
   }
 
@@ -3366,9 +3476,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
           child: InkWell(
             key: const ValueKey<String>('session-panel-handle'),
             onTap: () {
-              setState(() {
-                _isPairingPanelCollapsed = false;
-              });
+              _openSessionPanel();
             },
             child: Padding(
               padding: const EdgeInsets.fromLTRB(10, 8, 4, 8),
@@ -3534,39 +3642,59 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     return Column(
       children: <Widget>[
         Expanded(
-          child: ListView.builder(
-            controller: _scrollController,
-            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-            itemCount: _messages.length,
-            itemBuilder: (BuildContext context, int index) {
-              final ChatMessage message = _messages[index];
-              final ChatMessage? previous = index > 0
-                  ? _messages[index - 1]
-                  : null;
-              final bool grouped = _isGroupedWithPrevious(previous, message);
-              final bool showDateHeader =
-                  previous == null ||
-                  !_isSameDay(previous.sentAt, message.sentAt);
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  if (showDateHeader)
-                    Padding(
-                      padding: EdgeInsets.only(
-                        top: index == 0 ? 0 : 8,
-                        bottom: 8,
-                      ),
-                      child: _buildDateSeparator(context, message.sentAt),
-                    )
-                  else
-                    SizedBox(height: grouped ? 2 : 8),
-                  ChatMessageBubble(
-                    key: ValueKey<String>(message.id),
-                    message: message,
-                    groupedWithPrevious: grouped,
+          // On wide windows the conversation reads as one centered column
+          // instead of two edges of a 1440 px sheet.
+          child: LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) {
+              return Align(
+                alignment: Alignment.topCenter,
+                child: SizedBox(
+                  width: math.min(860.0, constraints.maxWidth),
+                  height: constraints.maxHeight,
+                  child: ListView.builder(
+                    controller: _scrollController,
+                    keyboardDismissBehavior:
+                        ScrollViewKeyboardDismissBehavior.onDrag,
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                    itemCount: _messages.length,
+                    itemBuilder: (BuildContext context, int index) {
+                      final ChatMessage message = _messages[index];
+                      final ChatMessage? previous = index > 0
+                          ? _messages[index - 1]
+                          : null;
+                      final bool grouped = _isGroupedWithPrevious(
+                        previous,
+                        message,
+                      );
+                      final bool showDateHeader =
+                          previous == null ||
+                          !_isSameDay(previous.sentAt, message.sentAt);
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: <Widget>[
+                          if (showDateHeader)
+                            Padding(
+                              padding: EdgeInsets.only(
+                                top: index == 0 ? 0 : 8,
+                                bottom: 8,
+                              ),
+                              child: _buildDateSeparator(
+                                context,
+                                message.sentAt,
+                              ),
+                            )
+                          else
+                            SizedBox(height: grouped ? 2 : 8),
+                          ChatMessageBubble(
+                            key: ValueKey<String>(message.id),
+                            message: message,
+                            groupedWithPrevious: grouped,
+                          ),
+                        ],
+                      );
+                    },
                   ),
-                ],
+                ),
               );
             },
           ),
@@ -3585,6 +3713,33 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
+          if (_canSend && _availableCommands.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: SizedBox(
+                height: 36,
+                child: ListView.separated(
+                  key: const ValueKey<String>('slash-command-chips'),
+                  scrollDirection: Axis.horizontal,
+                  itemCount: _availableCommands.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (BuildContext context, int index) {
+                    final PrivateClawSlashCommand command =
+                        _availableCommands[index];
+                    return ActionChip(
+                      key: ValueKey<String>(
+                        'slash-command-chip-${command.slash}',
+                      ),
+                      avatar: const Icon(Icons.bolt, size: 16),
+                      label: Text(command.slash),
+                      tooltip: command.description,
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => _insertSlashCommand(command),
+                    );
+                  },
+                ),
+              ),
+            ),
           if (_selectedAttachments.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(bottom: 12),
@@ -3698,6 +3853,19 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
                   onPressed: _handleFileComposerButtonPressed,
                 ),
                 const Spacer(),
+                if (_supportsComposerSubmitShortcut &&
+                    MediaQuery.sizeOf(context).width >= 500) ...<Widget>[
+                  Text(
+                    Theme.of(context).platform == TargetPlatform.macOS
+                        ? l10n.sendShortcutHintMac
+                        : l10n.sendShortcutHintControl,
+                    key: const ValueKey<String>('composer-shortcut-hint'),
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
                 IconButton.filled(
                   key: const ValueKey<String>('composer-send-button'),
                   onPressed: _canSend && _hasDraftContent ? _sendMessage : null,
@@ -4147,7 +4315,11 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
   }
 
   /// Shared by the pairing card and the session panel overlay.
-  Widget _buildStatusPanel(BuildContext context, AppLocalizations l10n) {
+  Widget _buildStatusPanel(
+    BuildContext context,
+    AppLocalizations l10n, {
+    bool showWebsiteLink = true,
+  }) {
     if (_isConnectingPhase) {
       return _buildConnectionProgress(context, l10n);
     }
@@ -4164,8 +4336,10 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
           Icon(_statusIcon()),
           const SizedBox(width: 12),
           Expanded(child: Text(_statusText)),
-          const SizedBox(width: 8),
-          _buildPluginInstallWebsiteLink(context),
+          if (showWebsiteLink) ...<Widget>[
+            const SizedBox(width: 8),
+            _buildPluginInstallWebsiteLink(context),
+          ],
         ],
       ),
     );

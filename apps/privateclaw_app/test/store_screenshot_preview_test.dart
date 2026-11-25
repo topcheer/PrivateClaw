@@ -22,7 +22,7 @@ void main() {
     WidgetTester tester,
   ) async {
     tester.view.devicePixelRatio = 3.0;
-    tester.view.physicalSize = const Size(1290, 2796);
+    tester.view.physicalSize = const Size(1290, 4200);
     addTearDown(tester.view.resetDevicePixelRatio);
     addTearDown(tester.view.resetPhysicalSize);
 
@@ -75,7 +75,7 @@ void main() {
     WidgetTester tester,
   ) async {
     tester.view.devicePixelRatio = 3.0;
-    tester.view.physicalSize = const Size(1290, 2796);
+    tester.view.physicalSize = const Size(1290, 4200);
     addTearDown(tester.view.resetDevicePixelRatio);
     addTearDown(tester.view.resetPhysicalSize);
 

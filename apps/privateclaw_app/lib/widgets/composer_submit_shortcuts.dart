@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -25,6 +26,12 @@ class PrivateClawComposerSubmitShortcuts extends StatelessWidget {
             onSubmit,
         const SingleActivator(LogicalKeyboardKey.numpadEnter, control: true):
             onSubmit,
+        // macOS users reach for Cmd, not Ctrl; keep both.
+        if (defaultTargetPlatform == TargetPlatform.macOS)
+          const SingleActivator(LogicalKeyboardKey.enter, meta: true): onSubmit,
+        if (defaultTargetPlatform == TargetPlatform.macOS)
+          const SingleActivator(LogicalKeyboardKey.numpadEnter, meta: true):
+              onSubmit,
       },
       child: child,
     );

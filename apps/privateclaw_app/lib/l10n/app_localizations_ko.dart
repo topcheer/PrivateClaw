@@ -48,6 +48,15 @@ class AppLocalizationsKo extends AppLocalizations {
   String get savedSessionsEmpty => 'No saved sessions yet.';
 
   @override
+  String get sessionSectionRoom => '방';
+
+  @override
+  String get sessionSectionMembers => '멤버';
+
+  @override
+  String get sessionSectionActions => '작업';
+
+  @override
   String get sessionLabel => '세션';
 
   @override
@@ -365,6 +374,12 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get emojiPickerTitle => 'Common emoji';
+
+  @override
+  String get sendShortcutHintMac => '⌘⏎ 로 보내기';
+
+  @override
+  String get sendShortcutHintControl => 'Ctrl+⏎ 로 보내기';
 
   @override
   String get composerExpandTooltip => 'Expand editor';

@@ -49,6 +49,15 @@ class AppLocalizationsPt extends AppLocalizations {
   String get savedSessionsEmpty => 'No saved sessions yet.';
 
   @override
+  String get sessionSectionRoom => 'Sala';
+
+  @override
+  String get sessionSectionMembers => 'Membros';
+
+  @override
+  String get sessionSectionActions => 'Ações';
+
+  @override
   String get sessionLabel => 'Sessão';
 
   @override
@@ -376,6 +385,12 @@ class AppLocalizationsPt extends AppLocalizations {
   String get emojiPickerTitle => 'Common emoji';
 
   @override
+  String get sendShortcutHintMac => '⌘⏎ para enviar';
+
+  @override
+  String get sendShortcutHintControl => 'Ctrl+⏎ para enviar';
+
+  @override
   String get composerExpandTooltip => 'Expand editor';
 
   @override
@@ -461,6 +476,15 @@ class AppLocalizationsPtBr extends AppLocalizationsPt {
 
   @override
   String get connectSessionButton => 'Entrar na sessão';
+
+  @override
+  String get sessionSectionRoom => 'Sala';
+
+  @override
+  String get sessionSectionMembers => 'Membros';
+
+  @override
+  String get sessionSectionActions => 'Ações';
 
   @override
   String get sessionLabel => 'Sessão';
@@ -692,6 +716,12 @@ class AppLocalizationsPtBr extends AppLocalizationsPt {
 
   @override
   String get preparingVideoAttachment => 'Preparando vídeo…';
+
+  @override
+  String get sendShortcutHintMac => '⌘⏎ para enviar';
+
+  @override
+  String get sendShortcutHintControl => 'Ctrl+⏎ para enviar';
 
   @override
   String get composerExpandTooltip => 'Expand editor';

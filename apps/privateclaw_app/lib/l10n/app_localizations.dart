@@ -196,6 +196,24 @@ abstract class AppLocalizations {
   /// **'No saved sessions yet.'**
   String get savedSessionsEmpty;
 
+  /// Section header in the session panel page.
+  ///
+  /// In en, this message translates to:
+  /// **'Room'**
+  String get sessionSectionRoom;
+
+  /// Section header in the session panel page.
+  ///
+  /// In en, this message translates to:
+  /// **'Members'**
+  String get sessionSectionMembers;
+
+  /// Section header in the session panel page.
+  ///
+  /// In en, this message translates to:
+  /// **'Actions'**
+  String get sessionSectionActions;
+
   /// No description provided for @sessionLabel.
   ///
   /// In en, this message translates to:
@@ -729,6 +747,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Common emoji'**
   String get emojiPickerTitle;
+
+  /// Desktop composer hint showing the keyboard shortcut that sends the message.
+  ///
+  /// In en, this message translates to:
+  /// **'⌘⏎ to send'**
+  String get sendShortcutHintMac;
+
+  /// Desktop composer hint showing the keyboard shortcut that sends the message.
+  ///
+  /// In en, this message translates to:
+  /// **'Ctrl+⏎ to send'**
+  String get sendShortcutHintControl;
 
   /// Tooltip for opening the fullscreen composer editor.
   ///

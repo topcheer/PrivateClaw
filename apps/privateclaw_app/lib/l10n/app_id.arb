@@ -9,6 +9,9 @@
   "inviteInputHint": "privateclaw://connect?payload=...",
   "scanQrButton": "Pindai kode QR",
   "connectSessionButton": "Gabung sesi",
+  "sessionSectionRoom": "Ruang",
+  "sessionSectionMembers": "Anggota",
+  "sessionSectionActions": "Tindakan",
   "sessionLabel": "Sesi",
   "expiresLabel": "Kedaluwarsa",
   "initialStatus": "Pindai kode QR PrivateClaw atau tempel tautan undangan untuk memulai sesi sekali pakai.",
@@ -199,6 +202,8 @@
       }
     }
   },
+  "sendShortcutHintMac": "⌘⏎ untuk kirim",
+  "sendShortcutHintControl": "Ctrl+⏎ untuk kirim",
   "composerExpandTooltip": "Expand editor",
   "composerFullscreenTitle": "Expanded composer",
   "emojiPickerFrequentTab": "Frequent",

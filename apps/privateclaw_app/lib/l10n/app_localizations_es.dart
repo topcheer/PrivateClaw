@@ -49,6 +49,15 @@ class AppLocalizationsEs extends AppLocalizations {
   String get savedSessionsEmpty => 'No saved sessions yet.';
 
   @override
+  String get sessionSectionRoom => 'Sala';
+
+  @override
+  String get sessionSectionMembers => 'Miembros';
+
+  @override
+  String get sessionSectionActions => 'Acciones';
+
+  @override
   String get sessionLabel => 'Sesión';
 
   @override
@@ -375,6 +384,12 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get emojiPickerTitle => 'Common emoji';
+
+  @override
+  String get sendShortcutHintMac => '⌘⏎ para enviar';
+
+  @override
+  String get sendShortcutHintControl => 'Ctrl+⏎ para enviar';
 
   @override
   String get composerExpandTooltip => 'Expand editor';

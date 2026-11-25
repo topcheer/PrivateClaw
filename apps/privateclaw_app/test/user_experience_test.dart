@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/intl.dart';
 import 'package:privateclaw_app/main.dart';
@@ -8,9 +10,12 @@ import 'package:privateclaw_app/models/chat_attachment.dart';
 import 'package:privateclaw_app/models/chat_message.dart';
 import 'package:privateclaw_app/models/privateclaw_identity.dart';
 import 'package:privateclaw_app/models/privateclaw_invite.dart';
+import 'package:privateclaw_app/models/privateclaw_participant.dart';
+import 'package:privateclaw_app/models/privateclaw_slash_command.dart';
 import 'package:privateclaw_app/services/privateclaw_active_session_store.dart';
 import 'package:privateclaw_app/services/privateclaw_app_preferences.dart';
 import 'package:privateclaw_app/services/privateclaw_identity_store.dart';
+import 'package:privateclaw_app/services/privateclaw_platform_utils.dart';
 import 'package:privateclaw_app/services/privateclaw_session_client.dart';
 import 'package:privateclaw_app/store_screenshot_preview.dart';
 
@@ -86,11 +91,15 @@ class _ScriptedSessionClient extends PrivateClawSessionClient {
   @override
   Future<void> refreshPushRegistration() async {}
 
+  final List<String> sentMessages = <String>[];
+
   @override
   Future<void> sendUserMessage(
     String text, {
     List<ChatAttachment> attachments = const <ChatAttachment>[],
-  }) async {}
+  }) async {
+    sentMessages.add(text.trim());
+  }
 
   @override
   Future<void> dispose({
@@ -106,8 +115,7 @@ class _ScriptedSessionClient extends PrivateClawSessionClient {
 class _JoinHarness {
   _JoinHarness(this.client) {
     privateClawActiveSessionStoreFactory = _InMemoryActiveSessionStore.new;
-    privateClawIdentityStoreFactory =
-        () => _FixedIdentityStore(_identity);
+    privateClawIdentityStoreFactory = () => _FixedIdentityStore(_identity);
     privateClawAppPreferencesFactory = _InMemoryPreferences.new;
     privateClawSessionClientFactory =
         (
@@ -126,8 +134,8 @@ class _JoinHarness {
   final _ScriptedSessionClient client;
 
   void restore() {
-    privateClawActiveSessionStoreFactory =
-        () => const PrivateClawActiveSessionStore();
+    privateClawActiveSessionStoreFactory = () =>
+        const PrivateClawActiveSessionStore();
     privateClawIdentityStoreFactory = () => const PrivateClawIdentityStore();
     privateClawAppPreferencesFactory = () => const PrivateClawAppPreferences();
     privateClawSessionClientFactory =
@@ -143,8 +151,10 @@ class _JoinHarness {
   }
 }
 
-PrivateClawInvite _invite({DateTime? expiresAt, String sessionId = 'ux-test-session'}) =>
-    PrivateClawInvite(
+PrivateClawInvite _invite({
+  DateTime? expiresAt,
+  String sessionId = 'ux-test-session',
+}) => PrivateClawInvite(
   version: 1,
   sessionId: sessionId,
   sessionKey: 'dXhfdGVzdF9zZXNzaW9uX2tleV8xMjM0NTY3ODkwMTIzNA',
@@ -182,10 +192,7 @@ void main() {
         find.text('End-to-end encrypted chat will appear here'),
         findsNothing,
       );
-      expect(
-        find.text('Join a room to start chatting…'),
-        findsWidgets,
-      );
+      expect(find.text('Join a room to start chatting…'), findsWidgets);
 
       // Joining with an empty field used to surface a validation error; the
       // button now simply stays disabled until there is something to join.
@@ -221,7 +228,8 @@ void main() {
   testWidgets(
     'collapsed session handle shows the group icon and remaining time',
     (WidgetTester tester) async {
-      final DateTime Function() originalResolver = privateClawCurrentTimeResolver;
+      final DateTime Function() originalResolver =
+          privateClawCurrentTimeResolver;
       privateClawCurrentTimeResolver = () => DateTime.utc(2030, 1, 1, 2);
       addTearDown(() {
         privateClawCurrentTimeResolver = originalResolver;
@@ -266,139 +274,145 @@ void main() {
     },
   );
 
-  testWidgets(
-    'disconnect asks for confirmation before leaving the room',
-    (WidgetTester tester) async {
-      final PrivateClawActiveSessionStore Function() originalStoreFactory =
-          privateClawActiveSessionStoreFactory;
-      privateClawActiveSessionStoreFactory = _InMemoryActiveSessionStore.new;
-      addTearDown(() {
-        privateClawActiveSessionStoreFactory = originalStoreFactory;
-      });
+  testWidgets('disconnect asks for confirmation before leaving the room', (
+    WidgetTester tester,
+  ) async {
+    final PrivateClawActiveSessionStore Function() originalStoreFactory =
+        privateClawActiveSessionStoreFactory;
+    privateClawActiveSessionStoreFactory = _InMemoryActiveSessionStore.new;
+    addTearDown(() {
+      privateClawActiveSessionStoreFactory = originalStoreFactory;
+    });
 
-      await tester.pumpWidget(
-        PrivateClawApp(
-          screenshotConfig: StoreScreenshotConfig(
-            previewData: screenshotPreviewDataForScenario(
-              'group_chat',
-              const Locale('en'),
-            ),
-            localeOverride: const Locale('en'),
+    await tester.pumpWidget(
+      PrivateClawApp(
+        screenshotConfig: StoreScreenshotConfig(
+          previewData: screenshotPreviewDataForScenario(
+            'group_chat',
+            const Locale('en'),
           ),
+          localeOverride: const Locale('en'),
         ),
-      );
-      await tester.pumpAndSettle();
+      ),
+    );
+    await tester.pumpAndSettle();
 
-      await tester.tap(
-        find.byKey(const ValueKey<String>('session-panel-handle')),
-      );
-      await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('session-panel-handle')),
+    );
+    await tester.pumpAndSettle();
 
-      await tester.tap(
-        find.byKey(const ValueKey<String>('session-disconnect-button')),
-      );
-      await tester.pumpAndSettle();
+    await tester.ensureVisible(
+      find.byKey(const ValueKey<String>('session-disconnect-button')),
+    );
+    await tester.pump();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('session-disconnect-button')),
+    );
+    await tester.pumpAndSettle();
 
-      expect(
-        find.byKey(const ValueKey<String>('disconnect-confirm-dialog')),
-        findsOneWidget,
-      );
-      expect(find.text('Leave this room?'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('disconnect-confirm-dialog')),
+      findsOneWidget,
+    );
+    expect(find.text('Leave this room?'), findsOneWidget);
 
-      // Cancelling keeps the room exactly as it was.
-      await tester.tap(
-        find.byKey(const ValueKey<String>('disconnect-confirm-cancel')),
-      );
-      await tester.pumpAndSettle();
-      expect(
-        find.byKey(const ValueKey<String>('disconnect-confirm-dialog')),
-        findsNothing,
-      );
-      expect(
-        find.byKey(const ValueKey<String>('session-panel-overlay')),
-        findsOneWidget,
-      );
-      expect(find.textContaining('Relay health'), findsOneWidget);
+    // Cancelling keeps the room exactly as it was.
+    await tester.tap(
+      find.byKey(const ValueKey<String>('disconnect-confirm-cancel')),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('disconnect-confirm-dialog')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('session-panel-overlay')),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Relay health'), findsOneWidget);
 
-      // Confirming leaves the room and returns to the first-run screen.
-      await tester.tap(
-        find.byKey(const ValueKey<String>('session-disconnect-button')),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(
-        find.byKey(const ValueKey<String>('disconnect-confirm-button')),
-      );
-      await tester.pumpAndSettle();
+    // Confirming leaves the room and returns to the first-run screen.
+    await tester.ensureVisible(
+      find.byKey(const ValueKey<String>('session-disconnect-button')),
+    );
+    await tester.pump();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('session-disconnect-button')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('disconnect-confirm-button')),
+    );
+    await tester.pumpAndSettle();
 
-      expect(
-        find.byKey(const ValueKey<String>('session-panel-handle')),
-        findsNothing,
-      );
-      expect(
-        find.byKey(const ValueKey<String>('empty-state-onboarding')),
-        findsOneWidget,
-      );
-      expect(
-        find.byKey(const ValueKey<String>('invite-input-field')),
-        findsOneWidget,
-      );
-      expect(find.textContaining('Relay health'), findsNothing);
-    },
-  );
+    expect(
+      find.byKey(const ValueKey<String>('session-panel-handle')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('empty-state-onboarding')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('invite-input-field')),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Relay health'), findsNothing);
+  });
 
-  testWidgets(
-    'message bubbles show only the time for messages sent today',
-    (WidgetTester tester) async {
-      final DateTime now = DateTime.now();
-      final DateTime today = DateTime(now.year, now.month, now.day, 10, 47);
-      final DateTime lastWeek = today.subtract(const Duration(days: 6));
+  testWidgets('message bubbles show only the time for messages sent today', (
+    WidgetTester tester,
+  ) async {
+    final DateTime now = DateTime.now();
+    final DateTime today = DateTime(now.year, now.month, now.day, 10, 47);
+    final DateTime lastWeek = today.subtract(const Duration(days: 6));
 
-      await tester.pumpWidget(
-        PrivateClawApp(
-          screenshotConfig: StoreScreenshotConfig(
-            previewData: PrivateClawPreviewData(
-              status: PrivateClawSessionStatus.active,
-              statusText: 'Encrypted chat is active.',
-              invite: _invite(),
-              identity: PrivateClawIdentity(
-                appId: 'app-me',
-                createdAt: now,
-                displayName: 'Mei',
+    await tester.pumpWidget(
+      PrivateClawApp(
+        screenshotConfig: StoreScreenshotConfig(
+          previewData: PrivateClawPreviewData(
+            status: PrivateClawSessionStatus.active,
+            statusText: 'Encrypted chat is active.',
+            invite: _invite(),
+            identity: PrivateClawIdentity(
+              appId: 'app-me',
+              createdAt: now,
+              displayName: 'Mei',
+            ),
+            isPairingPanelCollapsed: true,
+            messages: <ChatMessage>[
+              ChatMessage(
+                id: 'today',
+                sender: ChatSender.assistant,
+                text: 'Sent today',
+                sentAt: today,
               ),
-              isPairingPanelCollapsed: true,
-              messages: <ChatMessage>[
-                ChatMessage(
-                  id: 'today',
-                  sender: ChatSender.assistant,
-                  text: 'Sent today',
-                  sentAt: today,
-                ),
-                ChatMessage(
-                  id: 'last-week',
-                  sender: ChatSender.assistant,
-                  text: 'Sent last week',
-                  sentAt: lastWeek,
-                ),
-              ],
-            ),
-            localeOverride: const Locale('en'),
+              ChatMessage(
+                id: 'last-week',
+                sender: ChatSender.assistant,
+                text: 'Sent last week',
+                sentAt: lastWeek,
+              ),
+            ],
           ),
+          localeOverride: const Locale('en'),
         ),
-      );
-      await tester.pumpAndSettle();
+      ),
+    );
+    await tester.pumpAndSettle();
 
-      final String timeOnly = DateFormat.jm('en').format(today.toLocal());
-      final String withDate = DateFormat.yMd('en')
-          .add_jm()
-          .format(lastWeek.toLocal());
-      expect(find.text(timeOnly), findsOneWidget);
-      expect(find.text(withDate), findsOneWidget);
-      expect(
-        find.text(DateFormat.yMd('en').add_jm().format(today.toLocal())),
-        findsNothing,
-      );
-    },
-  );
+    final String timeOnly = DateFormat.jm('en').format(today.toLocal());
+    final String withDate = DateFormat.yMd(
+      'en',
+    ).add_jm().format(lastWeek.toLocal());
+    expect(find.text(timeOnly), findsOneWidget);
+    expect(find.text(withDate), findsOneWidget);
+    expect(
+      find.text(DateFormat.yMd('en').add_jm().format(today.toLocal())),
+      findsNothing,
+    );
+  });
 
   testWidgets('an expired invite is rejected before dialing the relay', (
     WidgetTester tester,
@@ -425,146 +439,148 @@ void main() {
 
     await tester.enterText(
       find.byKey(const ValueKey<String>('invite-input-field')),
-      encodePrivateClawInviteUri(_invite(expiresAt: DateTime.utc(2030, 1, 1, 10))),
+      encodePrivateClawInviteUri(
+        _invite(expiresAt: DateTime.utc(2030, 1, 1, 10)),
+      ),
     );
     await tester.pumpAndSettle();
 
     expect(client.connectCalls, 0);
     expect(
-      find.text(
-        'This invite expired 2h ago. Ask the host for a new one.',
-      ),
+      find.text('This invite expired 2h ago. Ask the host for a new one.'),
       findsOneWidget,
     );
   });
 
-  testWidgets('an unreadable invite explains itself instead of dumping the exception', (
-    WidgetTester tester,
-  ) async {
-    final _ScriptedSessionClient client = _ScriptedSessionClient(
-      _invite(),
-      identity: _JoinHarness._identity,
-    );
-    final _JoinHarness harness = _JoinHarness(client);
-    addTearDown(harness.restore);
+  testWidgets(
+    'an unreadable invite explains itself instead of dumping the exception',
+    (WidgetTester tester) async {
+      final _ScriptedSessionClient client = _ScriptedSessionClient(
+        _invite(),
+        identity: _JoinHarness._identity,
+      );
+      final _JoinHarness harness = _JoinHarness(client);
+      addTearDown(harness.restore);
 
-    await tester.pumpWidget(
-      const PrivateClawApp(
-        skipNotificationsInDebug: true,
-        screenshotConfig: StoreScreenshotConfig(localeOverride: Locale('en')),
-      ),
-    );
-    await tester.pumpAndSettle();
+      await tester.pumpWidget(
+        const PrivateClawApp(
+          skipNotificationsInDebug: true,
+          screenshotConfig: StoreScreenshotConfig(localeOverride: Locale('en')),
+        ),
+      );
+      await tester.pumpAndSettle();
 
-    await tester.enterText(
-      find.byKey(const ValueKey<String>('invite-input-field')),
-      'not-an-invite',
-    );
-    await tester.pump();
-    await tester.tap(
-      find.byKey(const ValueKey<String>('connect-session-button')),
-    );
-    await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('invite-input-field')),
+        'not-an-invite',
+      );
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('connect-session-button')),
+      );
+      await tester.pumpAndSettle();
 
-    expect(
-      find.text('Paste or scan a valid PrivateClaw invite link.'),
-      findsOneWidget,
-    );
-    expect(find.textContaining('FormatException'), findsNothing);
-    expect(find.textContaining('Connect failed'), findsNothing);
-  });
+      expect(
+        find.text('Paste or scan a valid PrivateClaw invite link.'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('FormatException'), findsNothing);
+      expect(find.textContaining('Connect failed'), findsNothing);
+    },
+  );
 
-  testWidgets('joining shows relay, handshake and joined steps and can be cancelled', (
-    WidgetTester tester,
-  ) async {
-    final _ScriptedSessionClient client = _ScriptedSessionClient(
-      _invite(),
-      identity: _JoinHarness._identity,
-    );
-    final _JoinHarness harness = _JoinHarness(client);
-    addTearDown(harness.restore);
+  testWidgets(
+    'joining shows relay, handshake and joined steps and can be cancelled',
+    (WidgetTester tester) async {
+      final _ScriptedSessionClient client = _ScriptedSessionClient(
+        _invite(),
+        identity: _JoinHarness._identity,
+      );
+      final _JoinHarness harness = _JoinHarness(client);
+      addTearDown(harness.restore);
 
-    await tester.pumpWidget(
-      const PrivateClawApp(
-        skipNotificationsInDebug: true,
-        screenshotConfig: StoreScreenshotConfig(localeOverride: Locale('en')),
-      ),
-    );
-    await tester.pumpAndSettle();
+      await tester.pumpWidget(
+        const PrivateClawApp(
+          skipNotificationsInDebug: true,
+          screenshotConfig: StoreScreenshotConfig(localeOverride: Locale('en')),
+        ),
+      );
+      await tester.pumpAndSettle();
 
-    await tester.enterText(
-      find.byKey(const ValueKey<String>('invite-input-field')),
-      encodePrivateClawInviteUri(_invite()),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('invite-input-field')),
+        encodePrivateClawInviteUri(_invite()),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
 
-    expect(client.connectCalls, 1);
-    expect(
-      find.byKey(const ValueKey<String>('session-connect-progress')),
-      findsOneWidget,
-    );
-    expect(find.text('Connecting to the PrivateClaw relay…'), findsOneWidget);
-    expect(find.text('Relay'), findsOneWidget);
-    expect(find.text('Handshake'), findsOneWidget);
-    expect(find.text('Joined'), findsOneWidget);
-    expect(
-      find.descendant(
-        of: find.byKey(const ValueKey<String>('session-panel-handle')),
-        matching: find.byIcon(Icons.sync),
-      ),
-      findsNothing,
-      reason: 'the app bar pill only exists once a room is established',
-    );
+      expect(client.connectCalls, 1);
+      expect(
+        find.byKey(const ValueKey<String>('session-connect-progress')),
+        findsOneWidget,
+      );
+      expect(find.text('Connecting to the PrivateClaw relay…'), findsOneWidget);
+      expect(find.text('Relay'), findsOneWidget);
+      expect(find.text('Handshake'), findsOneWidget);
+      expect(find.text('Joined'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('session-panel-handle')),
+          matching: find.byIcon(Icons.sync),
+        ),
+        findsNothing,
+        reason: 'the app bar pill only exists once a room is established',
+      );
 
-    client.emit(
-      const PrivateClawSessionEvent(
-        notice: PrivateClawSessionNotice.relayAttached,
-        connectionStatus: PrivateClawSessionStatus.relayAttached,
-      ),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
+      client.emit(
+        const PrivateClawSessionEvent(
+          notice: PrivateClawSessionNotice.relayAttached,
+          connectionStatus: PrivateClawSessionStatus.relayAttached,
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
 
-    expect(
-      find.text('Relay connected. Finishing the encrypted handshake…'),
-      findsOneWidget,
-    );
+      expect(
+        find.text('Relay connected. Finishing the encrypted handshake…'),
+        findsOneWidget,
+      );
 
-    // The 600px test surface keeps the card scrollable; bring the button into
-    // view like a user would before tapping it.
-    await tester.ensureVisible(
-      find.byKey(const ValueKey<String>('connect-cancel-button')),
-    );
-    await tester.pump();
-    await tester.tap(
-      find.byKey(const ValueKey<String>('connect-cancel-button')),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-    await tester.pumpAndSettle();
+      // The 600px test surface keeps the card scrollable; bring the button into
+      // view like a user would before tapping it.
+      await tester.ensureVisible(
+        find.byKey(const ValueKey<String>('connect-cancel-button')),
+      );
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('connect-cancel-button')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pumpAndSettle();
 
-    // (Socket teardown runs in the background; its continuation does not run
-    // under FakeAsync once the UI is idle, so only the visible outcome is
-    // asserted here.)
-    expect(
-      find.byKey(const ValueKey<String>('session-connect-progress')),
-      findsNothing,
-    );
-    expect(
-      find.byKey(const ValueKey<String>('empty-state-onboarding')),
-      findsOneWidget,
-    );
-    expect(
-      find.text("Cancelled. Scan or paste an invite when you're ready."),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey<String>('invite-input-field')),
-      findsOneWidget,
-      reason: 'the invite stays in the field so the user can simply retry',
-    );
-  });
+      // (Socket teardown runs in the background; its continuation does not run
+      // under FakeAsync once the UI is idle, so only the visible outcome is
+      // asserted here.)
+      expect(
+        find.byKey(const ValueKey<String>('session-connect-progress')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('empty-state-onboarding')),
+        findsOneWidget,
+      );
+      expect(
+        find.text("Cancelled. Scan or paste an invite when you're ready."),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('invite-input-field')),
+        findsOneWidget,
+        reason: 'the invite stays in the field so the user can simply retry',
+      );
+    },
+  );
 
   testWidgets('relay failures are translated into actionable sentences', (
     WidgetTester tester,
@@ -599,7 +615,9 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(
-      find.text("This room doesn't exist anymore. Ask the host for a new invite."),
+      find.text(
+        "This room doesn't exist anymore. Ask the host for a new invite.",
+      ),
       findsOneWidget,
     );
     expect(find.textContaining('session_not_found'), findsNothing);
@@ -620,6 +638,254 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining('SocketException'), findsNothing);
+  });
+
+  testWidgets(
+    'on phones the session handle opens a sectioned sheet with a Renew action',
+    (WidgetTester tester) async {
+      // 390x844 logical: below the 600px breakpoint that keeps the overlay.
+      tester.view.devicePixelRatio = 3.0;
+      tester.view.physicalSize = const Size(1170, 2532);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+
+      final PrivateClawInvite invite = _invite(
+        expiresAt: DateTime.utc(2030, 1, 1, 9, 28),
+      );
+      final DateTime Function() originalResolver =
+          privateClawCurrentTimeResolver;
+      privateClawCurrentTimeResolver = () => DateTime.utc(2030, 1, 1, 9);
+      addTearDown(() {
+        privateClawCurrentTimeResolver = originalResolver;
+      });
+      final _ScriptedSessionClient client = _ScriptedSessionClient(
+        invite,
+        identity: _JoinHarness._identity,
+      );
+      final _JoinHarness harness = _JoinHarness(client);
+      addTearDown(harness.restore);
+
+      await tester.pumpWidget(
+        const PrivateClawApp(
+          skipNotificationsInDebug: true,
+          screenshotConfig: StoreScreenshotConfig(localeOverride: Locale('en')),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('invite-input-field')),
+        encodePrivateClawInviteUri(invite),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      client.emit(
+        PrivateClawSessionEvent(
+          connectionStatus: PrivateClawSessionStatus.active,
+          notice: PrivateClawSessionNotice.welcome,
+          details: 'Encrypted group chat is active.',
+          commands: const <PrivateClawSlashCommand>[
+            PrivateClawSlashCommand(
+              slash: '/renew-session',
+              description: 'Extend the session',
+              acceptsArgs: false,
+              source: 'provider',
+            ),
+          ],
+          participants: <PrivateClawParticipant>[
+            PrivateClawParticipant(
+              appId: 'app-aria',
+              displayName: 'Aria',
+              joinedAt: DateTime.utc(2030, 1, 1, 8),
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('session-panel-handle')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey<String>('session-panel-sheet')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('session-panel-overlay')),
+        findsNothing,
+      );
+      expect(find.text('Room'), findsOneWidget);
+      expect(find.text('Members'), findsOneWidget);
+      expect(find.text('Actions'), findsOneWidget);
+      expect(find.text('Group chat • 1 participants'), findsOneWidget);
+      expect(find.text('Expires: 28m'), findsOneWidget);
+      expect(find.text('Aria'), findsWidgets);
+
+      // Renewing no longer depends on the expiring banner or the slash command.
+      final Finder renew = find.byKey(
+        const ValueKey<String>('session-panel-renew-button'),
+      );
+      expect(renew, findsOneWidget);
+      await tester.ensureVisible(renew);
+      await tester.pump();
+      await tester.tap(renew);
+      await tester.pump();
+      expect(client.sentMessages, contains('/renew-session'));
+      expect(find.text('Renewing…'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'slash command chips appear with the commands and insert on tap',
+    (WidgetTester tester) async {
+      final _ScriptedSessionClient client = _ScriptedSessionClient(
+        _invite(),
+        identity: _JoinHarness._identity,
+      );
+      final _JoinHarness harness = _JoinHarness(client);
+      addTearDown(harness.restore);
+
+      await tester.pumpWidget(
+        const PrivateClawApp(
+          skipNotificationsInDebug: true,
+          screenshotConfig: StoreScreenshotConfig(localeOverride: Locale('en')),
+        ),
+      );
+      await tester.pumpAndSettle();
+      // Nothing to offer before a room exists.
+      expect(
+        find.byKey(const ValueKey<String>('slash-command-chips')),
+        findsNothing,
+      );
+
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('invite-input-field')),
+        encodePrivateClawInviteUri(_invite()),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      // Connected but no commands announced yet: still no chips.
+      expect(
+        find.byKey(const ValueKey<String>('slash-command-chips')),
+        findsNothing,
+      );
+
+      client.emit(
+        PrivateClawSessionEvent(
+          connectionStatus: PrivateClawSessionStatus.active,
+          notice: PrivateClawSessionNotice.welcome,
+          details: 'Encrypted chat is active.',
+          commands: const <PrivateClawSlashCommand>[
+            PrivateClawSlashCommand(
+              slash: '/renew-session',
+              description: 'Extend the session',
+              acceptsArgs: false,
+              source: 'provider',
+            ),
+            PrivateClawSlashCommand(
+              slash: '/tts',
+              description: 'Speak text aloud',
+              acceptsArgs: true,
+              source: 'provider',
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey<String>('slash-command-chips')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('slash-command-chip-/renew-session')),
+        findsOneWidget,
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('slash-command-chip-/tts')),
+      );
+      await tester.pump();
+      expect(
+        tester
+            .widget<TextField>(
+              find.byKey(const ValueKey<String>('composer-input-field')),
+            )
+            .controller
+            ?.text,
+        '/tts ',
+        reason: 'commands that take arguments leave the cursor after a space',
+      );
+    },
+  );
+
+  testWidgets('on macOS Cmd+Enter sends the draft', (
+    WidgetTester tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    final TargetPlatform Function() originalResolver =
+        privateClawTargetPlatformResolver;
+    privateClawTargetPlatformResolver = () => TargetPlatform.macOS;
+    addTearDown(() {
+      privateClawTargetPlatformResolver = originalResolver;
+    });
+
+    final _ScriptedSessionClient client = _ScriptedSessionClient(
+      _invite(),
+      identity: _JoinHarness._identity,
+    );
+    final _JoinHarness harness = _JoinHarness(client);
+    addTearDown(harness.restore);
+
+    tester.view.devicePixelRatio = 3.0;
+    tester.view.physicalSize = const Size(2400, 1500);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(
+      const PrivateClawApp(
+        skipNotificationsInDebug: true,
+        screenshotConfig: StoreScreenshotConfig(localeOverride: Locale('en')),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('invite-input-field')),
+      encodePrivateClawInviteUri(_invite()),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    client.emit(
+      const PrivateClawSessionEvent(
+        connectionStatus: PrivateClawSessionStatus.active,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final Finder composerField = find.byKey(
+      const ValueKey<String>('composer-input-field'),
+    );
+    await tester.tap(composerField);
+    await tester.pump();
+    await tester.enterText(composerField, 'Sent with Cmd+Enter');
+    await tester.pump();
+
+    // The desktop hint names the shortcut the platform actually uses.
+    expect(
+      find.byKey(const ValueKey<String>('composer-shortcut-hint')),
+      findsOneWidget,
+    );
+    expect(find.text('⌘⏎ to send'), findsOneWidget);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.enter);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.enter);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+
+    expect(client.sentMessages, contains('Sent with Cmd+Enter'));
   });
 
   testWidgets('composer toolbar only exists once a room is live', (
@@ -656,10 +922,7 @@ void main() {
     for (final String key in toolbarKeys) {
       expect(find.byKey(ValueKey<String>(key)), findsNothing);
     }
-    expect(
-      find.text('Join a room to start chatting…'),
-      findsWidgets,
-    );
+    expect(find.text('Join a room to start chatting…'), findsWidgets);
 
     // First join in progress: still hidden, so no tappable send button exists.
     await tester.enterText(
@@ -673,7 +936,10 @@ void main() {
       findsOneWidget,
     );
     expect(toolbarFinder(), findsNothing);
-    expect(find.byKey(const ValueKey<String>('composer-send-button')), findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('composer-send-button')),
+      findsNothing,
+    );
 
     // Live room: everything is there and enabled.
     await tester.pumpWidget(
@@ -743,185 +1009,189 @@ void main() {
     );
   });
 
-  testWidgets('a first join that keeps retrying stays in the pairing card with its reason', (
-    WidgetTester tester,
-  ) async {
-    final _ScriptedSessionClient client = _ScriptedSessionClient(
-      _invite(),
-      identity: _JoinHarness._identity,
-    );
-    final _JoinHarness harness = _JoinHarness(client);
-    addTearDown(harness.restore);
+  testWidgets(
+    'a first join that keeps retrying stays in the pairing card with its reason',
+    (WidgetTester tester) async {
+      final _ScriptedSessionClient client = _ScriptedSessionClient(
+        _invite(),
+        identity: _JoinHarness._identity,
+      );
+      final _JoinHarness harness = _JoinHarness(client);
+      addTearDown(harness.restore);
 
-    await tester.pumpWidget(
-      const PrivateClawApp(
-        skipNotificationsInDebug: true,
-        screenshotConfig: StoreScreenshotConfig(localeOverride: Locale('en')),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.enterText(
-      find.byKey(const ValueKey<String>('invite-input-field')),
-      encodePrivateClawInviteUri(_invite()),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpWidget(
+        const PrivateClawApp(
+          skipNotificationsInDebug: true,
+          screenshotConfig: StoreScreenshotConfig(localeOverride: Locale('en')),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('invite-input-field')),
+        encodePrivateClawInviteUri(_invite()),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
 
-    // The relay drops the socket and the client schedules a retry.
-    client.emit(
-      const PrivateClawSessionEvent(
-        notice: PrivateClawSessionNotice.connectionError,
-        details: 'SocketException: Connection refused (OS Error: Connection refused), address = 10.0.0.1, port = 443',
-        connectionStatus: PrivateClawSessionStatus.error,
-      ),
-    );
-    await tester.pump();
-    client.emit(
-      const PrivateClawSessionEvent(
-        notice: PrivateClawSessionNotice.connectingRelay,
-        connectionStatus: PrivateClawSessionStatus.reconnecting,
-      ),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
+      // The relay drops the socket and the client schedules a retry.
+      client.emit(
+        const PrivateClawSessionEvent(
+          notice: PrivateClawSessionNotice.connectionError,
+          details:
+              'SocketException: Connection refused (OS Error: Connection refused), address = 10.0.0.1, port = 443',
+          connectionStatus: PrivateClawSessionStatus.error,
+        ),
+      );
+      await tester.pump();
+      client.emit(
+        const PrivateClawSessionEvent(
+          notice: PrivateClawSessionNotice.connectingRelay,
+          connectionStatus: PrivateClawSessionStatus.reconnecting,
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
 
-    // Still a first join: the big session panel must not pop over the screen,
-    // the reason stays visible and the user can still bail out.
-    expect(
-      find.byKey(const ValueKey<String>('session-panel-overlay')),
-      findsNothing,
-    );
-    expect(
-      find.byKey(const ValueKey<String>('session-connect-progress')),
-      findsOneWidget,
-    );
-    expect(
-      find.textContaining('refused the connection. Make sure it is running'),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey<String>('connect-cancel-button')),
-      findsOneWidget,
-    );
+      // Still a first join: the big session panel must not pop over the screen,
+      // the reason stays visible and the user can still bail out.
+      expect(
+        find.byKey(const ValueKey<String>('session-panel-overlay')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('session-connect-progress')),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('refused the connection. Make sure it is running'),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('connect-cancel-button')),
+        findsOneWidget,
+      );
 
-    // Without a specific error (a relay that just never answers) the retry
-    // still says what it is doing.
-    await tester.ensureVisible(
-      find.byKey(const ValueKey<String>('connect-cancel-button')),
-    );
-    await tester.pump();
-    await tester.tap(
-      find.byKey(const ValueKey<String>('connect-cancel-button')),
-    );
-    await tester.pumpAndSettle();
-    await tester.enterText(
-      find.byKey(const ValueKey<String>('invite-input-field')),
-      encodePrivateClawInviteUri(_invite(sessionId: 'ux-test-session-3')),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-    client.emit(
-      const PrivateClawSessionEvent(
-        notice: PrivateClawSessionNotice.connectingRelay,
-        connectionStatus: PrivateClawSessionStatus.reconnecting,
-      ),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-    expect(
-      find.text(
-        'Still trying to reach relay.privateclaw.us. Check that it is online and your network is up.',
-      ),
-      findsOneWidget,
-    );
-  });
+      // Without a specific error (a relay that just never answers) the retry
+      // still says what it is doing.
+      await tester.ensureVisible(
+        find.byKey(const ValueKey<String>('connect-cancel-button')),
+      );
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('connect-cancel-button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('invite-input-field')),
+        encodePrivateClawInviteUri(_invite(sessionId: 'ux-test-session-3')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      client.emit(
+        const PrivateClawSessionEvent(
+          notice: PrivateClawSessionNotice.connectingRelay,
+          connectionStatus: PrivateClawSessionStatus.reconnecting,
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(
+        find.text(
+          'Still trying to reach relay.privateclaw.us. Check that it is online and your network is up.',
+        ),
+        findsOneWidget,
+      );
+    },
+  );
 
-  testWidgets('the notification explainer appears once before the permission prompt', (
-    WidgetTester tester,
-  ) async {
-    final bool Function() originalExplainer = privateClawNotificationsExplainerEnabled;
-    privateClawNotificationsExplainerEnabled = () => true;
-    addTearDown(() {
-      privateClawNotificationsExplainerEnabled = originalExplainer;
-    });
-    final _ScriptedSessionClient client = _ScriptedSessionClient(
-      _invite(),
-      identity: _JoinHarness._identity,
-    );
-    final _JoinHarness harness = _JoinHarness(client);
-    addTearDown(harness.restore);
+  testWidgets(
+    'the notification explainer appears once before the permission prompt',
+    (WidgetTester tester) async {
+      final bool Function() originalExplainer =
+          privateClawNotificationsExplainerEnabled;
+      privateClawNotificationsExplainerEnabled = () => true;
+      addTearDown(() {
+        privateClawNotificationsExplainerEnabled = originalExplainer;
+      });
+      final _ScriptedSessionClient client = _ScriptedSessionClient(
+        _invite(),
+        identity: _JoinHarness._identity,
+      );
+      final _JoinHarness harness = _JoinHarness(client);
+      addTearDown(harness.restore);
 
-    await tester.pumpWidget(
-      const PrivateClawApp(
-        screenshotConfig: StoreScreenshotConfig(localeOverride: Locale('en')),
-      ),
-    );
-    await tester.pumpAndSettle();
+      await tester.pumpWidget(
+        const PrivateClawApp(
+          screenshotConfig: StoreScreenshotConfig(localeOverride: Locale('en')),
+        ),
+      );
+      await tester.pumpAndSettle();
 
-    await tester.enterText(
-      find.byKey(const ValueKey<String>('invite-input-field')),
-      encodePrivateClawInviteUri(_invite()),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('invite-input-field')),
+        encodePrivateClawInviteUri(_invite()),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
 
-    expect(
-      find.byKey(const ValueKey<String>('notification-explainer-dialog')),
-      findsOneWidget,
-    );
-    expect(find.text('Get notified about replies'), findsOneWidget);
-    expect(client.connectCalls, 0, reason: 'permission context comes first');
+      expect(
+        find.byKey(const ValueKey<String>('notification-explainer-dialog')),
+        findsOneWidget,
+      );
+      expect(find.text('Get notified about replies'), findsOneWidget);
+      expect(client.connectCalls, 0, reason: 'permission context comes first');
 
-    await tester.tap(
-      find.byKey(const ValueKey<String>('notification-explainer-later')),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
+      await tester.tap(
+        find.byKey(const ValueKey<String>('notification-explainer-later')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
 
-    // "Not now" means what it says: no system prompt for this join, so the
-    // join goes straight to the relay (nothing waits on the platform channel).
-    expect(
-      find.byKey(const ValueKey<String>('notification-explainer-dialog')),
-      findsNothing,
-    );
-    expect(client.connectCalls, 1);
-    expect(
-      find.byKey(const ValueKey<String>('session-connect-progress')),
-      findsOneWidget,
-    );
+      // "Not now" means what it says: no system prompt for this join, so the
+      // join goes straight to the relay (nothing waits on the platform channel).
+      expect(
+        find.byKey(const ValueKey<String>('notification-explainer-dialog')),
+        findsNothing,
+      );
+      expect(client.connectCalls, 1);
+      expect(
+        find.byKey(const ValueKey<String>('session-connect-progress')),
+        findsOneWidget,
+      );
 
-    // The 600px test surface keeps the card scrollable; bring the button into
-    // view like a user would before tapping it.
-    await tester.ensureVisible(
-      find.byKey(const ValueKey<String>('connect-cancel-button')),
-    );
-    await tester.pump();
-    await tester.tap(
-      find.byKey(const ValueKey<String>('connect-cancel-button')),
-    );
-    await tester.pumpAndSettle();
+      // The 600px test surface keeps the card scrollable; bring the button into
+      // view like a user would before tapping it.
+      await tester.ensureVisible(
+        find.byKey(const ValueKey<String>('connect-cancel-button')),
+      );
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('connect-cancel-button')),
+      );
+      await tester.pumpAndSettle();
 
-    // Joining again must not repeat the explainer. (A different invite, so
-    // the in-flight guard for the cancelled join does not swallow it.)
-    await tester.enterText(
-      find.byKey(const ValueKey<String>('invite-input-field')),
-      encodePrivateClawInviteUri(_invite(sessionId: 'ux-test-session-2')),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
+      // Joining again must not repeat the explainer. (A different invite, so
+      // the in-flight guard for the cancelled join does not swallow it.)
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('invite-input-field')),
+        encodePrivateClawInviteUri(_invite(sessionId: 'ux-test-session-2')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
 
-    expect(
-      find.byKey(const ValueKey<String>('notification-explainer-dialog')),
-      findsNothing,
-    );
-    // This time no explainer precedes the system prompt, which never answers
-    // under flutter_test; the join is visibly in progress, which is what the
-    // user sees before the OS dialog.
-    expect(
-      find.byKey(const ValueKey<String>('session-connect-progress')),
-      findsOneWidget,
-    );
-  });
+      expect(
+        find.byKey(const ValueKey<String>('notification-explainer-dialog')),
+        findsNothing,
+      );
+      // This time no explainer precedes the system prompt, which never answers
+      // under flutter_test; the join is visibly in progress, which is what the
+      // user sees before the OS dialog.
+      expect(
+        find.byKey(const ValueKey<String>('session-connect-progress')),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets('message list groups runs from one sender and separates days', (
     WidgetTester tester,

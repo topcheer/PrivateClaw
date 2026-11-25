@@ -13,6 +13,9 @@
   "savedSessionsButton": "歷史會話",
   "savedSessionsTitle": "歷史會話",
   "savedSessionsEmpty": "暫時還沒有可切換的歷史會話。",
+  "sessionSectionRoom": "房間",
+  "sessionSectionMembers": "成員",
+  "sessionSectionActions": "操作",
   "sessionLabel": "會話",
   "expiresLabel": "到期時間",
   "initialStatus": "掃描 PrivateClaw QR Code 或貼上邀請連結，即可開始一次性會話。",
@@ -241,6 +244,8 @@
       }
     }
   },
+  "sendShortcutHintMac": "⌘⏎ 傳送",
+  "sendShortcutHintControl": "Ctrl+⏎ 傳送",
   "composerExpandTooltip": "展開編輯",
   "composerFullscreenTitle": "全螢幕編輯",
   "emojiPickerFrequentTab": "常用",

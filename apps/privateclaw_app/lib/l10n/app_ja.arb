@@ -9,6 +9,9 @@
   "inviteInputHint": "privateclaw://connect?payload=...",
   "scanQrButton": "QR コードをスキャン",
   "connectSessionButton": "セッションに接続",
+  "sessionSectionRoom": "部屋",
+  "sessionSectionMembers": "メンバー",
+  "sessionSectionActions": "操作",
   "sessionLabel": "セッション",
   "expiresLabel": "有効期限",
   "initialStatus": "PrivateClaw の QR コードをスキャンするか招待リンクを貼り付けて、ワンタイムセッションを開始します。",
@@ -199,6 +202,8 @@
       }
     }
   },
+  "sendShortcutHintMac": "⌘⏎ で送信",
+  "sendShortcutHintControl": "Ctrl+⏎ で送信",
   "composerExpandTooltip": "Expand editor",
   "composerFullscreenTitle": "Expanded composer",
   "emojiPickerFrequentTab": "Frequent",

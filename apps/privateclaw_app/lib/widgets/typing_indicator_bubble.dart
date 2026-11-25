@@ -48,8 +48,10 @@ class _TypingIndicatorBubbleState extends State<TypingIndicatorBubble>
                 mainAxisSize: MainAxisSize.min,
                 children: List<Widget>.generate(3, (int index) {
                   final double offset = index * 0.2;
-                  final double t =
-                      ((_controller.value - offset) % 1.0).clamp(0.0, 1.0);
+                  final double t = ((_controller.value - offset) % 1.0).clamp(
+                    0.0,
+                    1.0,
+                  );
                   final double scale = 0.5 + 0.5 * _bounceCurve(t);
                   return Padding(
                     padding: EdgeInsets.only(left: index > 0 ? 4 : 0),

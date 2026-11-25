@@ -9,6 +9,9 @@
   "inviteInputHint": "privateclaw://connect?payload=...",
   "scanQrButton": "QR 코드 스캔",
   "connectSessionButton": "세션 연결",
+  "sessionSectionRoom": "방",
+  "sessionSectionMembers": "멤버",
+  "sessionSectionActions": "작업",
   "sessionLabel": "세션",
   "expiresLabel": "만료 시간",
   "initialStatus": "PrivateClaw QR 코드를 스캔하거나 초대 링크를 붙여 넣어 일회성 세션을 시작하세요.",
@@ -199,6 +202,8 @@
       }
     }
   },
+  "sendShortcutHintMac": "⌘⏎ 로 보내기",
+  "sendShortcutHintControl": "Ctrl+⏎ 로 보내기",
   "composerExpandTooltip": "Expand editor",
   "composerFullscreenTitle": "Expanded composer",
   "emojiPickerFrequentTab": "Frequent",

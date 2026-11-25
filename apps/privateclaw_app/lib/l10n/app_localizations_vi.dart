@@ -49,6 +49,15 @@ class AppLocalizationsVi extends AppLocalizations {
   String get savedSessionsEmpty => 'No saved sessions yet.';
 
   @override
+  String get sessionSectionRoom => 'Phòng';
+
+  @override
+  String get sessionSectionMembers => 'Thành viên';
+
+  @override
+  String get sessionSectionActions => 'Thao tác';
+
+  @override
   String get sessionLabel => 'Phiên';
 
   @override
@@ -373,6 +382,12 @@ class AppLocalizationsVi extends AppLocalizations {
 
   @override
   String get emojiPickerTitle => 'Common emoji';
+
+  @override
+  String get sendShortcutHintMac => '⌘⏎ để gửi';
+
+  @override
+  String get sendShortcutHintControl => 'Ctrl+⏎ để gửi';
 
   @override
   String get composerExpandTooltip => 'Expand editor';

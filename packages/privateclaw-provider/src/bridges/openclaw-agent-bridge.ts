@@ -1563,6 +1563,11 @@ function stripStructuredResponseBlock(raw: string): string {
   for (const pattern of buildStructuredResponseBlockPatterns("gu")) {
     stripped = stripped.replace(pattern, "");
   }
+  // Unterminated envelopes (recovered or not) leave the tags and tool-call
+  // wrappers behind; never show protocol markers to the user.
+  stripped = stripped
+    .replace(/<\/?privateclaw-response>/gu, "")
+    .replace(/<\/?(?:arg_value|arg_key|tool_call|function|invoke)>/gu, "");
   return stripped.trim();
 }
 
@@ -1586,6 +1591,57 @@ function extractStructuredResponsePayload(raw: string): string | undefined {
     const payload = raw.match(pattern)?.[1]?.trim();
     if (payload) {
       return payload;
+    }
+  }
+  return extractUnterminatedStructuredResponsePayload(raw);
+}
+
+/**
+ * Some models emit the response envelope inside a tool-call argument and
+ * never close it (`<privateclaw-response>{...}</arg_value>`). The JSON itself
+ * is usually complete, so recover the balanced object after the start tag
+ * instead of leaking the raw protocol text into the chat.
+ */
+function extractUnterminatedStructuredResponsePayload(raw: string): string | undefined {
+  const startTag = escapeRegExpLiteral(PRIVATECLAW_RESPONSE_TAG_START);
+  const startMatch = new RegExp(startTag, "u").exec(raw);
+  if (!startMatch) {
+    return undefined;
+  }
+  const afterTag = raw.slice(startMatch.index + startMatch[0].length);
+  const jsonStart = afterTag.indexOf("{");
+  if (jsonStart < 0) {
+    return undefined;
+  }
+  const candidate = extractBalancedJsonObject(afterTag.slice(jsonStart));
+  return candidate?.trim() || undefined;
+}
+
+function extractBalancedJsonObject(text: string): string | undefined {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+    } else if (char === "{") {
+      depth += 1;
+    } else if (char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return text.slice(0, index + 1);
+      }
     }
   }
   return undefined;

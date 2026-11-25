@@ -130,6 +130,53 @@ test("parseOpenClawAgentOutput tolerates trailing commas inside structured respo
   assert.equal(result, "voice-reply");
 });
 
+test("parseOpenClawAgentOutput recovers a structured response whose envelope was never closed", () => {
+  // Seen in production with GLM-style XML tool calling: the model emitted the
+  // envelope inside a tool-call argument and closed </arg_value> instead of
+  // </privateclaw-response>. The JSON is complete, so it must still parse.
+  const result = parseOpenClawAgentOutput(
+    JSON.stringify({
+      status: "ok",
+      result: {
+        payloads: [
+          {
+            text:
+              '<privateclaw-response>{"version":1,"messages":[{"text":"Done, here is the flow."}],' +
+              '"data":{"file":"oauth2-flow.svg","topic":"oauth2-authorization-code-flow","type":"flowchart"}}</arg_value>',
+          },
+        ],
+      },
+    }),
+  );
+
+  assert.deepEqual(result, {
+    messages: [{ text: "Done, here is the flow." }],
+    data: {
+      file: "oauth2-flow.svg",
+      topic: "oauth2-authorization-code-flow",
+      type: "flowchart",
+    },
+  });
+});
+
+test("parseOpenClawAgentOutput never shows protocol tags for an unrecoverable envelope", () => {
+  const result = parseOpenClawAgentOutput(
+    JSON.stringify({
+      status: "ok",
+      result: {
+        payloads: [
+          {
+            text: "<privateclaw-response>{\"version\":1,\"messages\":[{\"text\":\"cut off mid",
+          },
+        ],
+      },
+    }),
+  );
+
+  assert.equal(typeof result, "string");
+  assert.ok(!result.includes("privateclaw-response"), result);
+});
+
 test("parseOpenClawAgentOutput preserves trimmed inline attachment sizes", () => {
   const base64Data = Buffer.from("hello").toString("base64");
   const result = parseOpenClawAgentOutput(

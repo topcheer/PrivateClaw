@@ -157,7 +157,7 @@ class AppLocalizationsAr extends AppLocalizations {
 
   @override
   String get notificationExplainerBody =>
-      'يمكن لـ Hearth Room إشعارك عندما يرد مساعدك أو أحد أعضاء الغرفة أثناء عمل التطبيق في الخلفية. سيطلب iOS الإذن بعد قليل.';
+      'يمكن لـ Hearth Room إشعارك عندما يرد مساعدك أو أحد أعضاء الغرفة أثناء عمل التطبيق في الخلفية. سيطلب النظام الإذن بعد قليل، ويمكنك تخطيه في الوقت الحالي.';
 
   @override
   String get notificationExplainerEnable => 'تفعيل الإشعارات';

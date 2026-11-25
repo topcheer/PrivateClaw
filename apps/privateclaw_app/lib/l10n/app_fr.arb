@@ -91,7 +91,7 @@
   "dateToday": "Aujourd'hui",
   "dateYesterday": "Hier",
   "notificationExplainerTitle": "Recevez les réponses en notification",
-  "notificationExplainerBody": "Hearth Room peut vous prévenir lorsque votre assistant ou quelqu'un dans le salon répond pendant que l'app est en arrière-plan. iOS demandera l'autorisation ensuite.",
+  "notificationExplainerBody": "Hearth Room peut vous prévenir lorsque votre assistant ou quelqu'un dans le salon répond pendant que l'app est en arrière-plan. Le système demandera l'autorisation ensuite ; vous pouvez aussi passer pour l'instant.",
   "notificationExplainerEnable": "Activer les notifications",
   "notificationExplainerLater": "Pas maintenant",
   "sendTooltip": "Envoyer",

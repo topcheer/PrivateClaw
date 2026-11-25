@@ -91,7 +91,7 @@
   "dateToday": "Hari ini",
   "dateYesterday": "Kemarin",
   "notificationExplainerTitle": "Dapatkan notifikasi balasan",
-  "notificationExplainerBody": "Hearth Room dapat memberi tahu kamu saat asisten atau anggota ruang lain membalas saat aplikasi di latar belakang. iOS akan meminta izin selanjutnya.",
+  "notificationExplainerBody": "Hearth Room dapat memberi tahu kamu saat asisten atau anggota ruang lain membalas saat aplikasi di latar belakang. Sistem akan meminta izin selanjutnya; kamu juga bisa melewatinya untuk saat ini.",
   "notificationExplainerEnable": "Aktifkan notifikasi",
   "notificationExplainerLater": "Nanti saja",
   "sendTooltip": "Kirim",

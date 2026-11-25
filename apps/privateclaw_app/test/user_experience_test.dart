@@ -878,13 +878,13 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    // The join proceeds once the explainer is dismissed. (The platform
-    // notification channel never answers under flutter_test, so the join stays
-    // in its connecting phase here; on a device the system prompt follows.)
+    // "Not now" means what it says: no system prompt for this join, so the
+    // join goes straight to the relay (nothing waits on the platform channel).
     expect(
       find.byKey(const ValueKey<String>('notification-explainer-dialog')),
       findsNothing,
     );
+    expect(client.connectCalls, 1);
     expect(
       find.byKey(const ValueKey<String>('session-connect-progress')),
       findsOneWidget,
@@ -914,6 +914,9 @@ void main() {
       find.byKey(const ValueKey<String>('notification-explainer-dialog')),
       findsNothing,
     );
+    // This time no explainer precedes the system prompt, which never answers
+    // under flutter_test; the join is visibly in progress, which is what the
+    // user sees before the OS dialog.
     expect(
       find.byKey(const ValueKey<String>('session-connect-progress')),
       findsOneWidget,

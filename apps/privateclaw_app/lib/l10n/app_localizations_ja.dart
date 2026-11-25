@@ -151,7 +151,7 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get notificationExplainerBody =>
-      'アプリがバックグラウンドの間にアシスタントや部屋のメンバーが返信すると、Hearth Room が通知できます。次に iOS が許可を求めます。';
+      'アプリがバックグラウンドの間にアシスタントや部屋のメンバーが返信すると、Hearth Room が通知できます。次にシステムが許可を求めます。今はスキップすることもできます。';
 
   @override
   String get notificationExplainerEnable => '通知を有効にする';

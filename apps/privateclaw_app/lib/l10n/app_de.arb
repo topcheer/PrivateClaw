@@ -91,7 +91,7 @@
   "dateToday": "Heute",
   "dateYesterday": "Gestern",
   "notificationExplainerTitle": "Antworten als Mitteilung erhalten",
-  "notificationExplainerBody": "Hearth Room kann dich benachrichtigen, wenn dein Assistent oder jemand aus dem Raum antwortet, während die App im Hintergrund ist. iOS fragt als Nächstes nach der Berechtigung.",
+  "notificationExplainerBody": "Hearth Room kann dich benachrichtigen, wenn dein Assistent oder jemand aus dem Raum antwortet, während die App im Hintergrund ist. Als Nächstes fragt das System nach der Berechtigung; du kannst das auch vorerst überspringen.",
   "notificationExplainerEnable": "Mitteilungen aktivieren",
   "notificationExplainerLater": "Nicht jetzt",
   "sendTooltip": "Senden",

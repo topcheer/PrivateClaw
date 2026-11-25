@@ -152,7 +152,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get notificationExplainerBody =>
-      '앱이 백그라운드에 있을 때 어시스턴트나 방 멤버가 답장하면 Hearth Room이 알려드릴 수 있습니다. 다음으로 iOS에서 권한을 요청합니다.';
+      '앱이 백그라운드에 있을 때 어시스턴트나 방 멤버가 답장하면 Hearth Room이 알려드릴 수 있습니다. 다음으로 시스템에서 권한을 요청합니다. 지금은 건너뛸 수도 있습니다.';
 
   @override
   String get notificationExplainerEnable => '알림 켜기';

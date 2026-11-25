@@ -95,7 +95,7 @@
   "dateToday": "今天",
   "dateYesterday": "昨天",
   "notificationExplainerTitle": "開啟回覆通知",
-  "notificationExplainerBody": "應用在背景時，如果助手或房間裡的成員回覆了，Hearth Room 可以通知你。接下來 iOS 會請求權限。",
+  "notificationExplainerBody": "應用在背景時，如果助手或房間裡的成員回覆了，Hearth Room 可以通知你。系統接下來會請求權限；你也可以暫時跳過。",
   "notificationExplainerEnable": "開啟通知",
   "notificationExplainerLater": "暫不",
   "sendTooltip": "傳送",

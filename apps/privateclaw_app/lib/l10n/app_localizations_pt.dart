@@ -158,7 +158,7 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get notificationExplainerBody =>
-      'O Hearth Room pode avisar você quando o assistente ou alguém da sala responder com o app em segundo plano. O iOS pedirá permissão em seguida.';
+      'O Hearth Room pode avisar você quando o assistente ou alguém da sala responder com o app em segundo plano. O sistema pedirá permissão em seguida; você também pode pular por enquanto.';
 
   @override
   String get notificationExplainerEnable => 'Ativar notificações';
@@ -572,7 +572,7 @@ class AppLocalizationsPtBr extends AppLocalizationsPt {
 
   @override
   String get notificationExplainerBody =>
-      'O Hearth Room pode avisar você quando o assistente ou alguém da sala responder com o app em segundo plano. O iOS pedirá permissão em seguida.';
+      'O Hearth Room pode avisar você quando o assistente ou alguém da sala responder com o app em segundo plano. O sistema pedirá permissão em seguida; você também pode pular por enquanto.';
 
   @override
   String get notificationExplainerEnable => 'Ativar notificações';

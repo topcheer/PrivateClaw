@@ -152,12 +152,17 @@ class PrivateClawNotificationService {
     debugPrint(message.trim());
   }
 
-  Future<void> prepareForSession() async {
+  Future<void> prepareForSession({bool requestPermission = true}) async {
     if (!isConfigured) {
       return;
     }
     await bootstrap();
     if (!isConfigured) {
+      return;
+    }
+    // "Not now" on the explainer: set up push without the system prompt; the
+    // user can still be asked on a later join.
+    if (!requestPermission) {
       return;
     }
     _permissionFuture ??= _requestNotificationPermission();

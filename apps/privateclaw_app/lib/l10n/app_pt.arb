@@ -91,7 +91,7 @@
   "dateToday": "Hoje",
   "dateYesterday": "Ontem",
   "notificationExplainerTitle": "Receba avisos das respostas",
-  "notificationExplainerBody": "O Hearth Room pode avisar você quando o assistente ou alguém da sala responder com o app em segundo plano. O iOS pedirá permissão em seguida.",
+  "notificationExplainerBody": "O Hearth Room pode avisar você quando o assistente ou alguém da sala responder com o app em segundo plano. O sistema pedirá permissão em seguida; você também pode pular por enquanto.",
   "notificationExplainerEnable": "Ativar notificações",
   "notificationExplainerLater": "Agora não",
   "sendTooltip": "Enviar",

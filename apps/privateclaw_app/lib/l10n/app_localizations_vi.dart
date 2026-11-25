@@ -158,7 +158,7 @@ class AppLocalizationsVi extends AppLocalizations {
 
   @override
   String get notificationExplainerBody =>
-      'Hearth Room có thể thông báo cho bạn khi trợ lý hoặc ai đó trong phòng trả lời trong khi ứng dụng ở chế độ nền. iOS sẽ xin quyền ngay sau đây.';
+      'Hearth Room có thể thông báo cho bạn khi trợ lý hoặc ai đó trong phòng trả lời trong khi ứng dụng ở chế độ nền. Hệ thống sẽ xin quyền ngay sau đây; bạn cũng có thể bỏ qua lúc này.';
 
   @override
   String get notificationExplainerEnable => 'Bật thông báo';

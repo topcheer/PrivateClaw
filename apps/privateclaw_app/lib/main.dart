@@ -300,6 +300,9 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
   /// Human-readable reason of the last connect failure, kept on screen while
   /// the client retries so the user knows why nothing is happening.
   String? _lastConnectErrorText;
+  /// Whether the system permission prompt may be shown for the session being
+  /// joined. Reset on every join; the explainer's "Not now" sets it to false.
+  bool _requestNotificationPermissionThisSession = true;
   bool _isPairingPanelCollapsed = false;
   bool _hasConnectedSession = false;
   int _attachmentCounter = 0;
@@ -1109,12 +1112,14 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     final AppLocalizations l10n = AppLocalizations.of(context)!;
     // Explain why notifications matter before the system prompt appears; shown
     // once per install, right before the first room join requests permission.
+    _requestNotificationPermissionThisSession = true;
     if (!widget.skipNotificationsInDebug &&
         await _shouldShowNotificationExplainer()) {
       if (!mounted) {
         return;
       }
-      await _showNotificationExplainer();
+      _requestNotificationPermissionThisSession =
+          await _showNotificationExplainer();
       if (!mounted) {
         return;
       }
@@ -1159,7 +1164,9 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
 
     if (!widget.skipNotificationsInDebug) {
       try {
-        await _notificationService.prepareForSession();
+        await _notificationService.prepareForSession(
+          requestPermission: _requestNotificationPermissionThisSession,
+        );
       } catch (error, stackTrace) {
         debugPrint('[privateclaw-app] notification setup failed: $error');
         debugPrintStack(stackTrace: stackTrace);
@@ -4349,7 +4356,10 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     }
   }
 
-  Future<void> _showNotificationExplainer() async {
+  /// Returns true when the user chose "Enable" (the system prompt follows),
+  /// false for "Not now" (no prompt this session; the explainer will not
+  /// repeat, the system prompt comes on a later join instead).
+  Future<bool> _showNotificationExplainer() async {
     final AppLocalizations l10n = AppLocalizations.of(context)!;
     // Persist first so an interrupted dialog never comes back every launch.
     try {
@@ -4362,9 +4372,9 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       debugPrintStack(stackTrace: stackTrace);
     }
     if (!mounted) {
-      return;
+      return true;
     }
-    await showDialog<void>(
+    final bool? enable = await showDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) {
         return AlertDialog(
@@ -4374,18 +4384,19 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
           actions: <Widget>[
             TextButton(
               key: const ValueKey<String>('notification-explainer-later'),
-              onPressed: () => Navigator.of(dialogContext).pop(),
+              onPressed: () => Navigator.of(dialogContext).pop(false),
               child: Text(l10n.notificationExplainerLater),
             ),
             FilledButton(
               key: const ValueKey<String>('notification-explainer-enable'),
-              onPressed: () => Navigator.of(dialogContext).pop(),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
               child: Text(l10n.notificationExplainerEnable),
             ),
           ],
         );
       },
     );
+    return enable ?? true;
   }
 
   Widget _buildFirstRunEmptyState(BuildContext context, AppLocalizations l10n) {

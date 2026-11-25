@@ -91,7 +91,7 @@
   "dateToday": "Hôm nay",
   "dateYesterday": "Hôm qua",
   "notificationExplainerTitle": "Nhận thông báo khi có trả lời",
-  "notificationExplainerBody": "Hearth Room có thể thông báo cho bạn khi trợ lý hoặc ai đó trong phòng trả lời trong khi ứng dụng ở chế độ nền. iOS sẽ xin quyền ngay sau đây.",
+  "notificationExplainerBody": "Hearth Room có thể thông báo cho bạn khi trợ lý hoặc ai đó trong phòng trả lời trong khi ứng dụng ở chế độ nền. Hệ thống sẽ xin quyền ngay sau đây; bạn cũng có thể bỏ qua lúc này.",
   "notificationExplainerEnable": "Bật thông báo",
   "notificationExplainerLater": "Để sau",
   "sendTooltip": "Gửi",

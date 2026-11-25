@@ -91,7 +91,7 @@
   "dateToday": "اليوم",
   "dateYesterday": "أمس",
   "notificationExplainerTitle": "احصل على إشعار بالردود",
-  "notificationExplainerBody": "يمكن لـ Hearth Room إشعارك عندما يرد مساعدك أو أحد أعضاء الغرفة أثناء عمل التطبيق في الخلفية. سيطلب iOS الإذن بعد قليل.",
+  "notificationExplainerBody": "يمكن لـ Hearth Room إشعارك عندما يرد مساعدك أو أحد أعضاء الغرفة أثناء عمل التطبيق في الخلفية. سيطلب النظام الإذن بعد قليل، ويمكنك تخطيه في الوقت الحالي.",
   "notificationExplainerEnable": "تفعيل الإشعارات",
   "notificationExplainerLater": "ليس الآن",
   "sendTooltip": "إرسال",

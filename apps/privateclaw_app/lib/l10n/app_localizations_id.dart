@@ -158,7 +158,7 @@ class AppLocalizationsId extends AppLocalizations {
 
   @override
   String get notificationExplainerBody =>
-      'Hearth Room dapat memberi tahu kamu saat asisten atau anggota ruang lain membalas saat aplikasi di latar belakang. iOS akan meminta izin selanjutnya.';
+      'Hearth Room dapat memberi tahu kamu saat asisten atau anggota ruang lain membalas saat aplikasi di latar belakang. Sistem akan meminta izin selanjutnya; kamu juga bisa melewatinya untuk saat ini.';
 
   @override
   String get notificationExplainerEnable => 'Aktifkan notifikasi';

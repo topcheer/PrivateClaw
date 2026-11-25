@@ -149,7 +149,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get notificationExplainerBody =>
-      '应用在后台时，如果助手或房间里的成员回复了，Hearth Room 可以通知你。接下来 iOS 会请求权限。';
+      '应用在后台时，如果助手或房间里的成员回复了，Hearth Room 可以通知你。系统接下来会请求权限；你也可以暂时跳过。';
 
   @override
   String get notificationExplainerEnable => '开启通知';
@@ -549,7 +549,7 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get notificationExplainerBody =>
-      '應用在背景時，如果助手或房間裡的成員回覆了，Hearth Room 可以通知你。接下來 iOS 會請求權限。';
+      '應用在背景時，如果助手或房間裡的成員回覆了，Hearth Room 可以通知你。系統接下來會請求權限；你也可以暫時跳過。';
 
   @override
   String get notificationExplainerEnable => '開啟通知';

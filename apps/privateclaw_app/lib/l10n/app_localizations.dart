@@ -373,7 +373,7 @@ abstract class AppLocalizations {
   /// Body of the explainer shown once before the notification permission prompt.
   ///
   /// In en, this message translates to:
-  /// **'Hearth Room can notify you when your assistant or someone in the room replies while the app is in the background. iOS will ask for permission next.'**
+  /// **'Hearth Room can notify you when your assistant or someone in the room replies while the app is in the background. The system will ask for permission next; you can also skip it for now.'**
   String get notificationExplainerBody;
 
   /// Primary action of the notification explainer.

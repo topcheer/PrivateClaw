@@ -91,7 +91,7 @@
   "dateToday": "今日",
   "dateYesterday": "昨日",
   "notificationExplainerTitle": "返信を通知で受け取る",
-  "notificationExplainerBody": "アプリがバックグラウンドの間にアシスタントや部屋のメンバーが返信すると、Hearth Room が通知できます。次に iOS が許可を求めます。",
+  "notificationExplainerBody": "アプリがバックグラウンドの間にアシスタントや部屋のメンバーが返信すると、Hearth Room が通知できます。次にシステムが許可を求めます。今はスキップすることもできます。",
   "notificationExplainerEnable": "通知を有効にする",
   "notificationExplainerLater": "今はしない",
   "sendTooltip": "送信",

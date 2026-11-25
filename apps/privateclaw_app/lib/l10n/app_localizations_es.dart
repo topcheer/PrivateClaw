@@ -159,7 +159,7 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get notificationExplainerBody =>
-      'Hearth Room puede avisarte cuando tu asistente o alguien de la sala responda con la app en segundo plano. iOS te pedirá permiso a continuación.';
+      'Hearth Room puede avisarte cuando tu asistente o alguien de la sala responda con la app en segundo plano. El sistema te pedirá permiso a continuación; también puedes saltarlo por ahora.';
 
   @override
   String get notificationExplainerEnable => 'Activar avisos';

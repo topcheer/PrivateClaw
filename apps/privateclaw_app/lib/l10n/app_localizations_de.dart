@@ -159,7 +159,7 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get notificationExplainerBody =>
-      'Hearth Room kann dich benachrichtigen, wenn dein Assistent oder jemand aus dem Raum antwortet, während die App im Hintergrund ist. iOS fragt als Nächstes nach der Berechtigung.';
+      'Hearth Room kann dich benachrichtigen, wenn dein Assistent oder jemand aus dem Raum antwortet, während die App im Hintergrund ist. Als Nächstes fragt das System nach der Berechtigung; du kannst das auch vorerst überspringen.';
 
   @override
   String get notificationExplainerEnable => 'Mitteilungen aktivieren';

@@ -19,7 +19,23 @@ the real app; "Next" is prioritized but needs a product decision first.
 All new copy is localized in the 13 store locales (`lib/l10n/app_*.arb`); tests live in
 `test/user_experience_test.dart` (first-run state, Join gating, handle content,
 disconnect confirmation, timestamp format) plus one updated expectation in
-`widget_test.dart`. Full suite: 74 tests green.
+`widget_test.dart`.
+
+## Shipped in the second pass (P0 + two P1 items)
+
+| Problem (observed on the real app) | Change | Where |
+| --- | --- | --- |
+| Joining showed one status line ("Connecting to the PrivateClaw relay…") for up to 15 s with nothing to do; if the relay was unreachable the client retried forever and never said why. | Step-wise progress (Relay → Handshake → Joined) with a Cancel button. Cancel resets the UI instantly; the socket teardown finishes in the background. The AppBar pill shows a sync icon while connecting. | `_buildConnectionProgress`, `_cancelConnect`, `_connectStepIndex` |
+| Relay and socket failures were shown raw (`Connect failed: FormatException: …`, `ECONNREFUSED`, `session_not_found`). | Humanized errors: refused / unreachable / timeout (naming the relay), expired room, unknown room, invalid key, rate limited; unknown errors are trimmed to 120 chars. Only the invite parser's own `FormatException` maps to "Paste or scan a valid invite"; persistence failures no longer abort a join. | `_humanizeConnectError`, `_humanizeRelayReason`, `_persistActiveSessionIfAvailable` |
+| A first join that keeps retrying silently flipped into "reconnecting" and popped the big session panel over an empty chat. | The reason of the last failure stays on screen ("…refused the connection…" or "Still trying to reach relay…") in the pairing card with Cancel; the session panel only opens for sessions that were actually live. | `_lastConnectErrorText`, `_hasManagedSessionContext`, `_localizeNotice` |
+| Scanning an invite that already expired dialed the relay first and only then failed with "session closed: expired". | Expired invites are rejected before dialing: "This invite expired 2h ago. Ask the host for a new one." (also for saved sessions). | `_connectFromInput`, `_connectToSavedSession`, `_formatExpiredAgo` |
+| The notification permission prompt appeared out of nowhere on first join. | A one-time explainer ("Get notified about replies", Enable / Not now) precedes the system prompt; the choice is persisted in `privateclaw_preferences.json`. | `_shouldShowNotificationExplainer`, `PrivateClawAppPreferences` |
+| Long rooms were a wall of bubbles, each repeating avatar and name. | Date separators (Today / Yesterday / date) and grouping: a follow-up from the same sender within two minutes hides its avatar and name. | `_buildMessageList`, `_isGroupedWithPrevious`, `ChatMessageBubble.groupedWithPrevious` |
+| On small screens / the connecting state the pairing card could overflow the column. | The card keeps its natural height up to 55% of the screen and scrolls internally beyond that. | `build` |
+
+Tests: 11 in `test/user_experience_test.dart` (expired invite, invalid invite, progress +
+cancel, humanized errors, reconnect with reason, notification explainer, date
+separators + grouping, plus the first-pass cases); full suite 81 green.
 
 ## Next (needs a decision)
 
@@ -29,10 +45,7 @@ polish that only shows up with heavy use or on one platform.
 
 | # | Item | Priority | Why |
 | --- | --- | --- | --- |
-| 1 | **Connecting and error states.** Add step-wise progress (relay → handshake → joined) with Cancel, humanize relay errors (`ECONNREFUSED`, `session_not_found`), and detect an expired invite before connecting ("This invite expired 2h ago"). | **P0** | A failed join is the one path with no recovery hint; today the user sees a raw error string and no way back but to re-scan. |
-| 2 | **Session panel as a proper page on phones.** Replace the floating overlay (`_buildManagedSessionOverlay`: session id, expiry, relay, identity, members, four buttons) with a sheet/page split into Room / Members / Relay sections and a prominent "Renew" action. | **P1** | Every renewal currently depends on the banner or the `/renew-session` command; a dedicated page gives it a home. Workaround exists (banner), so not P0. |
-| 3 | **Notification permission explainer.** One screen before the system prompt ("Get notified when your assistant replies while the app is closed"); permission is already requested when the first room is prepared. | **P1** | Directly drives opt-in for the app's main value (assistant replies while away); skipping it just means fewer notifications, not a broken flow. |
-| 4 | **Message list polish.** Day separators, relative timestamps for yesterday, grouping of consecutive messages from the same sender (avatar/time shown once). | **P1** | Readability in long rooms is the core experience; today's time-only timestamps already removed the worst noise, so this refines rather than rescues. |
-| 5 | **Composer affordances.** Hide the disabled emoji / voice / photo / file row before a room exists; show available slash commands as tappable chips above the composer instead of only inside the `/` sheet. | **P2** | Discoverability improvement; all features remain reachable today. |
-| 6 | **Desktop.** Keyboard-shortcut help (Cmd+Enter to send, Cmd+K for commands); widen/center the message column (bubbles cap at ~480 px, leaving the right of a macOS window empty). | **P2** | Single-platform layout polish; no functional gap. |
-| 7 | **Store assets.** The screenshots shipped with 0.1.20 predate these changes; rerun `python3 scripts/build-store-screenshots.py` before the next release so the listing shows the onboarding state and the session pill. | **P2** | Release hygiene rather than in-app UX; must be done before the next submission but changes no code. |
+| 1 | **Session panel as a proper page on phones.** Replace the floating overlay (`_buildManagedSessionOverlay`: session id, expiry, relay, identity, members, four buttons) with a sheet/page split into Room / Members / Relay sections and a prominent "Renew" action. | **P1** | Every renewal currently depends on the banner or the `/renew-session` command; a dedicated page gives it a home. Workaround exists (banner), so not P0. |
+| 2 | **Composer affordances.** Hide the disabled emoji / voice / photo / file row before a room exists; show available slash commands as tappable chips above the composer instead of only inside the `/` sheet. | **P2** | Discoverability improvement; all features remain reachable today. |
+| 3 | **Desktop.** Keyboard-shortcut help (Cmd+Enter to send, Cmd+K for commands); widen/center the message column (bubbles cap at ~480 px, leaving the right of a macOS window empty). | **P2** | Single-platform layout polish; no functional gap. |
+| 4 | **Store assets.** The screenshots shipped with 0.1.20 predate these changes; rerun `python3 scripts/build-store-screenshots.py` before the next release so the listing shows the onboarding state and the session pill. | **P2** | Release hygiene rather than in-app UX; must be done before the next submission but changes no code. |

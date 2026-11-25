@@ -92,6 +92,74 @@ class AppLocalizationsJa extends AppLocalizations {
   String get sendHintIdle => '部屋に参加するとチャットを始められます…';
 
   @override
+  String get connectStepRelay => 'リレー';
+
+  @override
+  String get connectStepHandshake => 'ハンドシェイク';
+
+  @override
+  String get connectStepJoined => '参加済み';
+
+  @override
+  String get connectCancelled => 'キャンセルしました。準備ができたら招待をスキャンするか貼り付けてください。';
+
+  @override
+  String inviteExpired(String ago) {
+    return 'この招待は $ago 前に期限切れになりました。ホストに新しい招待を頼んでください。';
+  }
+
+  @override
+  String connectErrorRefused(String relay) {
+    return 'リレー $relay が接続を拒否しました。起動していることを確認して再試行してください。';
+  }
+
+  @override
+  String connectErrorNetwork(String relay) {
+    return '$relay に接続できません。インターネット接続を確認して再試行してください。';
+  }
+
+  @override
+  String connectErrorTimeout(String relay) {
+    return '$relay が時間内に応答しませんでした。しばらくしてから再試行してください。';
+  }
+
+  @override
+  String connectStillTrying(String relay) {
+    return '$relay への接続を再試行しています。リレーがオンラインで、ネットワークが有効か確認してください。';
+  }
+
+  @override
+  String get connectErrorSessionExpired => 'この部屋は期限切れです。ホストに新しい招待を頼んでください。';
+
+  @override
+  String get connectErrorSessionNotFound => 'この部屋はもう存在しません。ホストに新しい招待を頼んでください。';
+
+  @override
+  String get connectErrorInvalidKey => '招待キーがこの部屋と一致しません。ホストに新しい招待を頼んでください。';
+
+  @override
+  String get connectErrorRateLimited => '試行回数が多すぎます。しばらく待ってから再試行してください。';
+
+  @override
+  String get dateToday => '今日';
+
+  @override
+  String get dateYesterday => '昨日';
+
+  @override
+  String get notificationExplainerTitle => '返信を通知で受け取る';
+
+  @override
+  String get notificationExplainerBody =>
+      'アプリがバックグラウンドの間にアシスタントや部屋のメンバーが返信すると、Hearth Room が通知できます。次に iOS が許可を求めます。';
+
+  @override
+  String get notificationExplainerEnable => '通知を有効にする';
+
+  @override
+  String get notificationExplainerLater => '今はしない';
+
+  @override
   String get sendTooltip => '送信';
 
   @override

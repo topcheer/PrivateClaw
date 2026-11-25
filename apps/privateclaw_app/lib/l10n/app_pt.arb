@@ -30,6 +30,70 @@
   "sendHintActive": "Enviar mensagem criptografada…",
   "sendHintInactive": "Aguarde a sessão terminar de se conectar…",
   "sendHintIdle": "Entre em uma sala para começar a conversar…",
+  "connectStepRelay": "Relay",
+  "connectStepHandshake": "Handshake",
+  "connectStepJoined": "Entrou",
+  "connectCancelled": "Cancelado. Escaneie ou cole um convite quando quiser.",
+  "inviteExpired": "Este convite expirou há {ago}. Peça ao anfitrião um novo.",
+  "@inviteExpired": {
+    "description": "Shown when the scanned or pasted invite is already expired; {ago} is a compact duration.",
+    "placeholders": {
+      "ago": {
+        "type": "String",
+        "example": "2h"
+      }
+    }
+  },
+  "connectErrorRefused": "O relay {relay} recusou a conexão. Verifique se está em execução e tente novamente.",
+  "@connectErrorRefused": {
+    "description": "Human-readable connection error: connection refused by the relay.",
+    "placeholders": {
+      "relay": {
+        "type": "String",
+        "example": "relay.privateclaw.us"
+      }
+    }
+  },
+  "connectErrorNetwork": "Não foi possível acessar {relay}. Verifique sua conexão com a internet e tente novamente.",
+  "@connectErrorNetwork": {
+    "description": "Human-readable connection error: network / DNS failure.",
+    "placeholders": {
+      "relay": {
+        "type": "String",
+        "example": "relay.privateclaw.us"
+      }
+    }
+  },
+  "connectErrorTimeout": "{relay} não respondeu a tempo. Tente novamente em instantes.",
+  "@connectErrorTimeout": {
+    "description": "Human-readable connection error: relay timeout.",
+    "placeholders": {
+      "relay": {
+        "type": "String",
+        "example": "relay.privateclaw.us"
+      }
+    }
+  },
+  "connectStillTrying": "Ainda tentando acessar {relay}. Verifique se está online e se sua rede está funcionando.",
+  "@connectStillTrying": {
+    "description": "Status while a first join keeps retrying the relay without a specific error yet.",
+    "placeholders": {
+      "relay": {
+        "type": "String",
+        "example": "relay.privateclaw.us"
+      }
+    }
+  },
+  "connectErrorSessionExpired": "Esta sala expirou. Peça ao anfitrião um novo convite.",
+  "connectErrorSessionNotFound": "Esta sala não existe mais. Peça ao anfitrião um novo convite.",
+  "connectErrorInvalidKey": "A chave do convite não corresponde a esta sala. Peça ao anfitrião um novo convite.",
+  "connectErrorRateLimited": "Muitas tentativas. Aguarde um minuto antes de tentar novamente.",
+  "dateToday": "Hoje",
+  "dateYesterday": "Ontem",
+  "notificationExplainerTitle": "Receba avisos das respostas",
+  "notificationExplainerBody": "O Hearth Room pode avisar você quando o assistente ou alguém da sala responder com o app em segundo plano. O iOS pedirá permissão em seguida.",
+  "notificationExplainerEnable": "Ativar notificações",
+  "notificationExplainerLater": "Agora não",
   "sendTooltip": "Enviar",
   "sendFailed": "Falha no envio: {error}",
   "@sendFailed": {

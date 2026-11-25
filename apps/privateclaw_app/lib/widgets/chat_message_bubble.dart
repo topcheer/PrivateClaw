@@ -30,9 +30,17 @@ ChatMessageBubbleReportLauncher chatMessageBubbleReportLauncher =
     _defaultChatMessageBubbleReportLauncher;
 
 class ChatMessageBubble extends StatelessWidget {
-  const ChatMessageBubble({required this.message, super.key});
+  const ChatMessageBubble({
+    required this.message,
+    this.groupedWithPrevious = false,
+    super.key,
+  });
 
   final ChatMessage message;
+
+  /// True when the previous bubble came from the same sender moments earlier;
+  /// the avatar and name are then shown only once per block.
+  final bool groupedWithPrevious;
 
   @override
   Widget build(BuildContext context) {
@@ -85,7 +93,8 @@ class ChatMessageBubble extends StatelessWidget {
             children: <Widget>[
               if (message.senderLabel != null &&
                   message.senderLabel!.trim().isNotEmpty &&
-                  !isSystem) ...<Widget>[
+                  !isSystem &&
+                  !groupedWithPrevious) ...<Widget>[
                 Text(
                   message.senderLabel!,
                   style: Theme.of(context).textTheme.labelMedium?.copyWith(
@@ -158,11 +167,21 @@ class ChatMessageBubble extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: <Widget>[
-          if (!isOwnUserMessage) ...<Widget>[avatar, const SizedBox(width: 8)],
+          if (!isOwnUserMessage && !groupedWithPrevious) ...<Widget>[
+            avatar,
+            const SizedBox(width: 8),
+          ],
+          if (!isOwnUserMessage && groupedWithPrevious)
+            const SizedBox(width: 40),
           Flexible(
             child: Align(alignment: alignment, child: bubble),
           ),
-          if (isOwnUserMessage) ...<Widget>[const SizedBox(width: 8), avatar],
+          if (isOwnUserMessage && !groupedWithPrevious) ...<Widget>[
+            const SizedBox(width: 8),
+            avatar,
+          ],
+          if (isOwnUserMessage && groupedWithPrevious)
+            const SizedBox(width: 40),
         ],
       ),
     );

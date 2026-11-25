@@ -93,6 +93,79 @@ class AppLocalizationsAr extends AppLocalizations {
   String get sendHintIdle => 'انضم إلى غرفة لبدء الدردشة…';
 
   @override
+  String get connectStepRelay => 'الوسيط';
+
+  @override
+  String get connectStepHandshake => 'المصافحة';
+
+  @override
+  String get connectStepJoined => 'تم الانضمام';
+
+  @override
+  String get connectCancelled =>
+      'تم الإلغاء. امسح دعوة أو الصقها عندما تكون مستعدًا.';
+
+  @override
+  String inviteExpired(String ago) {
+    return 'انتهت صلاحية هذه الدعوة منذ $ago. اطلب من المضيف دعوة جديدة.';
+  }
+
+  @override
+  String connectErrorRefused(String relay) {
+    return 'رفض الوسيط $relay الاتصال. تأكد من أنه يعمل وحاول مرة أخرى.';
+  }
+
+  @override
+  String connectErrorNetwork(String relay) {
+    return 'تعذر الوصول إلى $relay. تحقق من اتصالك بالإنترنت وحاول مرة أخرى.';
+  }
+
+  @override
+  String connectErrorTimeout(String relay) {
+    return 'لم يستجب $relay في الوقت المحدد. حاول مرة أخرى بعد قليل.';
+  }
+
+  @override
+  String connectStillTrying(String relay) {
+    return 'لا يزال يحاول الوصول إلى $relay. تحقق من أنه متصل ومن أن شبكتك تعمل.';
+  }
+
+  @override
+  String get connectErrorSessionExpired =>
+      'انتهت صلاحية هذه الغرفة. اطلب من المضيف دعوة جديدة.';
+
+  @override
+  String get connectErrorSessionNotFound =>
+      'هذه الغرفة لم تعد موجودة. اطلب من المضيف دعوة جديدة.';
+
+  @override
+  String get connectErrorInvalidKey =>
+      'مفتاح الدعوة لا يطابق هذه الغرفة. اطلب من المضيف دعوة جديدة.';
+
+  @override
+  String get connectErrorRateLimited =>
+      'محاولات كثيرة جدًا. انتظر دقيقة قبل المحاولة مرة أخرى.';
+
+  @override
+  String get dateToday => 'اليوم';
+
+  @override
+  String get dateYesterday => 'أمس';
+
+  @override
+  String get notificationExplainerTitle => 'احصل على إشعار بالردود';
+
+  @override
+  String get notificationExplainerBody =>
+      'يمكن لـ Hearth Room إشعارك عندما يرد مساعدك أو أحد أعضاء الغرفة أثناء عمل التطبيق في الخلفية. سيطلب iOS الإذن بعد قليل.';
+
+  @override
+  String get notificationExplainerEnable => 'تفعيل الإشعارات';
+
+  @override
+  String get notificationExplainerLater => 'ليس الآن';
+
+  @override
   String get sendTooltip => 'إرسال';
 
   @override

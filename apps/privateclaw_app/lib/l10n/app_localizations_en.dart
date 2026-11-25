@@ -94,6 +94,79 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sendHintIdle => 'Join a room to start chatting…';
 
   @override
+  String get connectStepRelay => 'Relay';
+
+  @override
+  String get connectStepHandshake => 'Handshake';
+
+  @override
+  String get connectStepJoined => 'Joined';
+
+  @override
+  String get connectCancelled =>
+      'Cancelled. Scan or paste an invite when you\'re ready.';
+
+  @override
+  String inviteExpired(String ago) {
+    return 'This invite expired $ago ago. Ask the host for a new one.';
+  }
+
+  @override
+  String connectErrorRefused(String relay) {
+    return 'The relay $relay refused the connection. Make sure it is running and try again.';
+  }
+
+  @override
+  String connectErrorNetwork(String relay) {
+    return 'Can\'t reach $relay. Check your internet connection and try again.';
+  }
+
+  @override
+  String connectErrorTimeout(String relay) {
+    return '$relay did not respond in time. Try again in a moment.';
+  }
+
+  @override
+  String connectStillTrying(String relay) {
+    return 'Still trying to reach $relay. Check that it is online and your network is up.';
+  }
+
+  @override
+  String get connectErrorSessionExpired =>
+      'This room has expired. Ask the host for a new invite.';
+
+  @override
+  String get connectErrorSessionNotFound =>
+      'This room doesn\'t exist anymore. Ask the host for a new invite.';
+
+  @override
+  String get connectErrorInvalidKey =>
+      'The invite key doesn\'t match this room. Ask the host for a new invite.';
+
+  @override
+  String get connectErrorRateLimited =>
+      'Too many attempts. Wait a minute before trying again.';
+
+  @override
+  String get dateToday => 'Today';
+
+  @override
+  String get dateYesterday => 'Yesterday';
+
+  @override
+  String get notificationExplainerTitle => 'Get notified about replies';
+
+  @override
+  String get notificationExplainerBody =>
+      'Hearth Room can notify you when your assistant or someone in the room replies while the app is in the background. iOS will ask for permission next.';
+
+  @override
+  String get notificationExplainerEnable => 'Enable notifications';
+
+  @override
+  String get notificationExplainerLater => 'Not now';
+
+  @override
   String get sendTooltip => 'Send';
 
   @override

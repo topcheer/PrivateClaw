@@ -30,6 +30,70 @@
   "sendHintActive": "Gửi tin nhắn được mã hóa…",
   "sendHintInactive": "Chờ phiên hoàn tất kết nối…",
   "sendHintIdle": "Tham gia phòng để bắt đầu trò chuyện…",
+  "connectStepRelay": "Relay",
+  "connectStepHandshake": "Bắt tay",
+  "connectStepJoined": "Đã vào",
+  "connectCancelled": "Đã hủy. Quét hoặc dán lời mời khi bạn sẵn sàng.",
+  "inviteExpired": "Lời mời này đã hết hạn {ago} trước. Hãy nhờ người tạo phòng cấp lời mời mới.",
+  "@inviteExpired": {
+    "description": "Shown when the scanned or pasted invite is already expired; {ago} is a compact duration.",
+    "placeholders": {
+      "ago": {
+        "type": "String",
+        "example": "2h"
+      }
+    }
+  },
+  "connectErrorRefused": "Relay {relay} đã từ chối kết nối. Hãy kiểm tra nó đang chạy rồi thử lại.",
+  "@connectErrorRefused": {
+    "description": "Human-readable connection error: connection refused by the relay.",
+    "placeholders": {
+      "relay": {
+        "type": "String",
+        "example": "relay.privateclaw.us"
+      }
+    }
+  },
+  "connectErrorNetwork": "Không thể truy cập {relay}. Hãy kiểm tra kết nối internet rồi thử lại.",
+  "@connectErrorNetwork": {
+    "description": "Human-readable connection error: network / DNS failure.",
+    "placeholders": {
+      "relay": {
+        "type": "String",
+        "example": "relay.privateclaw.us"
+      }
+    }
+  },
+  "connectErrorTimeout": "{relay} không phản hồi kịp thời. Hãy thử lại sau một lát.",
+  "@connectErrorTimeout": {
+    "description": "Human-readable connection error: relay timeout.",
+    "placeholders": {
+      "relay": {
+        "type": "String",
+        "example": "relay.privateclaw.us"
+      }
+    }
+  },
+  "connectStillTrying": "Vẫn đang thử kết nối tới {relay}. Hãy kiểm tra relay đang trực tuyến và mạng của bạn hoạt động.",
+  "@connectStillTrying": {
+    "description": "Status while a first join keeps retrying the relay without a specific error yet.",
+    "placeholders": {
+      "relay": {
+        "type": "String",
+        "example": "relay.privateclaw.us"
+      }
+    }
+  },
+  "connectErrorSessionExpired": "Phòng này đã hết hạn. Hãy nhờ người tạo phòng cấp lời mời mới.",
+  "connectErrorSessionNotFound": "Phòng này không còn tồn tại. Hãy nhờ người tạo phòng cấp lời mời mới.",
+  "connectErrorInvalidKey": "Khóa lời mời không khớp với phòng này. Hãy nhờ người tạo phòng cấp lời mời mới.",
+  "connectErrorRateLimited": "Thử quá nhiều lần. Hãy đợi một phút rồi thử lại.",
+  "dateToday": "Hôm nay",
+  "dateYesterday": "Hôm qua",
+  "notificationExplainerTitle": "Nhận thông báo khi có trả lời",
+  "notificationExplainerBody": "Hearth Room có thể thông báo cho bạn khi trợ lý hoặc ai đó trong phòng trả lời trong khi ứng dụng ở chế độ nền. iOS sẽ xin quyền ngay sau đây.",
+  "notificationExplainerEnable": "Bật thông báo",
+  "notificationExplainerLater": "Để sau",
   "sendTooltip": "Gửi",
   "sendFailed": "Gửi thất bại: {error}",
   "@sendFailed": {

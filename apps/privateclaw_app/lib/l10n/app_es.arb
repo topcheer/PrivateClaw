@@ -30,6 +30,70 @@
   "sendHintActive": "Enviar un mensaje cifrado…",
   "sendHintInactive": "Espera a que la sesión termine de conectarse…",
   "sendHintIdle": "Únete a una sala para empezar a chatear…",
+  "connectStepRelay": "Relay",
+  "connectStepHandshake": "Handshake",
+  "connectStepJoined": "Unido",
+  "connectCancelled": "Cancelado. Escanea o pega una invitación cuando quieras.",
+  "inviteExpired": "Esta invitación caducó hace {ago}. Pide al anfitrión una nueva.",
+  "@inviteExpired": {
+    "description": "Shown when the scanned or pasted invite is already expired; {ago} is a compact duration.",
+    "placeholders": {
+      "ago": {
+        "type": "String",
+        "example": "2h"
+      }
+    }
+  },
+  "connectErrorRefused": "El relay {relay} rechazó la conexión. Comprueba que esté en marcha e inténtalo de nuevo.",
+  "@connectErrorRefused": {
+    "description": "Human-readable connection error: connection refused by the relay.",
+    "placeholders": {
+      "relay": {
+        "type": "String",
+        "example": "relay.privateclaw.us"
+      }
+    }
+  },
+  "connectErrorNetwork": "No se puede conectar con {relay}. Revisa tu conexión a internet e inténtalo de nuevo.",
+  "@connectErrorNetwork": {
+    "description": "Human-readable connection error: network / DNS failure.",
+    "placeholders": {
+      "relay": {
+        "type": "String",
+        "example": "relay.privateclaw.us"
+      }
+    }
+  },
+  "connectErrorTimeout": "{relay} no respondió a tiempo. Inténtalo de nuevo en un momento.",
+  "@connectErrorTimeout": {
+    "description": "Human-readable connection error: relay timeout.",
+    "placeholders": {
+      "relay": {
+        "type": "String",
+        "example": "relay.privateclaw.us"
+      }
+    }
+  },
+  "connectStillTrying": "Sigue intentando conectar con {relay}. Comprueba que esté en línea y que tu red funcione.",
+  "@connectStillTrying": {
+    "description": "Status while a first join keeps retrying the relay without a specific error yet.",
+    "placeholders": {
+      "relay": {
+        "type": "String",
+        "example": "relay.privateclaw.us"
+      }
+    }
+  },
+  "connectErrorSessionExpired": "Esta sala ha caducado. Pide al anfitrión una nueva invitación.",
+  "connectErrorSessionNotFound": "Esta sala ya no existe. Pide al anfitrión una nueva invitación.",
+  "connectErrorInvalidKey": "La clave de la invitación no corresponde a esta sala. Pide al anfitrión una nueva.",
+  "connectErrorRateLimited": "Demasiados intentos. Espera un minuto antes de volver a intentarlo.",
+  "dateToday": "Hoy",
+  "dateYesterday": "Ayer",
+  "notificationExplainerTitle": "Recibe avisos de las respuestas",
+  "notificationExplainerBody": "Hearth Room puede avisarte cuando tu asistente o alguien de la sala responda con la app en segundo plano. iOS te pedirá permiso a continuación.",
+  "notificationExplainerEnable": "Activar avisos",
+  "notificationExplainerLater": "Ahora no",
   "sendTooltip": "Enviar",
   "sendFailed": "Error al enviar: {error}",
   "@sendFailed": {

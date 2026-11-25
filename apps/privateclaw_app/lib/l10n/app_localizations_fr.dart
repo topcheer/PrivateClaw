@@ -95,6 +95,80 @@ class AppLocalizationsFr extends AppLocalizations {
   String get sendHintIdle => 'Rejoignez un salon pour commencer à discuter…';
 
   @override
+  String get connectStepRelay => 'Relai';
+
+  @override
+  String get connectStepHandshake => 'Négociation';
+
+  @override
+  String get connectStepJoined => 'Rejoint';
+
+  @override
+  String get connectCancelled =>
+      'Annulé. Scannez ou collez une invitation quand vous êtes prêt.';
+
+  @override
+  String inviteExpired(String ago) {
+    return 'Cette invitation a expiré il y a $ago. Demandez-en une nouvelle à l\'hôte.';
+  }
+
+  @override
+  String connectErrorRefused(String relay) {
+    return 'Le relai $relay a refusé la connexion. Vérifiez qu\'il est démarré et réessayez.';
+  }
+
+  @override
+  String connectErrorNetwork(String relay) {
+    return 'Impossible d\'atteindre $relay. Vérifiez votre connexion internet et réessayez.';
+  }
+
+  @override
+  String connectErrorTimeout(String relay) {
+    return '$relay n\'a pas répondu à temps. Réessayez dans un instant.';
+  }
+
+  @override
+  String connectStillTrying(String relay) {
+    return 'Toujours en train d\'essayer d\'atteindre $relay. Vérifiez qu\'il est en ligne et que votre réseau fonctionne.';
+  }
+
+  @override
+  String get connectErrorSessionExpired =>
+      'Ce salon a expiré. Demandez une nouvelle invitation à l\'hôte.';
+
+  @override
+  String get connectErrorSessionNotFound =>
+      'Ce salon n\'existe plus. Demandez une nouvelle invitation à l\'hôte.';
+
+  @override
+  String get connectErrorInvalidKey =>
+      'La clé de l\'invitation ne correspond pas à ce salon. Demandez-en une nouvelle à l\'hôte.';
+
+  @override
+  String get connectErrorRateLimited =>
+      'Trop de tentatives. Attendez une minute avant de réessayer.';
+
+  @override
+  String get dateToday => 'Aujourd\'hui';
+
+  @override
+  String get dateYesterday => 'Hier';
+
+  @override
+  String get notificationExplainerTitle =>
+      'Recevez les réponses en notification';
+
+  @override
+  String get notificationExplainerBody =>
+      'Hearth Room peut vous prévenir lorsque votre assistant ou quelqu\'un dans le salon répond pendant que l\'app est en arrière-plan. iOS demandera l\'autorisation ensuite.';
+
+  @override
+  String get notificationExplainerEnable => 'Activer les notifications';
+
+  @override
+  String get notificationExplainerLater => 'Pas maintenant';
+
+  @override
   String get sendTooltip => 'Envoyer';
 
   @override

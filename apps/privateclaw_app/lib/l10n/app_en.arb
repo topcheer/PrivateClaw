@@ -52,6 +52,112 @@
   "@sendHintIdle": {
     "description": "Composer placeholder before any room has been joined."
   },
+  "connectStepRelay": "Relay",
+  "@connectStepRelay": {
+    "description": "Step 1 of the connection progress: reaching the relay."
+  },
+  "connectStepHandshake": "Handshake",
+  "@connectStepHandshake": {
+    "description": "Step 2 of the connection progress: encrypted handshake."
+  },
+  "connectStepJoined": "Joined",
+  "@connectStepJoined": {
+    "description": "Step 3 of the connection progress: joined the room."
+  },
+  "connectCancelled": "Cancelled. Scan or paste an invite when you're ready.",
+  "@connectCancelled": {
+    "description": "Status after the user cancels a connection in progress."
+  },
+  "inviteExpired": "This invite expired {ago} ago. Ask the host for a new one.",
+  "@inviteExpired": {
+    "description": "Shown when the scanned or pasted invite is already expired; {ago} is a compact duration.",
+    "placeholders": {
+      "ago": {
+        "type": "String",
+        "example": "2h"
+      }
+    }
+  },
+  "connectErrorRefused": "The relay {relay} refused the connection. Make sure it is running and try again.",
+  "@connectErrorRefused": {
+    "description": "Human-readable connection error: connection refused by the relay.",
+    "placeholders": {
+      "relay": {
+        "type": "String",
+        "example": "relay.privateclaw.us"
+      }
+    }
+  },
+  "connectErrorNetwork": "Can't reach {relay}. Check your internet connection and try again.",
+  "@connectErrorNetwork": {
+    "description": "Human-readable connection error: network / DNS failure.",
+    "placeholders": {
+      "relay": {
+        "type": "String",
+        "example": "relay.privateclaw.us"
+      }
+    }
+  },
+  "connectErrorTimeout": "{relay} did not respond in time. Try again in a moment.",
+  "@connectErrorTimeout": {
+    "description": "Human-readable connection error: relay timeout.",
+    "placeholders": {
+      "relay": {
+        "type": "String",
+        "example": "relay.privateclaw.us"
+      }
+    }
+  },
+  "connectStillTrying": "Still trying to reach {relay}. Check that it is online and your network is up.",
+  "@connectStillTrying": {
+    "description": "Status while a first join keeps retrying the relay without a specific error yet.",
+    "placeholders": {
+      "relay": {
+        "type": "String",
+        "example": "relay.privateclaw.us"
+      }
+    }
+  },
+  "connectErrorSessionExpired": "This room has expired. Ask the host for a new invite.",
+  "@connectErrorSessionExpired": {
+    "description": "Human-readable relay error: session_expired."
+  },
+  "connectErrorSessionNotFound": "This room doesn't exist anymore. Ask the host for a new invite.",
+  "@connectErrorSessionNotFound": {
+    "description": "Human-readable relay error: unknown_session / session_not_found."
+  },
+  "connectErrorInvalidKey": "The invite key doesn't match this room. Ask the host for a new invite.",
+  "@connectErrorInvalidKey": {
+    "description": "Human-readable relay error: invalid session key."
+  },
+  "connectErrorRateLimited": "Too many attempts. Wait a minute before trying again.",
+  "@connectErrorRateLimited": {
+    "description": "Human-readable relay error: rate limited."
+  },
+  "dateToday": "Today",
+  "@dateToday": {
+    "description": "Date separator above messages sent today."
+  },
+  "dateYesterday": "Yesterday",
+  "@dateYesterday": {
+    "description": "Date separator above messages sent yesterday."
+  },
+  "notificationExplainerTitle": "Get notified about replies",
+  "@notificationExplainerTitle": {
+    "description": "Title of the explainer shown once before the notification permission prompt."
+  },
+  "notificationExplainerBody": "Hearth Room can notify you when your assistant or someone in the room replies while the app is in the background. iOS will ask for permission next.",
+  "@notificationExplainerBody": {
+    "description": "Body of the explainer shown once before the notification permission prompt."
+  },
+  "notificationExplainerEnable": "Enable notifications",
+  "@notificationExplainerEnable": {
+    "description": "Primary action of the notification explainer."
+  },
+  "notificationExplainerLater": "Not now",
+  "@notificationExplainerLater": {
+    "description": "Secondary action of the notification explainer."
+  },
   "sendTooltip": "Send",
   "sendFailed": "Send failed: {error}",
   "@sendFailed": {

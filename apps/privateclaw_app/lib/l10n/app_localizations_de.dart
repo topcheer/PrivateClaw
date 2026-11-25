@@ -95,6 +95,79 @@ class AppLocalizationsDe extends AppLocalizations {
   String get sendHintIdle => 'Tritt einem Raum bei, um zu chatten…';
 
   @override
+  String get connectStepRelay => 'Relay';
+
+  @override
+  String get connectStepHandshake => 'Handshake';
+
+  @override
+  String get connectStepJoined => 'Beigetreten';
+
+  @override
+  String get connectCancelled =>
+      'Abgebrochen. Scanne oder füge eine Einladung ein, wenn du bereit bist.';
+
+  @override
+  String inviteExpired(String ago) {
+    return 'Diese Einladung ist seit $ago abgelaufen. Bitte den Host um eine neue.';
+  }
+
+  @override
+  String connectErrorRefused(String relay) {
+    return 'Das Relay $relay hat die Verbindung abgelehnt. Prüfe, dass es läuft, und versuch es erneut.';
+  }
+
+  @override
+  String connectErrorNetwork(String relay) {
+    return '$relay ist nicht erreichbar. Prüfe deine Internetverbindung und versuch es erneut.';
+  }
+
+  @override
+  String connectErrorTimeout(String relay) {
+    return '$relay hat nicht rechtzeitig geantwortet. Versuch es gleich noch einmal.';
+  }
+
+  @override
+  String connectStillTrying(String relay) {
+    return '$relay wird weiterhin versucht. Prüfe, dass es erreichbar ist und dein Netzwerk funktioniert.';
+  }
+
+  @override
+  String get connectErrorSessionExpired =>
+      'Dieser Raum ist abgelaufen. Bitte den Host um eine neue Einladung.';
+
+  @override
+  String get connectErrorSessionNotFound =>
+      'Diesen Raum gibt es nicht mehr. Bitte den Host um eine neue Einladung.';
+
+  @override
+  String get connectErrorInvalidKey =>
+      'Der Einladungsschlüssel passt nicht zu diesem Raum. Bitte den Host um eine neue Einladung.';
+
+  @override
+  String get connectErrorRateLimited =>
+      'Zu viele Versuche. Warte eine Minute und versuch es dann erneut.';
+
+  @override
+  String get dateToday => 'Heute';
+
+  @override
+  String get dateYesterday => 'Gestern';
+
+  @override
+  String get notificationExplainerTitle => 'Antworten als Mitteilung erhalten';
+
+  @override
+  String get notificationExplainerBody =>
+      'Hearth Room kann dich benachrichtigen, wenn dein Assistent oder jemand aus dem Raum antwortet, während die App im Hintergrund ist. iOS fragt als Nächstes nach der Berechtigung.';
+
+  @override
+  String get notificationExplainerEnable => 'Mitteilungen aktivieren';
+
+  @override
+  String get notificationExplainerLater => 'Nicht jetzt';
+
+  @override
   String get sendTooltip => 'Senden';
 
   @override

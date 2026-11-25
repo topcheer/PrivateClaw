@@ -94,6 +94,79 @@ class AppLocalizationsPt extends AppLocalizations {
   String get sendHintIdle => 'Entre em uma sala para começar a conversar…';
 
   @override
+  String get connectStepRelay => 'Relay';
+
+  @override
+  String get connectStepHandshake => 'Handshake';
+
+  @override
+  String get connectStepJoined => 'Entrou';
+
+  @override
+  String get connectCancelled =>
+      'Cancelado. Escaneie ou cole um convite quando quiser.';
+
+  @override
+  String inviteExpired(String ago) {
+    return 'Este convite expirou há $ago. Peça ao anfitrião um novo.';
+  }
+
+  @override
+  String connectErrorRefused(String relay) {
+    return 'O relay $relay recusou a conexão. Verifique se está em execução e tente novamente.';
+  }
+
+  @override
+  String connectErrorNetwork(String relay) {
+    return 'Não foi possível acessar $relay. Verifique sua conexão com a internet e tente novamente.';
+  }
+
+  @override
+  String connectErrorTimeout(String relay) {
+    return '$relay não respondeu a tempo. Tente novamente em instantes.';
+  }
+
+  @override
+  String connectStillTrying(String relay) {
+    return 'Ainda tentando acessar $relay. Verifique se está online e se sua rede está funcionando.';
+  }
+
+  @override
+  String get connectErrorSessionExpired =>
+      'Esta sala expirou. Peça ao anfitrião um novo convite.';
+
+  @override
+  String get connectErrorSessionNotFound =>
+      'Esta sala não existe mais. Peça ao anfitrião um novo convite.';
+
+  @override
+  String get connectErrorInvalidKey =>
+      'A chave do convite não corresponde a esta sala. Peça ao anfitrião um novo convite.';
+
+  @override
+  String get connectErrorRateLimited =>
+      'Muitas tentativas. Aguarde um minuto antes de tentar novamente.';
+
+  @override
+  String get dateToday => 'Hoje';
+
+  @override
+  String get dateYesterday => 'Ontem';
+
+  @override
+  String get notificationExplainerTitle => 'Receba avisos das respostas';
+
+  @override
+  String get notificationExplainerBody =>
+      'O Hearth Room pode avisar você quando o assistente ou alguém da sala responder com o app em segundo plano. O iOS pedirá permissão em seguida.';
+
+  @override
+  String get notificationExplainerEnable => 'Ativar notificações';
+
+  @override
+  String get notificationExplainerLater => 'Agora não';
+
+  @override
   String get sendTooltip => 'Enviar';
 
   @override
@@ -433,6 +506,79 @@ class AppLocalizationsPtBr extends AppLocalizationsPt {
 
   @override
   String get sendHintIdle => 'Entre em uma sala para começar a conversar…';
+
+  @override
+  String get connectStepRelay => 'Relay';
+
+  @override
+  String get connectStepHandshake => 'Handshake';
+
+  @override
+  String get connectStepJoined => 'Entrou';
+
+  @override
+  String get connectCancelled =>
+      'Cancelado. Escaneie ou cole um convite quando quiser.';
+
+  @override
+  String inviteExpired(String ago) {
+    return 'Este convite expirou há $ago. Peça ao anfitrião um novo.';
+  }
+
+  @override
+  String connectErrorRefused(String relay) {
+    return 'O relay $relay recusou a conexão. Verifique se está em execução e tente novamente.';
+  }
+
+  @override
+  String connectErrorNetwork(String relay) {
+    return 'Não foi possível acessar $relay. Verifique sua conexão com a internet e tente novamente.';
+  }
+
+  @override
+  String connectErrorTimeout(String relay) {
+    return '$relay não respondeu a tempo. Tente novamente em instantes.';
+  }
+
+  @override
+  String connectStillTrying(String relay) {
+    return 'Ainda tentando acessar $relay. Verifique se está online e se sua rede está funcionando.';
+  }
+
+  @override
+  String get connectErrorSessionExpired =>
+      'Esta sala expirou. Peça ao anfitrião um novo convite.';
+
+  @override
+  String get connectErrorSessionNotFound =>
+      'Esta sala não existe mais. Peça ao anfitrião um novo convite.';
+
+  @override
+  String get connectErrorInvalidKey =>
+      'A chave do convite não corresponde a esta sala. Peça ao anfitrião um novo convite.';
+
+  @override
+  String get connectErrorRateLimited =>
+      'Muitas tentativas. Aguarde um minuto antes de tentar novamente.';
+
+  @override
+  String get dateToday => 'Hoje';
+
+  @override
+  String get dateYesterday => 'Ontem';
+
+  @override
+  String get notificationExplainerTitle => 'Receba avisos das respostas';
+
+  @override
+  String get notificationExplainerBody =>
+      'O Hearth Room pode avisar você quando o assistente ou alguém da sala responder com o app em segundo plano. O iOS pedirá permissão em seguida.';
+
+  @override
+  String get notificationExplainerEnable => 'Ativar notificações';
+
+  @override
+  String get notificationExplainerLater => 'Agora não';
 
   @override
   String get sendTooltip => 'Enviar';

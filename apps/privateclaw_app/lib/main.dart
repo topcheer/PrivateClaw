@@ -23,6 +23,7 @@ import 'models/privateclaw_invite.dart';
 import 'models/privateclaw_participant.dart';
 import 'models/privateclaw_slash_command.dart';
 import 'services/privateclaw_active_session_store.dart';
+import 'services/privateclaw_app_preferences.dart';
 import 'services/privateclaw_audio_recorder.dart';
 import 'services/privateclaw_debug_bootstrap.dart';
 import 'services/privateclaw_emoji_store.dart';
@@ -116,6 +117,8 @@ typedef PrivateClawUrlLauncher =
 typedef PrivateClawActiveSessionStoreFactory =
     PrivateClawActiveSessionStore Function();
 
+typedef PrivateClawAppPreferencesFactory = PrivateClawAppPreferences Function();
+
 typedef PrivateClawIdentityStoreFactory = PrivateClawIdentityStore Function();
 
 typedef PrivateClawSessionClientFactory =
@@ -142,6 +145,14 @@ PrivateClawUrlLauncher privateClawWebsiteLauncher =
 
 PrivateClawActiveSessionStoreFactory privateClawActiveSessionStoreFactory =
     () => const PrivateClawActiveSessionStore();
+
+PrivateClawAppPreferencesFactory privateClawAppPreferencesFactory =
+    () => const PrivateClawAppPreferences();
+
+/// Whether this build can show notifications at all; the permission explainer
+/// is only worth showing when the system prompt will follow.
+bool Function() privateClawNotificationsExplainerEnabled =
+    () => PrivateClawNotificationService.instance.isConfigured;
 
 PrivateClawIdentityStoreFactory privateClawIdentityStoreFactory = () =>
     const PrivateClawIdentityStore();
@@ -258,6 +269,8 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
   final PrivateClawIdentityStore _identityStore =
       privateClawIdentityStoreFactory();
   final PrivateClawEmojiStore _emojiStore = const PrivateClawEmojiStore();
+  final PrivateClawAppPreferences _appPreferences =
+      privateClawAppPreferencesFactory();
   final PrivateClawNotificationService _notificationService =
       PrivateClawNotificationService.instance;
   final ImagePicker _imagePicker = ImagePicker();
@@ -283,6 +296,9 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
   StreamSubscription<PrivateClawSessionEvent>? _clientSubscription;
   PrivateClawSessionStatus _sessionStatus = PrivateClawSessionStatus.idle;
   String _statusText = '';
+  /// Human-readable reason of the last connect failure, kept on screen while
+  /// the client retries so the user knows why nothing is happening.
+  String? _lastConnectErrorText;
   bool _isPairingPanelCollapsed = false;
   bool _hasConnectedSession = false;
   int _attachmentCounter = 0;
@@ -328,14 +344,27 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       _selectedAttachments.isNotEmpty;
   bool get _hasSessionSetup => _invite != null;
   bool get _canSubmitInviteInput => _inviteController.text.trim().isNotEmpty;
+  /// Fresh joins and reconnects: the status panel shows progress + Cancel.
+  bool get _isConnectingPhase =>
+      _sessionStatus == PrivateClawSessionStatus.connecting ||
+      _sessionStatus == PrivateClawSessionStatus.relayAttached ||
+      _sessionStatus == PrivateClawSessionStatus.reconnecting;
+  int get _connectStepIndex => switch (_sessionStatus) {
+    PrivateClawSessionStatus.active => 2,
+    PrivateClawSessionStatus.relayAttached => 1,
+    _ => 0,
+  };
   String _inactiveComposerHint(AppLocalizations l10n) =>
       _hasSessionSetup ? l10n.sendHintInactive : l10n.sendHintIdle;
   bool get _hasManagedSessionContext =>
       _invite != null &&
       (_hasConnectedSession ||
           _sessionStatus == PrivateClawSessionStatus.active ||
-          _sessionStatus == PrivateClawSessionStatus.reconnecting ||
-          _sessionStatus == PrivateClawSessionStatus.relayAttached);
+          _sessionStatus == PrivateClawSessionStatus.relayAttached ||
+          // Reconnecting only counts once a live session existed; a first join
+          // that keeps retrying stays in the pairing card with its error.
+          (_sessionStatus == PrivateClawSessionStatus.reconnecting &&
+              _hasConnectedSession));
   bool get _canCollapsePairingPanel => _hasManagedSessionContext;
   bool get _canShowSessionQr => _hasManagedSessionContext;
   bool get _isPreviewMode => widget.previewData != null;
@@ -604,7 +633,9 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       }
       setState(() {
         _sessionStatus = PrivateClawSessionStatus.error;
-        _statusText = l10n.relaySessionClosedWithReason('session_expired');
+        _statusText = l10n.inviteExpired(
+          _formatExpiredAgo(record.invite.expiresAt),
+        );
         _isPairingPanelCollapsed = false;
       });
       return;
@@ -628,7 +659,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       }
       setState(() {
         _sessionStatus = PrivateClawSessionStatus.error;
-        _statusText = l10n.connectFailed(error.toString());
+        _statusText = _humanizeConnectError(l10n, error);
         _isPairingPanelCollapsed = false;
       });
     }
@@ -1011,8 +1042,28 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     }
 
     _inFlightConnectInput = trimmed;
+    final PrivateClawInvite invite;
     try {
-      final PrivateClawInvite invite = PrivateClawInvite.fromScan(trimmed);
+      invite = PrivateClawInvite.fromScan(trimmed);
+    } on FormatException {
+      _inFlightConnectInput = null;
+      setState(() {
+        _sessionStatus = PrivateClawSessionStatus.error;
+        _statusText = l10n.enterValidInvite;
+        _isPairingPanelCollapsed = false;
+      });
+      return;
+    }
+    try {
+      // Invites are one-time and short-lived; say so before dialing the relay.
+      if (!invite.expiresAt.isAfter(privateClawCurrentTimeResolver())) {
+        setState(() {
+          _sessionStatus = PrivateClawSessionStatus.error;
+          _statusText = l10n.inviteExpired(_formatExpiredAgo(invite.expiresAt));
+          _isPairingPanelCollapsed = false;
+        });
+        return;
+      }
       final bool shouldContinue = await _confirmRelayOverrideInvite(
         invite,
         autoApprove: autoApproveNonDefaultRelayWarning,
@@ -1030,7 +1081,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     } catch (error) {
       setState(() {
         _sessionStatus = PrivateClawSessionStatus.error;
-        _statusText = l10n.connectFailed(error.toString());
+        _statusText = _humanizeConnectError(l10n, error);
         _isPairingPanelCollapsed = false;
       });
     } finally {
@@ -1048,6 +1099,18 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     bool collapsePairingPanel = false,
   }) async {
     final AppLocalizations l10n = AppLocalizations.of(context)!;
+    // Explain why notifications matter before the system prompt appears; shown
+    // once per install, right before the first room join requests permission.
+    if (!widget.skipNotificationsInDebug &&
+        await _shouldShowNotificationExplainer()) {
+      if (!mounted) {
+        return;
+      }
+      await _showNotificationExplainer();
+      if (!mounted) {
+        return;
+      }
+    }
     final PrivateClawSessionClient client = privateClawSessionClientFactory(
       invite,
       identity: identity,
@@ -1078,6 +1141,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       }
       _sessionStatus = PrivateClawSessionStatus.connecting;
       _statusText = l10n.connectingRelay;
+      _lastConnectErrorText = null;
       _setInviteInputText(inviteInput);
       _isPairingPanelCollapsed = collapsePairingPanel;
       _isRenewingSession = false;
@@ -1218,8 +1282,15 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     if (invite == null || identity == null) {
       return;
     }
-    await _activeSessionStore.save(invite: invite, identity: identity);
-    await _refreshSavedSessionRecords();
+    // Persistence is best effort: a corrupt or unwritable store must never
+    // abort the join itself.
+    try {
+      await _activeSessionStore.save(invite: invite, identity: identity);
+      await _refreshSavedSessionRecords();
+    } catch (error, stackTrace) {
+      debugPrint('[privateclaw-app] failed to persist active session: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
   }
 
   void _handleClientEvent(PrivateClawSessionEvent event) {
@@ -1296,6 +1367,14 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       }
       if (event.notice != null) {
         _statusText = _localizeNotice(l10n, event);
+        if (event.notice == PrivateClawSessionNotice.connectionError ||
+            event.notice == PrivateClawSessionNotice.relayError ||
+            event.connectionStatus == PrivateClawSessionStatus.error) {
+          _lastConnectErrorText = _statusText;
+        }
+      }
+      if (event.connectionStatus == PrivateClawSessionStatus.active) {
+        _lastConnectErrorText = null;
       }
       if (event.connectionStatus != null) {
         _sessionStatus = event.connectionStatus!;
@@ -1397,19 +1476,28 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
 
     switch (event.notice) {
       case PrivateClawSessionNotice.connectingRelay:
+        if (event.connectionStatus == PrivateClawSessionStatus.reconnecting &&
+            !_hasConnectedSession) {
+          return _lastConnectErrorText ??
+              l10n.connectStillTrying(_relayHostFor(_invite));
+        }
         return l10n.relayConnecting;
       case PrivateClawSessionNotice.relayAttached:
         return l10n.relayHandshake;
       case PrivateClawSessionNotice.connectionError:
-        return l10n.relayConnectionError(
+        return _humanizeConnectError(
+          l10n,
           details.isEmpty ? 'unknown_error' : details,
         );
       case PrivateClawSessionNotice.sessionClosed:
-        return details.isEmpty
-            ? l10n.relaySessionClosed
-            : l10n.relaySessionClosedWithReason(details);
+        if (details.isEmpty) {
+          return l10n.relaySessionClosed;
+        }
+        return _humanizeRelayReason(l10n, details) ??
+            l10n.relaySessionClosedWithReason(details);
       case PrivateClawSessionNotice.relayError:
-        return l10n.relayError(details.isEmpty ? 'unknown_error' : details);
+        return _humanizeRelayReason(l10n, details) ??
+            l10n.relayError(details.isEmpty ? 'unknown_error' : details);
       case PrivateClawSessionNotice.unknownRelayEvent:
         return l10n.relayUnknownEvent(
           details.isEmpty ? 'unknown_event' : details,
@@ -2124,6 +2212,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       _isPhotoTrayVisible = false;
       _sessionStatus = PrivateClawSessionStatus.idle;
       _statusText = l10n.sessionDisconnected;
+      _lastConnectErrorText = null;
       _isPairingPanelCollapsed = false;
       _isRenewingSession = false;
     });
@@ -2881,7 +2970,17 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
                 child: Column(
                   children: <Widget>[
                     if (!_canCollapsePairingPanel)
-                      _buildPairingSection(context, l10n),
+                      // Natural height, capped at 55% of the screen so the
+                      // message list keeps its share; only scrolls when the
+                      // card outgrows that (small screens, connecting state).
+                      ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxHeight: MediaQuery.sizeOf(context).height * 0.55,
+                        ),
+                        child: SingleChildScrollView(
+                          child: _buildPairingSection(context, l10n),
+                        ),
+                      ),
                     if (_showsSessionRenewPrompt)
                       _buildPersistentSessionRenewBanner(context, l10n),
                     Expanded(child: _buildMessageList(l10n)),
@@ -3151,23 +3250,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
                   _buildParticipantChips(),
                 ],
                 const SizedBox(height: 12),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: _statusColor(context),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    children: <Widget>[
-                      Icon(_statusIcon()),
-                      const SizedBox(width: 12),
-                      Expanded(child: Text(_statusText)),
-                      const SizedBox(width: 8),
-                      _buildPluginInstallWebsiteLink(context),
-                    ],
-                  ),
-                ),
+                _buildStatusPanel(context, l10n),
               ],
             ),
           ),
@@ -3276,7 +3359,9 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
                   Icon(
-                    _invite?.groupMode == true
+                    _isConnectingPhase
+                        ? Icons.sync
+                        : _invite?.groupMode == true
                         ? Icons.groups_2_outlined
                         : Icons.lock_outline,
                     size: 18,
@@ -3404,23 +3489,7 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
                 _buildParticipantChips(),
               ],
               const SizedBox(height: 12),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: _statusColor(context),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  children: <Widget>[
-                    Icon(_statusIcon()),
-                    const SizedBox(width: 12),
-                    Expanded(child: Text(_statusText)),
-                    const SizedBox(width: 8),
-                    _buildPluginInstallWebsiteLink(context),
-                  ],
-                ),
-              ),
+              _buildStatusPanel(context, l10n),
             ],
           ),
         ),
@@ -3448,17 +3517,39 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
     return Column(
       children: <Widget>[
         Expanded(
-          child: ListView.separated(
+          child: ListView.builder(
             controller: _scrollController,
             keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
             itemCount: _messages.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 8),
             itemBuilder: (BuildContext context, int index) {
               final ChatMessage message = _messages[index];
-              return ChatMessageBubble(
-                key: ValueKey<String>(message.id),
-                message: message,
+              final ChatMessage? previous = index > 0
+                  ? _messages[index - 1]
+                  : null;
+              final bool grouped = _isGroupedWithPrevious(previous, message);
+              final bool showDateHeader =
+                  previous == null ||
+                  !_isSameDay(previous.sentAt, message.sentAt);
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  if (showDateHeader)
+                    Padding(
+                      padding: EdgeInsets.only(
+                        top: index == 0 ? 0 : 8,
+                        bottom: 8,
+                      ),
+                      child: _buildDateSeparator(context, message.sentAt),
+                    )
+                  else
+                    SizedBox(height: grouped ? 2 : 8),
+                  ChatMessageBubble(
+                    key: ValueKey<String>(message.id),
+                    message: message,
+                    groupedWithPrevious: grouped,
+                  ),
+                ],
               );
             },
           ),
@@ -3923,6 +4014,356 @@ class _PrivateClawHomePageState extends State<PrivateClawHomePage>
       return '${safeValue.inMinutes}m';
     }
     return '${math.max(safeValue.inSeconds, 1)}s';
+  }
+
+  /// "2h ago" style age for invites that are no longer valid.
+  String _formatExpiredAgo(DateTime expiresAt) {
+    final Duration age = privateClawCurrentTimeResolver().difference(expiresAt);
+    return _formatRemainingDuration(age);
+  }
+
+  String _relayHostFor(PrivateClawInvite? invite) {
+    return invite?.relayDisplayLabel ?? defaultPrivateClawRelayHost;
+  }
+
+  /// Turns relay/socket failures into a sentence a person can act on. Raw
+  /// exceptions ("SocketException: Connection refused ...") stay out of the UI.
+  String _humanizeConnectError(
+    AppLocalizations l10n,
+    Object error, {
+    PrivateClawInvite? invite,
+  }) {
+    // Only the invite parser's own FormatException means "invalid invite";
+    // later steps (identity store, saved-session persistence) must not be
+    // reported as a bad invite.
+    final String raw = error.toString();
+    final String lower = raw.toLowerCase();
+    final String relay = _relayHostFor(invite ?? _invite);
+    final String? relayReason = _humanizeRelayReason(l10n, lower);
+    if (relayReason != null) {
+      return relayReason;
+    }
+    if (lower.contains('refused')) {
+      return l10n.connectErrorRefused(relay);
+    }
+    if (lower.contains('socketexception') ||
+      lower.contains('failed host lookup') ||
+      lower.contains('nodename') ||
+      lower.contains('unreachable') ||
+      lower.contains('no route') ||
+      lower.contains('network')) {
+      return l10n.connectErrorNetwork(relay);
+    }
+    if (lower.contains('timeout') ||
+      lower.contains('timed out') ||
+      lower.contains('websocket')) {
+      return l10n.connectErrorTimeout(relay);
+    }
+    final String trimmed = raw.length > 120 ? '${raw.substring(0, 120)}…' : raw;
+    return l10n.connectFailed(trimmed);
+  }
+
+  /// Known relay reason codes, or null when the code is unknown.
+  String? _humanizeRelayReason(AppLocalizations l10n, String details) {
+    final String lower = details.trim().toLowerCase();
+    if (lower.isEmpty) {
+      return null;
+    }
+    if (lower.contains('session_expired') ||
+        (lower.contains('expire') && !lower.contains('socket'))) {
+      return l10n.connectErrorSessionExpired;
+    }
+    if (lower.contains('unknown_session') || lower.contains('session_not_found')) {
+      return l10n.connectErrorSessionNotFound;
+    }
+    if ((lower.contains('invalid') || lower.contains('bad')) &&
+        (lower.contains('key') || lower.contains('auth') || lower.contains('token'))) {
+      return l10n.connectErrorInvalidKey;
+    }
+    if (lower.contains('rate_limited') || lower.contains('rate limited') || lower.contains('429')) {
+      return l10n.connectErrorRateLimited;
+    }
+    return null;
+  }
+
+  /// Cancels a join in progress. The UI resets synchronously so the tap feels
+  /// instant; the socket teardown finishes in the background.
+  void _cancelConnect() {
+    final AppLocalizations l10n = AppLocalizations.of(context)!;
+    final PrivateClawSessionClient? client = _client;
+    final StreamSubscription<PrivateClawSessionEvent>? subscription =
+        _clientSubscription;
+    _client = null;
+    _clientSubscription = null;
+    _sessionExpiryRefreshTimer?.cancel();
+    setState(() {
+      _hasConnectedSession = false;
+      _invite = null;
+      _participants.clear();
+      _messages.clear();
+      _availableCommands.clear();
+      _sessionStatus = PrivateClawSessionStatus.idle;
+      _statusText = l10n.connectCancelled;
+      _lastConnectErrorText = null;
+      _isPairingPanelCollapsed = false;
+      _isRenewingSession = false;
+    });
+    unawaited(_finishCancelConnect(client, subscription));
+  }
+
+  Future<void> _finishCancelConnect(
+    PrivateClawSessionClient? client,
+    StreamSubscription<PrivateClawSessionEvent>? subscription,
+  ) async {
+    await subscription?.cancel();
+    await client?.dispose(reason: 'user_cancel');
+    await _activeSessionStore.clearCurrent();
+  }
+
+  /// Shared by the pairing card and the session panel overlay.
+  Widget _buildStatusPanel(BuildContext context, AppLocalizations l10n) {
+    if (_isConnectingPhase) {
+      return _buildConnectionProgress(context, l10n);
+    }
+    return Container(
+      key: const ValueKey<String>('session-status-panel'),
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: _statusColor(context),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: <Widget>[
+          Icon(_statusIcon()),
+          const SizedBox(width: 12),
+          Expanded(child: Text(_statusText)),
+          const SizedBox(width: 8),
+          _buildPluginInstallWebsiteLink(context),
+        ],
+      ),
+    );
+  }
+
+  /// Relay → Handshake → Joined, with a way out while the relay is slow.
+  Widget _buildConnectionProgress(
+    BuildContext context,
+    AppLocalizations l10n,
+  ) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme colorScheme = theme.colorScheme;
+    final int current = _connectStepIndex;
+    final List<String> steps = <String>[
+      l10n.connectStepRelay,
+      l10n.connectStepHandshake,
+      l10n.connectStepJoined,
+    ];
+    return Container(
+      key: const ValueKey<String>('session-connect-progress'),
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: _statusColor(context),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: SizedBox.square(
+              dimension: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: colorScheme.onTertiaryContainer,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  _statusText,
+                  key: const ValueKey<String>('connect-progress-title'),
+                  style: theme.textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: <Widget>[
+                    for (int index = 0; index < steps.length; index += 1) ...<Widget>[
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          Icon(
+                            index < current
+                                ? Icons.check_circle
+                                : index == current
+                                ? Icons.radio_button_checked
+                                : Icons.radio_button_unchecked,
+                            size: 14,
+                            color: index <= current
+                                ? colorScheme.primary
+                                : colorScheme.onSurfaceVariant.withValues(
+                                    alpha: 0.6,
+                                  ),
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            steps[index],
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: index <= current
+                                  ? colorScheme.primary
+                                  : colorScheme.onSurfaceVariant,
+                              fontWeight: index == current
+                                  ? FontWeight.w600
+                                  : FontWeight.w400,
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (index < steps.length - 1)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 2),
+                          child: Icon(
+                            Icons.chevron_right,
+                            size: 14,
+                            color: colorScheme.onSurfaceVariant.withValues(
+                              alpha: 0.5,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            key: const ValueKey<String>('connect-cancel-button'),
+            onPressed: _cancelConnect,
+            child: Text(l10n.relayWarningCancelButton),
+          ),
+        ],
+      ),
+    );
+  }
+
+  bool _isSameDay(DateTime left, DateTime right) {
+    final DateTime a = left.toLocal();
+    final DateTime b = right.toLocal();
+    return a.year == b.year && a.month == b.month && a.day == b.day;
+  }
+
+  /// Consecutive bubbles from the same sender within two minutes collapse
+  /// their avatar and name so a run of messages reads as one block.
+  bool _isGroupedWithPrevious(ChatMessage? previous, ChatMessage message) {
+    if (previous == null ||
+        message.sender == ChatSender.system ||
+        previous.sender == ChatSender.system) {
+      return false;
+    }
+    if (previous.sender != message.sender ||
+        previous.senderId != message.senderId ||
+        previous.isOwnMessage != message.isOwnMessage ||
+        previous.isThinkingTrace != message.isThinkingTrace) {
+      return false;
+    }
+    if (!_isSameDay(previous.sentAt, message.sentAt)) {
+      return false;
+    }
+    return message.sentAt.difference(previous.sentAt).abs() <=
+        const Duration(minutes: 2);
+  }
+
+  Widget _buildDateSeparator(BuildContext context, DateTime value) {
+    final ThemeData theme = Theme.of(context);
+    final AppLocalizations l10n = AppLocalizations.of(context)!;
+    final DateTime local = value.toLocal();
+    final DateTime now = DateTime.now();
+    final String label;
+    if (_isSameDay(local, now)) {
+      label = l10n.dateToday;
+    } else if (_isSameDay(local, now.subtract(const Duration(days: 1)))) {
+      label = l10n.dateYesterday;
+    } else if (local.year == now.year) {
+      label = DateFormat.MMMd(l10n.localeName).format(local);
+    } else {
+      label = DateFormat.yMMMd(l10n.localeName).format(local);
+    }
+    return Center(
+      child: Container(
+        key: ValueKey<String>('date-separator-$label'),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.7),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Text(
+          label,
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<bool> _shouldShowNotificationExplainer() async {
+    if (!privateClawNotificationsExplainerEnabled()) {
+      return false;
+    }
+    try {
+      return !await _appPreferences.flag(
+        PrivateClawAppPreferences.notificationExplainerShownKey,
+      );
+    } catch (error, stackTrace) {
+      debugPrint('[privateclaw-app] failed to read preferences: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      return false;
+    }
+  }
+
+  Future<void> _showNotificationExplainer() async {
+    final AppLocalizations l10n = AppLocalizations.of(context)!;
+    // Persist first so an interrupted dialog never comes back every launch.
+    try {
+      await _appPreferences.setFlag(
+        PrivateClawAppPreferences.notificationExplainerShownKey,
+        true,
+      );
+    } catch (error, stackTrace) {
+      debugPrint('[privateclaw-app] failed to persist preferences: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+    if (!mounted) {
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          key: const ValueKey<String>('notification-explainer-dialog'),
+          title: Text(l10n.notificationExplainerTitle),
+          content: Text(l10n.notificationExplainerBody),
+          actions: <Widget>[
+            TextButton(
+              key: const ValueKey<String>('notification-explainer-later'),
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: Text(l10n.notificationExplainerLater),
+            ),
+            FilledButton(
+              key: const ValueKey<String>('notification-explainer-enable'),
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: Text(l10n.notificationExplainerEnable),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Widget _buildFirstRunEmptyState(

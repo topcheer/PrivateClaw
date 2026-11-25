@@ -274,6 +274,120 @@ abstract class AppLocalizations {
   /// **'Join a room to start chatting…'**
   String get sendHintIdle;
 
+  /// Step 1 of the connection progress: reaching the relay.
+  ///
+  /// In en, this message translates to:
+  /// **'Relay'**
+  String get connectStepRelay;
+
+  /// Step 2 of the connection progress: encrypted handshake.
+  ///
+  /// In en, this message translates to:
+  /// **'Handshake'**
+  String get connectStepHandshake;
+
+  /// Step 3 of the connection progress: joined the room.
+  ///
+  /// In en, this message translates to:
+  /// **'Joined'**
+  String get connectStepJoined;
+
+  /// Status after the user cancels a connection in progress.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancelled. Scan or paste an invite when you\'re ready.'**
+  String get connectCancelled;
+
+  /// Shown when the scanned or pasted invite is already expired; {ago} is a compact duration.
+  ///
+  /// In en, this message translates to:
+  /// **'This invite expired {ago} ago. Ask the host for a new one.'**
+  String inviteExpired(String ago);
+
+  /// Human-readable connection error: connection refused by the relay.
+  ///
+  /// In en, this message translates to:
+  /// **'The relay {relay} refused the connection. Make sure it is running and try again.'**
+  String connectErrorRefused(String relay);
+
+  /// Human-readable connection error: network / DNS failure.
+  ///
+  /// In en, this message translates to:
+  /// **'Can\'t reach {relay}. Check your internet connection and try again.'**
+  String connectErrorNetwork(String relay);
+
+  /// Human-readable connection error: relay timeout.
+  ///
+  /// In en, this message translates to:
+  /// **'{relay} did not respond in time. Try again in a moment.'**
+  String connectErrorTimeout(String relay);
+
+  /// Status while a first join keeps retrying the relay without a specific error yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Still trying to reach {relay}. Check that it is online and your network is up.'**
+  String connectStillTrying(String relay);
+
+  /// Human-readable relay error: session_expired.
+  ///
+  /// In en, this message translates to:
+  /// **'This room has expired. Ask the host for a new invite.'**
+  String get connectErrorSessionExpired;
+
+  /// Human-readable relay error: unknown_session / session_not_found.
+  ///
+  /// In en, this message translates to:
+  /// **'This room doesn\'t exist anymore. Ask the host for a new invite.'**
+  String get connectErrorSessionNotFound;
+
+  /// Human-readable relay error: invalid session key.
+  ///
+  /// In en, this message translates to:
+  /// **'The invite key doesn\'t match this room. Ask the host for a new invite.'**
+  String get connectErrorInvalidKey;
+
+  /// Human-readable relay error: rate limited.
+  ///
+  /// In en, this message translates to:
+  /// **'Too many attempts. Wait a minute before trying again.'**
+  String get connectErrorRateLimited;
+
+  /// Date separator above messages sent today.
+  ///
+  /// In en, this message translates to:
+  /// **'Today'**
+  String get dateToday;
+
+  /// Date separator above messages sent yesterday.
+  ///
+  /// In en, this message translates to:
+  /// **'Yesterday'**
+  String get dateYesterday;
+
+  /// Title of the explainer shown once before the notification permission prompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Get notified about replies'**
+  String get notificationExplainerTitle;
+
+  /// Body of the explainer shown once before the notification permission prompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Hearth Room can notify you when your assistant or someone in the room replies while the app is in the background. iOS will ask for permission next.'**
+  String get notificationExplainerBody;
+
+  /// Primary action of the notification explainer.
+  ///
+  /// In en, this message translates to:
+  /// **'Enable notifications'**
+  String get notificationExplainerEnable;
+
+  /// Secondary action of the notification explainer.
+  ///
+  /// In en, this message translates to:
+  /// **'Not now'**
+  String get notificationExplainerLater;
+
   /// No description provided for @sendTooltip.
   ///
   /// In en, this message translates to:

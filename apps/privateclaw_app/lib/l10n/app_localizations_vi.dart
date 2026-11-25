@@ -94,6 +94,79 @@ class AppLocalizationsVi extends AppLocalizations {
   String get sendHintIdle => 'Tham gia phòng để bắt đầu trò chuyện…';
 
   @override
+  String get connectStepRelay => 'Relay';
+
+  @override
+  String get connectStepHandshake => 'Bắt tay';
+
+  @override
+  String get connectStepJoined => 'Đã vào';
+
+  @override
+  String get connectCancelled =>
+      'Đã hủy. Quét hoặc dán lời mời khi bạn sẵn sàng.';
+
+  @override
+  String inviteExpired(String ago) {
+    return 'Lời mời này đã hết hạn $ago trước. Hãy nhờ người tạo phòng cấp lời mời mới.';
+  }
+
+  @override
+  String connectErrorRefused(String relay) {
+    return 'Relay $relay đã từ chối kết nối. Hãy kiểm tra nó đang chạy rồi thử lại.';
+  }
+
+  @override
+  String connectErrorNetwork(String relay) {
+    return 'Không thể truy cập $relay. Hãy kiểm tra kết nối internet rồi thử lại.';
+  }
+
+  @override
+  String connectErrorTimeout(String relay) {
+    return '$relay không phản hồi kịp thời. Hãy thử lại sau một lát.';
+  }
+
+  @override
+  String connectStillTrying(String relay) {
+    return 'Vẫn đang thử kết nối tới $relay. Hãy kiểm tra relay đang trực tuyến và mạng của bạn hoạt động.';
+  }
+
+  @override
+  String get connectErrorSessionExpired =>
+      'Phòng này đã hết hạn. Hãy nhờ người tạo phòng cấp lời mời mới.';
+
+  @override
+  String get connectErrorSessionNotFound =>
+      'Phòng này không còn tồn tại. Hãy nhờ người tạo phòng cấp lời mời mới.';
+
+  @override
+  String get connectErrorInvalidKey =>
+      'Khóa lời mời không khớp với phòng này. Hãy nhờ người tạo phòng cấp lời mời mới.';
+
+  @override
+  String get connectErrorRateLimited =>
+      'Thử quá nhiều lần. Hãy đợi một phút rồi thử lại.';
+
+  @override
+  String get dateToday => 'Hôm nay';
+
+  @override
+  String get dateYesterday => 'Hôm qua';
+
+  @override
+  String get notificationExplainerTitle => 'Nhận thông báo khi có trả lời';
+
+  @override
+  String get notificationExplainerBody =>
+      'Hearth Room có thể thông báo cho bạn khi trợ lý hoặc ai đó trong phòng trả lời trong khi ứng dụng ở chế độ nền. iOS sẽ xin quyền ngay sau đây.';
+
+  @override
+  String get notificationExplainerEnable => 'Bật thông báo';
+
+  @override
+  String get notificationExplainerLater => 'Để sau';
+
+  @override
   String get sendTooltip => 'Gửi';
 
   @override

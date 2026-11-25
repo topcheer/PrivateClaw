@@ -91,6 +91,76 @@ class AppLocalizationsKo extends AppLocalizations {
   String get sendHintIdle => '방에 참여하면 채팅을 시작할 수 있습니다…';
 
   @override
+  String get connectStepRelay => '릴레이';
+
+  @override
+  String get connectStepHandshake => '핸드셰이크';
+
+  @override
+  String get connectStepJoined => '참여 완료';
+
+  @override
+  String get connectCancelled => '취소되었습니다. 준비되면 초대를 스캔하거나 붙여넣으세요.';
+
+  @override
+  String inviteExpired(String ago) {
+    return '이 초대는 $ago 전에 만료되었습니다. 호스트에게 새 초대를 요청하세요.';
+  }
+
+  @override
+  String connectErrorRefused(String relay) {
+    return '릴레이 $relay이(가) 연결을 거부했습니다. 실행 중인지 확인하고 다시 시도하세요.';
+  }
+
+  @override
+  String connectErrorNetwork(String relay) {
+    return '$relay에 연결할 수 없습니다. 인터넷 연결을 확인하고 다시 시도하세요.';
+  }
+
+  @override
+  String connectErrorTimeout(String relay) {
+    return '$relay이(가) 제시간에 응답하지 않았습니다. 잠시 후 다시 시도하세요.';
+  }
+
+  @override
+  String connectStillTrying(String relay) {
+    return '$relay에 계속 연결을 시도하고 있습니다. 릴레이가 온라인이고 네트워크가 정상인지 확인하세요.';
+  }
+
+  @override
+  String get connectErrorSessionExpired => '이 방은 만료되었습니다. 호스트에게 새 초대를 요청하세요.';
+
+  @override
+  String get connectErrorSessionNotFound =>
+      '이 방은 더 이상 존재하지 않습니다. 호스트에게 새 초대를 요청하세요.';
+
+  @override
+  String get connectErrorInvalidKey =>
+      '초대 키가 이 방과 일치하지 않습니다. 호스트에게 새 초대를 요청하세요.';
+
+  @override
+  String get connectErrorRateLimited => '시도가 너무 많습니다. 잠시 기다린 후 다시 시도하세요.';
+
+  @override
+  String get dateToday => '오늘';
+
+  @override
+  String get dateYesterday => '어제';
+
+  @override
+  String get notificationExplainerTitle => '답장 알림 받기';
+
+  @override
+  String get notificationExplainerBody =>
+      '앱이 백그라운드에 있을 때 어시스턴트나 방 멤버가 답장하면 Hearth Room이 알려드릴 수 있습니다. 다음으로 iOS에서 권한을 요청합니다.';
+
+  @override
+  String get notificationExplainerEnable => '알림 켜기';
+
+  @override
+  String get notificationExplainerLater => '나중에';
+
+  @override
   String get sendTooltip => '보내기';
 
   @override

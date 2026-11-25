@@ -34,6 +34,70 @@
   "sendHintActive": "发送加密消息…",
   "sendHintInactive": "等待会话完成连接…",
   "sendHintIdle": "加入房间后即可开始聊天…",
+  "connectStepRelay": "中继",
+  "connectStepHandshake": "握手",
+  "connectStepJoined": "已加入",
+  "connectCancelled": "已取消。准备好后扫描或粘贴邀请即可。",
+  "inviteExpired": "这个邀请已在 {ago} 前过期。请向房主要一个新的。",
+  "@inviteExpired": {
+    "description": "Shown when the scanned or pasted invite is already expired; {ago} is a compact duration.",
+    "placeholders": {
+      "ago": {
+        "type": "String",
+        "example": "2h"
+      }
+    }
+  },
+  "connectErrorRefused": "中继 {relay} 拒绝了连接。请确认它正在运行后重试。",
+  "@connectErrorRefused": {
+    "description": "Human-readable connection error: connection refused by the relay.",
+    "placeholders": {
+      "relay": {
+        "type": "String",
+        "example": "relay.privateclaw.us"
+      }
+    }
+  },
+  "connectErrorNetwork": "无法连接到 {relay}。请检查网络后重试。",
+  "@connectErrorNetwork": {
+    "description": "Human-readable connection error: network / DNS failure.",
+    "placeholders": {
+      "relay": {
+        "type": "String",
+        "example": "relay.privateclaw.us"
+      }
+    }
+  },
+  "connectErrorTimeout": "{relay} 未及时响应。请稍后重试。",
+  "@connectErrorTimeout": {
+    "description": "Human-readable connection error: relay timeout.",
+    "placeholders": {
+      "relay": {
+        "type": "String",
+        "example": "relay.privateclaw.us"
+      }
+    }
+  },
+  "connectStillTrying": "仍在尝试连接 {relay}。请确认它在线且网络正常。",
+  "@connectStillTrying": {
+    "description": "Status while a first join keeps retrying the relay without a specific error yet.",
+    "placeholders": {
+      "relay": {
+        "type": "String",
+        "example": "relay.privateclaw.us"
+      }
+    }
+  },
+  "connectErrorSessionExpired": "这个房间已过期。请向房主要一个新邀请。",
+  "connectErrorSessionNotFound": "这个房间已不存在。请向房主要一个新邀请。",
+  "connectErrorInvalidKey": "邀请密钥与这个房间不匹配。请向房主要一个新邀请。",
+  "connectErrorRateLimited": "尝试次数过多。请稍等一分钟再试。",
+  "dateToday": "今天",
+  "dateYesterday": "昨天",
+  "notificationExplainerTitle": "开启回复通知",
+  "notificationExplainerBody": "应用在后台时，如果助手或房间里的成员回复了，Hearth Room 可以通知你。接下来 iOS 会请求权限。",
+  "notificationExplainerEnable": "开启通知",
+  "notificationExplainerLater": "暂不",
   "sendTooltip": "发送",
   "sendFailed": "发送失败：{error}",
   "@sendFailed": {

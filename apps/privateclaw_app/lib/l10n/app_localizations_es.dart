@@ -95,6 +95,79 @@ class AppLocalizationsEs extends AppLocalizations {
   String get sendHintIdle => 'Únete a una sala para empezar a chatear…';
 
   @override
+  String get connectStepRelay => 'Relay';
+
+  @override
+  String get connectStepHandshake => 'Handshake';
+
+  @override
+  String get connectStepJoined => 'Unido';
+
+  @override
+  String get connectCancelled =>
+      'Cancelado. Escanea o pega una invitación cuando quieras.';
+
+  @override
+  String inviteExpired(String ago) {
+    return 'Esta invitación caducó hace $ago. Pide al anfitrión una nueva.';
+  }
+
+  @override
+  String connectErrorRefused(String relay) {
+    return 'El relay $relay rechazó la conexión. Comprueba que esté en marcha e inténtalo de nuevo.';
+  }
+
+  @override
+  String connectErrorNetwork(String relay) {
+    return 'No se puede conectar con $relay. Revisa tu conexión a internet e inténtalo de nuevo.';
+  }
+
+  @override
+  String connectErrorTimeout(String relay) {
+    return '$relay no respondió a tiempo. Inténtalo de nuevo en un momento.';
+  }
+
+  @override
+  String connectStillTrying(String relay) {
+    return 'Sigue intentando conectar con $relay. Comprueba que esté en línea y que tu red funcione.';
+  }
+
+  @override
+  String get connectErrorSessionExpired =>
+      'Esta sala ha caducado. Pide al anfitrión una nueva invitación.';
+
+  @override
+  String get connectErrorSessionNotFound =>
+      'Esta sala ya no existe. Pide al anfitrión una nueva invitación.';
+
+  @override
+  String get connectErrorInvalidKey =>
+      'La clave de la invitación no corresponde a esta sala. Pide al anfitrión una nueva.';
+
+  @override
+  String get connectErrorRateLimited =>
+      'Demasiados intentos. Espera un minuto antes de volver a intentarlo.';
+
+  @override
+  String get dateToday => 'Hoy';
+
+  @override
+  String get dateYesterday => 'Ayer';
+
+  @override
+  String get notificationExplainerTitle => 'Recibe avisos de las respuestas';
+
+  @override
+  String get notificationExplainerBody =>
+      'Hearth Room puede avisarte cuando tu asistente o alguien de la sala responda con la app en segundo plano. iOS te pedirá permiso a continuación.';
+
+  @override
+  String get notificationExplainerEnable => 'Activar avisos';
+
+  @override
+  String get notificationExplainerLater => 'Ahora no';
+
+  @override
   String get sendTooltip => 'Enviar';
 
   @override

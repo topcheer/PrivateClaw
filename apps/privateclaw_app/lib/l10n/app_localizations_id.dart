@@ -94,6 +94,79 @@ class AppLocalizationsId extends AppLocalizations {
   String get sendHintIdle => 'Gabung ke ruang untuk mulai mengobrol…';
 
   @override
+  String get connectStepRelay => 'Relay';
+
+  @override
+  String get connectStepHandshake => 'Handshake';
+
+  @override
+  String get connectStepJoined => 'Bergabung';
+
+  @override
+  String get connectCancelled =>
+      'Dibatalkan. Pindai atau tempel undangan saat kamu siap.';
+
+  @override
+  String inviteExpired(String ago) {
+    return 'Undangan ini kedaluwarsa $ago yang lalu. Minta yang baru ke pembuat ruang.';
+  }
+
+  @override
+  String connectErrorRefused(String relay) {
+    return 'Relay $relay menolak koneksi. Pastikan relay berjalan lalu coba lagi.';
+  }
+
+  @override
+  String connectErrorNetwork(String relay) {
+    return 'Tidak dapat menjangkau $relay. Periksa koneksi internetmu lalu coba lagi.';
+  }
+
+  @override
+  String connectErrorTimeout(String relay) {
+    return '$relay tidak merespons tepat waktu. Coba lagi sebentar lagi.';
+  }
+
+  @override
+  String connectStillTrying(String relay) {
+    return 'Masih mencoba menjangkau $relay. Pastikan relay online dan jaringanmu berjalan.';
+  }
+
+  @override
+  String get connectErrorSessionExpired =>
+      'Ruang ini sudah kedaluwarsa. Minta undangan baru ke pembuat ruang.';
+
+  @override
+  String get connectErrorSessionNotFound =>
+      'Ruang ini sudah tidak ada. Minta undangan baru ke pembuat ruang.';
+
+  @override
+  String get connectErrorInvalidKey =>
+      'Kunci undangan tidak cocok dengan ruang ini. Minta undangan baru ke pembuat ruang.';
+
+  @override
+  String get connectErrorRateLimited =>
+      'Terlalu banyak percobaan. Tunggu sebentar sebelum mencoba lagi.';
+
+  @override
+  String get dateToday => 'Hari ini';
+
+  @override
+  String get dateYesterday => 'Kemarin';
+
+  @override
+  String get notificationExplainerTitle => 'Dapatkan notifikasi balasan';
+
+  @override
+  String get notificationExplainerBody =>
+      'Hearth Room dapat memberi tahu kamu saat asisten atau anggota ruang lain membalas saat aplikasi di latar belakang. iOS akan meminta izin selanjutnya.';
+
+  @override
+  String get notificationExplainerEnable => 'Aktifkan notifikasi';
+
+  @override
+  String get notificationExplainerLater => 'Nanti saja';
+
+  @override
   String get sendTooltip => 'Kirim';
 
   @override

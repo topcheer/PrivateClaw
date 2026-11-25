@@ -937,12 +937,16 @@ void main() {
       await tester.tap(
         find.byKey(const ValueKey<String>('session-panel-handle')),
       );
-      await tester.pumpAndSettle();
+      // The reconnecting state shows an animating progress indicator, so the
+      // frame never "settles"; advance a fixed span instead.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
 
       await tester.tap(
         find.byKey(const ValueKey<String>('session-qr-trigger')),
       );
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
 
       expect(find.text('Current session QR'), findsOneWidget);
       expect(

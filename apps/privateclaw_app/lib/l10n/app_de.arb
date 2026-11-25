@@ -30,6 +30,70 @@
   "sendHintActive": "Verschlüsselte Nachricht senden…",
   "sendHintInactive": "Warten Sie, bis die Sitzung verbunden ist…",
   "sendHintIdle": "Tritt einem Raum bei, um zu chatten…",
+  "connectStepRelay": "Relay",
+  "connectStepHandshake": "Handshake",
+  "connectStepJoined": "Beigetreten",
+  "connectCancelled": "Abgebrochen. Scanne oder füge eine Einladung ein, wenn du bereit bist.",
+  "inviteExpired": "Diese Einladung ist seit {ago} abgelaufen. Bitte den Host um eine neue.",
+  "@inviteExpired": {
+    "description": "Shown when the scanned or pasted invite is already expired; {ago} is a compact duration.",
+    "placeholders": {
+      "ago": {
+        "type": "String",
+        "example": "2h"
+      }
+    }
+  },
+  "connectErrorRefused": "Das Relay {relay} hat die Verbindung abgelehnt. Prüfe, dass es läuft, und versuch es erneut.",
+  "@connectErrorRefused": {
+    "description": "Human-readable connection error: connection refused by the relay.",
+    "placeholders": {
+      "relay": {
+        "type": "String",
+        "example": "relay.privateclaw.us"
+      }
+    }
+  },
+  "connectErrorNetwork": "{relay} ist nicht erreichbar. Prüfe deine Internetverbindung und versuch es erneut.",
+  "@connectErrorNetwork": {
+    "description": "Human-readable connection error: network / DNS failure.",
+    "placeholders": {
+      "relay": {
+        "type": "String",
+        "example": "relay.privateclaw.us"
+      }
+    }
+  },
+  "connectErrorTimeout": "{relay} hat nicht rechtzeitig geantwortet. Versuch es gleich noch einmal.",
+  "@connectErrorTimeout": {
+    "description": "Human-readable connection error: relay timeout.",
+    "placeholders": {
+      "relay": {
+        "type": "String",
+        "example": "relay.privateclaw.us"
+      }
+    }
+  },
+  "connectStillTrying": "{relay} wird weiterhin versucht. Prüfe, dass es erreichbar ist und dein Netzwerk funktioniert.",
+  "@connectStillTrying": {
+    "description": "Status while a first join keeps retrying the relay without a specific error yet.",
+    "placeholders": {
+      "relay": {
+        "type": "String",
+        "example": "relay.privateclaw.us"
+      }
+    }
+  },
+  "connectErrorSessionExpired": "Dieser Raum ist abgelaufen. Bitte den Host um eine neue Einladung.",
+  "connectErrorSessionNotFound": "Diesen Raum gibt es nicht mehr. Bitte den Host um eine neue Einladung.",
+  "connectErrorInvalidKey": "Der Einladungsschlüssel passt nicht zu diesem Raum. Bitte den Host um eine neue Einladung.",
+  "connectErrorRateLimited": "Zu viele Versuche. Warte eine Minute und versuch es dann erneut.",
+  "dateToday": "Heute",
+  "dateYesterday": "Gestern",
+  "notificationExplainerTitle": "Antworten als Mitteilung erhalten",
+  "notificationExplainerBody": "Hearth Room kann dich benachrichtigen, wenn dein Assistent oder jemand aus dem Raum antwortet, während die App im Hintergrund ist. iOS fragt als Nächstes nach der Berechtigung.",
+  "notificationExplainerEnable": "Mitteilungen aktivieren",
+  "notificationExplainerLater": "Nicht jetzt",
   "sendTooltip": "Senden",
   "sendFailed": "Senden fehlgeschlagen: {error}",
   "@sendFailed": {

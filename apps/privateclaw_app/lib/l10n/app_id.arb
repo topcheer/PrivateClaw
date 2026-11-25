@@ -30,6 +30,70 @@
   "sendHintActive": "Kirim pesan terenkripsi…",
   "sendHintInactive": "Tunggu sesi selesai terhubung…",
   "sendHintIdle": "Gabung ke ruang untuk mulai mengobrol…",
+  "connectStepRelay": "Relay",
+  "connectStepHandshake": "Handshake",
+  "connectStepJoined": "Bergabung",
+  "connectCancelled": "Dibatalkan. Pindai atau tempel undangan saat kamu siap.",
+  "inviteExpired": "Undangan ini kedaluwarsa {ago} yang lalu. Minta yang baru ke pembuat ruang.",
+  "@inviteExpired": {
+    "description": "Shown when the scanned or pasted invite is already expired; {ago} is a compact duration.",
+    "placeholders": {
+      "ago": {
+        "type": "String",
+        "example": "2h"
+      }
+    }
+  },
+  "connectErrorRefused": "Relay {relay} menolak koneksi. Pastikan relay berjalan lalu coba lagi.",
+  "@connectErrorRefused": {
+    "description": "Human-readable connection error: connection refused by the relay.",
+    "placeholders": {
+      "relay": {
+        "type": "String",
+        "example": "relay.privateclaw.us"
+      }
+    }
+  },
+  "connectErrorNetwork": "Tidak dapat menjangkau {relay}. Periksa koneksi internetmu lalu coba lagi.",
+  "@connectErrorNetwork": {
+    "description": "Human-readable connection error: network / DNS failure.",
+    "placeholders": {
+      "relay": {
+        "type": "String",
+        "example": "relay.privateclaw.us"
+      }
+    }
+  },
+  "connectErrorTimeout": "{relay} tidak merespons tepat waktu. Coba lagi sebentar lagi.",
+  "@connectErrorTimeout": {
+    "description": "Human-readable connection error: relay timeout.",
+    "placeholders": {
+      "relay": {
+        "type": "String",
+        "example": "relay.privateclaw.us"
+      }
+    }
+  },
+  "connectStillTrying": "Masih mencoba menjangkau {relay}. Pastikan relay online dan jaringanmu berjalan.",
+  "@connectStillTrying": {
+    "description": "Status while a first join keeps retrying the relay without a specific error yet.",
+    "placeholders": {
+      "relay": {
+        "type": "String",
+        "example": "relay.privateclaw.us"
+      }
+    }
+  },
+  "connectErrorSessionExpired": "Ruang ini sudah kedaluwarsa. Minta undangan baru ke pembuat ruang.",
+  "connectErrorSessionNotFound": "Ruang ini sudah tidak ada. Minta undangan baru ke pembuat ruang.",
+  "connectErrorInvalidKey": "Kunci undangan tidak cocok dengan ruang ini. Minta undangan baru ke pembuat ruang.",
+  "connectErrorRateLimited": "Terlalu banyak percobaan. Tunggu sebentar sebelum mencoba lagi.",
+  "dateToday": "Hari ini",
+  "dateYesterday": "Kemarin",
+  "notificationExplainerTitle": "Dapatkan notifikasi balasan",
+  "notificationExplainerBody": "Hearth Room dapat memberi tahu kamu saat asisten atau anggota ruang lain membalas saat aplikasi di latar belakang. iOS akan meminta izin selanjutnya.",
+  "notificationExplainerEnable": "Aktifkan notifikasi",
+  "notificationExplainerLater": "Nanti saja",
   "sendTooltip": "Kirim",
   "sendFailed": "Gagal mengirim: {error}",
   "@sendFailed": {

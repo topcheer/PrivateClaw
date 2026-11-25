@@ -30,6 +30,70 @@
   "sendHintActive": "暗号化メッセージを送信…",
   "sendHintInactive": "セッション接続の完了を待っています…",
   "sendHintIdle": "部屋に参加するとチャットを始められます…",
+  "connectStepRelay": "リレー",
+  "connectStepHandshake": "ハンドシェイク",
+  "connectStepJoined": "参加済み",
+  "connectCancelled": "キャンセルしました。準備ができたら招待をスキャンするか貼り付けてください。",
+  "inviteExpired": "この招待は {ago} 前に期限切れになりました。ホストに新しい招待を頼んでください。",
+  "@inviteExpired": {
+    "description": "Shown when the scanned or pasted invite is already expired; {ago} is a compact duration.",
+    "placeholders": {
+      "ago": {
+        "type": "String",
+        "example": "2h"
+      }
+    }
+  },
+  "connectErrorRefused": "リレー {relay} が接続を拒否しました。起動していることを確認して再試行してください。",
+  "@connectErrorRefused": {
+    "description": "Human-readable connection error: connection refused by the relay.",
+    "placeholders": {
+      "relay": {
+        "type": "String",
+        "example": "relay.privateclaw.us"
+      }
+    }
+  },
+  "connectErrorNetwork": "{relay} に接続できません。インターネット接続を確認して再試行してください。",
+  "@connectErrorNetwork": {
+    "description": "Human-readable connection error: network / DNS failure.",
+    "placeholders": {
+      "relay": {
+        "type": "String",
+        "example": "relay.privateclaw.us"
+      }
+    }
+  },
+  "connectErrorTimeout": "{relay} が時間内に応答しませんでした。しばらくしてから再試行してください。",
+  "@connectErrorTimeout": {
+    "description": "Human-readable connection error: relay timeout.",
+    "placeholders": {
+      "relay": {
+        "type": "String",
+        "example": "relay.privateclaw.us"
+      }
+    }
+  },
+  "connectStillTrying": "{relay} への接続を再試行しています。リレーがオンラインで、ネットワークが有効か確認してください。",
+  "@connectStillTrying": {
+    "description": "Status while a first join keeps retrying the relay without a specific error yet.",
+    "placeholders": {
+      "relay": {
+        "type": "String",
+        "example": "relay.privateclaw.us"
+      }
+    }
+  },
+  "connectErrorSessionExpired": "この部屋は期限切れです。ホストに新しい招待を頼んでください。",
+  "connectErrorSessionNotFound": "この部屋はもう存在しません。ホストに新しい招待を頼んでください。",
+  "connectErrorInvalidKey": "招待キーがこの部屋と一致しません。ホストに新しい招待を頼んでください。",
+  "connectErrorRateLimited": "試行回数が多すぎます。しばらく待ってから再試行してください。",
+  "dateToday": "今日",
+  "dateYesterday": "昨日",
+  "notificationExplainerTitle": "返信を通知で受け取る",
+  "notificationExplainerBody": "アプリがバックグラウンドの間にアシスタントや部屋のメンバーが返信すると、Hearth Room が通知できます。次に iOS が許可を求めます。",
+  "notificationExplainerEnable": "通知を有効にする",
+  "notificationExplainerLater": "今はしない",
   "sendTooltip": "送信",
   "sendFailed": "送信に失敗しました: {error}",
   "@sendFailed": {

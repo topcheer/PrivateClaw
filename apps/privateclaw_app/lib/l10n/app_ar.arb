@@ -30,6 +30,70 @@
   "sendHintActive": "إرسال رسالة مشفرة…",
   "sendHintInactive": "انتظر حتى يكتمل اتصال الجلسة…",
   "sendHintIdle": "انضم إلى غرفة لبدء الدردشة…",
+  "connectStepRelay": "الوسيط",
+  "connectStepHandshake": "المصافحة",
+  "connectStepJoined": "تم الانضمام",
+  "connectCancelled": "تم الإلغاء. امسح دعوة أو الصقها عندما تكون مستعدًا.",
+  "inviteExpired": "انتهت صلاحية هذه الدعوة منذ {ago}. اطلب من المضيف دعوة جديدة.",
+  "@inviteExpired": {
+    "description": "Shown when the scanned or pasted invite is already expired; {ago} is a compact duration.",
+    "placeholders": {
+      "ago": {
+        "type": "String",
+        "example": "2h"
+      }
+    }
+  },
+  "connectErrorRefused": "رفض الوسيط {relay} الاتصال. تأكد من أنه يعمل وحاول مرة أخرى.",
+  "@connectErrorRefused": {
+    "description": "Human-readable connection error: connection refused by the relay.",
+    "placeholders": {
+      "relay": {
+        "type": "String",
+        "example": "relay.privateclaw.us"
+      }
+    }
+  },
+  "connectErrorNetwork": "تعذر الوصول إلى {relay}. تحقق من اتصالك بالإنترنت وحاول مرة أخرى.",
+  "@connectErrorNetwork": {
+    "description": "Human-readable connection error: network / DNS failure.",
+    "placeholders": {
+      "relay": {
+        "type": "String",
+        "example": "relay.privateclaw.us"
+      }
+    }
+  },
+  "connectErrorTimeout": "لم يستجب {relay} في الوقت المحدد. حاول مرة أخرى بعد قليل.",
+  "@connectErrorTimeout": {
+    "description": "Human-readable connection error: relay timeout.",
+    "placeholders": {
+      "relay": {
+        "type": "String",
+        "example": "relay.privateclaw.us"
+      }
+    }
+  },
+  "connectStillTrying": "لا يزال يحاول الوصول إلى {relay}. تحقق من أنه متصل ومن أن شبكتك تعمل.",
+  "@connectStillTrying": {
+    "description": "Status while a first join keeps retrying the relay without a specific error yet.",
+    "placeholders": {
+      "relay": {
+        "type": "String",
+        "example": "relay.privateclaw.us"
+      }
+    }
+  },
+  "connectErrorSessionExpired": "انتهت صلاحية هذه الغرفة. اطلب من المضيف دعوة جديدة.",
+  "connectErrorSessionNotFound": "هذه الغرفة لم تعد موجودة. اطلب من المضيف دعوة جديدة.",
+  "connectErrorInvalidKey": "مفتاح الدعوة لا يطابق هذه الغرفة. اطلب من المضيف دعوة جديدة.",
+  "connectErrorRateLimited": "محاولات كثيرة جدًا. انتظر دقيقة قبل المحاولة مرة أخرى.",
+  "dateToday": "اليوم",
+  "dateYesterday": "أمس",
+  "notificationExplainerTitle": "احصل على إشعار بالردود",
+  "notificationExplainerBody": "يمكن لـ Hearth Room إشعارك عندما يرد مساعدك أو أحد أعضاء الغرفة أثناء عمل التطبيق في الخلفية. سيطلب iOS الإذن بعد قليل.",
+  "notificationExplainerEnable": "تفعيل الإشعارات",
+  "notificationExplainerLater": "ليس الآن",
   "sendTooltip": "إرسال",
   "sendFailed": "فشل الإرسال: {error}",
   "@sendFailed": {

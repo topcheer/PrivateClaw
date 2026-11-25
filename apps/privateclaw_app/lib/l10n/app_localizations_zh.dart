@@ -90,6 +90,74 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sendHintIdle => '加入房间后即可开始聊天…';
 
   @override
+  String get connectStepRelay => '中继';
+
+  @override
+  String get connectStepHandshake => '握手';
+
+  @override
+  String get connectStepJoined => '已加入';
+
+  @override
+  String get connectCancelled => '已取消。准备好后扫描或粘贴邀请即可。';
+
+  @override
+  String inviteExpired(String ago) {
+    return '这个邀请已在 $ago 前过期。请向房主要一个新的。';
+  }
+
+  @override
+  String connectErrorRefused(String relay) {
+    return '中继 $relay 拒绝了连接。请确认它正在运行后重试。';
+  }
+
+  @override
+  String connectErrorNetwork(String relay) {
+    return '无法连接到 $relay。请检查网络后重试。';
+  }
+
+  @override
+  String connectErrorTimeout(String relay) {
+    return '$relay 未及时响应。请稍后重试。';
+  }
+
+  @override
+  String connectStillTrying(String relay) {
+    return '仍在尝试连接 $relay。请确认它在线且网络正常。';
+  }
+
+  @override
+  String get connectErrorSessionExpired => '这个房间已过期。请向房主要一个新邀请。';
+
+  @override
+  String get connectErrorSessionNotFound => '这个房间已不存在。请向房主要一个新邀请。';
+
+  @override
+  String get connectErrorInvalidKey => '邀请密钥与这个房间不匹配。请向房主要一个新邀请。';
+
+  @override
+  String get connectErrorRateLimited => '尝试次数过多。请稍等一分钟再试。';
+
+  @override
+  String get dateToday => '今天';
+
+  @override
+  String get dateYesterday => '昨天';
+
+  @override
+  String get notificationExplainerTitle => '开启回复通知';
+
+  @override
+  String get notificationExplainerBody =>
+      '应用在后台时，如果助手或房间里的成员回复了，Hearth Room 可以通知你。接下来 iOS 会请求权限。';
+
+  @override
+  String get notificationExplainerEnable => '开启通知';
+
+  @override
+  String get notificationExplainerLater => '暂不';
+
+  @override
   String get sendTooltip => '发送';
 
   @override
@@ -420,6 +488,74 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get sendHintIdle => '加入房間後即可開始聊天…';
+
+  @override
+  String get connectStepRelay => '中繼';
+
+  @override
+  String get connectStepHandshake => '交握';
+
+  @override
+  String get connectStepJoined => '已加入';
+
+  @override
+  String get connectCancelled => '已取消。準備好後掃描或貼上邀請即可。';
+
+  @override
+  String inviteExpired(String ago) {
+    return '這個邀請已在 $ago 前過期。請向房主要一個新的。';
+  }
+
+  @override
+  String connectErrorRefused(String relay) {
+    return '中繼 $relay 拒絕了連線。請確認它正在執行後重試。';
+  }
+
+  @override
+  String connectErrorNetwork(String relay) {
+    return '無法連線到 $relay。請檢查網路後重試。';
+  }
+
+  @override
+  String connectErrorTimeout(String relay) {
+    return '$relay 未及時回應。請稍後重試。';
+  }
+
+  @override
+  String connectStillTrying(String relay) {
+    return '仍在嘗試連線 $relay。請確認它在線且網路正常。';
+  }
+
+  @override
+  String get connectErrorSessionExpired => '這個房間已過期。請向房主要一個新邀請。';
+
+  @override
+  String get connectErrorSessionNotFound => '這個房間已不存在。請向房主要一個新邀請。';
+
+  @override
+  String get connectErrorInvalidKey => '邀請金鑰與這個房間不符。請向房主要一個新邀請。';
+
+  @override
+  String get connectErrorRateLimited => '嘗試次數過多。請稍等一分鐘再試。';
+
+  @override
+  String get dateToday => '今天';
+
+  @override
+  String get dateYesterday => '昨天';
+
+  @override
+  String get notificationExplainerTitle => '開啟回覆通知';
+
+  @override
+  String get notificationExplainerBody =>
+      '應用在背景時，如果助手或房間裡的成員回覆了，Hearth Room 可以通知你。接下來 iOS 會請求權限。';
+
+  @override
+  String get notificationExplainerEnable => '開啟通知';
+
+  @override
+  String get notificationExplainerLater => '暫不';
 
   @override
   String get sendTooltip => '傳送';

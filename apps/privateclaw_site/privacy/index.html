@@ -4,8 +4,9 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#0b1020" />
-    <meta name="description" content="PrivateClaw privacy policy." />
-    <title>PrivateClaw Privacy</title>
+    <meta name="description" content="PrivateClaw is built around encrypted, session-based chat. This page explains what data the app, relay, provider, and website may handle." />
+    <title>Privacy | PrivateClaw</title>
+    <link rel="canonical" href="https://privateclaw.us/privacy/" />
     <link rel="icon" type="image/png" href="../assets/privateclaw_app_icon.png?v=20260314-2" />
     <link rel="stylesheet" href="../styles.css?v=20260329-2" />
   </head>
@@ -23,25 +24,25 @@
           </span>
           <span class="brand-copy">
             <strong>PrivateClaw</strong>
-            <span data-i18n="site.brandTagline"></span>
+            <span data-i18n="site.brandTagline">Private rooms for your OpenClaw</span>
           </span>
         </a>
 
         <nav class="topbar-actions">
           <a class="ghost-button icon-link" href="https://github.com/topcheer/PrivateClaw" target="_blank" rel="noreferrer">
             <img src="../assets/icon-github.svg?v=20260329-1" alt="" class="icon-link-image" />
-            <span class="sr-only" data-i18n="site.navGithub"></span>
+            <span class="sr-only" data-i18n="site.navGithub">GitHub</span>
           </a>
           <a class="ghost-button icon-link google-icon-link" href="https://groups.google.com/g/gg-studio-ai-products" target="_blank" rel="noreferrer">
             <img src="../assets/icon-google-group.svg?v=20260329-1" alt="" class="icon-link-image" />
-            <span class="sr-only" data-i18n="site.navBetaGroup"></span>
+            <span class="sr-only" data-i18n="site.navBetaGroup">Android test group</span>
           </a>
           <a class="ghost-button icon-link" href="https://t.me/+W3RUKxEO9kIxMmZl" target="_blank" rel="noreferrer">
             <img src="../assets/icon-telegram.svg?v=20260329-1" alt="" class="icon-link-image" />
-            <span class="sr-only" data-i18n="site.navTelegramGroup"></span>
+            <span class="sr-only" data-i18n="site.navTelegramGroup">Telegram group chat</span>
           </a>
           <label class="locale-picker" for="locale-select">
-            <span class="sr-only" data-i18n="site.languageLabel"></span>
+            <span class="sr-only" data-i18n="site.languageLabel">Language</span>
             <select id="locale-select" aria-label="Language"></select>
           </label>
         </nav>
@@ -49,31 +50,37 @@
 
       <main class="policy-main">
         <section class="policy-hero glass-panel">
-          <span class="section-kicker" id="policy-kicker"></span>
-          <h1 id="policy-title"></h1>
-          <p class="hero-body" id="policy-body"></p>
+          <span class="section-kicker" id="policy-kicker">Privacy</span>
+          <h1 id="policy-title">Privacy at a glance</h1>
+          <p class="hero-body" id="policy-body">PrivateClaw is built around encrypted, session-based chat. This page explains what data the app, relay, provider, and website may handle.</p>
           <div class="policy-updated">
-            <strong id="policy-updated-label"></strong>
-            <span id="policy-updated-value"></span>
+            <strong id="policy-updated-label">Last updated</strong>
+            <span id="policy-updated-value">2026-03-14</span>
           </div>
         </section>
-        <section class="policy-sections" id="policy-sections"></section>
+        <section class="policy-sections" id="policy-sections"><!-- prerender:policy-sections:start -->
+          <article class="policy-section glass-panel"><h2>Scope</h2><p>This page covers the PrivateClaw website, mobile app, web chat, relay, and provider distributed by GG AI Studio.</p><p>If you connect to a relay, provider, or OpenClaw deployment run by somebody else, that operator is responsible for their own handling and retention practices.</p></article>
+<article class="policy-section glass-panel"><h2>Data PrivateClaw may handle</h2><ul class="policy-list"><li>session invite data such as session ID, relay endpoint, expiry time, and session key</li><li>messages, attachments, and room activity that you choose to send or receive</li><li>temporary local files needed to preview or open media and documents</li><li>connection and routing metadata such as reconnect attempts, timestamps, and encrypted envelope sizes</li></ul></article>
+<article class="policy-section glass-panel"><h2>Permissions and infrastructure</h2><ul class="policy-list"><li>Camera access is used only for scanning QR invites.</li><li>File and media access is used only when you choose attachments or open received files.</li><li>Network access is used to establish encrypted sessions and exchange encrypted traffic with your selected relay and provider.</li></ul></article>
+<article class="policy-section glass-panel"><h2>Encryption and third parties</h2><p>PrivateClaw is designed so the relay mostly forwards encrypted payloads. A relay operator may still observe limited metadata such as session IDs, timing, and message sizes.</p><p>The selected provider and OpenClaw deployment decrypt content in order to answer your requests. The project does not include advertising SDKs or analytics SDKs by default.</p></article>
+<article class="policy-section glass-panel"><h2>Your choices and contact</h2><p>You can deny camera permission and paste an invite manually, choose whether to send files, clear app data, or self-host the stack if you want tighter infrastructure control.</p><p>For project questions or policy feedback, use GitHub Issues: https://github.com/topcheer/PrivateClaw/issues</p></article>
+        <!-- prerender:policy-sections:end --></section>
       </main>
 
       <footer class="footer-bar glass-panel">
         <div class="footer-copy">
           <strong>PrivateClaw</strong>
-          <p data-i18n="site.footerLine"></p>
-          <p class="footer-note" data-i18n="site.footerDisclaimer"></p>
+          <p data-i18n="site.footerLine">Private rooms, shared OpenClaw, and a calmer way to chat.</p>
+          <p class="footer-note" data-i18n="site.footerDisclaimer">PrivateClaw is independent and not affiliated with OpenClaw.</p>
           <div class="footer-links">
-            <a href="../privacy/" data-i18n="site.footerPrivacy"></a>
-            <a href="../terms/" data-i18n="site.footerTerms"></a>
+            <a href="../privacy/" data-i18n="site.footerPrivacy">Privacy</a>
+            <a href="../terms/" data-i18n="site.footerTerms">Terms</a>
           </div>
         </div>
         <div class="footer-meta footer-legal">
           <span>privateclaw.us</span>
-          <span data-i18n="site.footerSupport"></span>
-          <span data-i18n="site.footerCopyright"></span>
+          <span data-i18n="site.footerSupport">Android testing updates live in the Google Group.</span>
+          <span data-i18n="site.footerCopyright">Copyright GG AI Studio 2026.</span>
         </div>
       </footer>
     </div>

@@ -66,7 +66,9 @@
     "publish:provider": "npm publish --workspace @privateclaw/privateclaw --access public",
     "publish:provider:dry-run": "npm publish --dry-run --workspace @privateclaw/privateclaw --access public",
     "publish:npm": "npm run publish:protocol && npm run publish:relay && npm run publish:provider",
-    "publish:npm:dry-run": "npm run publish:protocol:dry-run && npm run publish:relay:dry-run && npm run publish:provider:dry-run"
+    "publish:npm:dry-run": "npm run publish:protocol:dry-run && npm run publish:relay:dry-run && npm run publish:provider:dry-run",
+    "site:prerender": "node scripts/prerender-site.mjs",
+    "site:prerender:check": "node scripts/prerender-site.mjs --check"
   },
   "devDependencies": {
     "@types/node": "^24.7.2",

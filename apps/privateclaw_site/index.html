@@ -20,7 +20,55 @@
     <meta name="twitter:description" content="Encrypted rooms for the people you trust, and the assistant that works for you." />
     <meta name="twitter:image" content="https://privateclaw.us/assets/og-privateclaw.png" />
     <link rel="image_src" href="https://privateclaw.us/assets/og-privateclaw.png" />
-    <title>PrivateClaw</title>
+    <link rel="canonical" href="https://privateclaw.us/" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "WebSite",
+            "@id": "https://privateclaw.us/#website",
+            "url": "https://privateclaw.us/",
+            "name": "PrivateClaw",
+            "description": "PrivateClaw turns one shared OpenClaw into an end-to-end encrypted private room for the people you trust.",
+            "inLanguage": "en",
+            "publisher": { "@id": "https://privateclaw.us/#organization" }
+          },
+          {
+            "@type": "Organization",
+            "@id": "https://privateclaw.us/#organization",
+            "name": "GG AI Studio",
+            "url": "https://privateclaw.us/",
+            "logo": "https://privateclaw.us/assets/privateclaw_app_icon.png",
+            "sameAs": [
+              "https://github.com/topcheer/PrivateClaw",
+              "https://t.me/+W3RUKxEO9kIxMmZl"
+            ]
+          },
+          {
+            "@type": "SoftwareApplication",
+            "@id": "https://privateclaw.us/#app",
+            "name": "Hearth Room",
+            "applicationCategory": "CommunicationApplication",
+            "operatingSystem": "iOS, iPadOS, macOS, Windows, Linux, Android, Web browser",
+            "description": "Hearth Room is the PrivateClaw client: scan a one-time invite to join an end-to-end encrypted room with the people you trust and the OpenClaw assistant you run at home. Messages, photos, voice notes and files stay encrypted; the relay only ever sees ciphertext.",
+            "url": "https://privateclaw.us/",
+            "image": "https://privateclaw.us/assets/privateclaw_app_icon.png",
+            "softwareVersion": "0.1.21",
+            "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+            "featureList": [
+              "End-to-end encrypted group chat with one-time QR invites",
+              "Encrypted photos, voice notes and file attachments",
+              "OpenClaw assistant replies inside the room",
+              "Self-hosted or public relay; the relay only routes ciphertext",
+              "Desktop apps for Windows, macOS and Linux, plus a web chat"
+            ],
+            "installUrl": "https://github.com/topcheer/PrivateClaw/releases"
+          }
+        ]
+      }
+    </script>
+    <title>PrivateClaw | Private rooms for your OpenClaw</title>
     <link rel="icon" type="image/png" href="./assets/privateclaw_app_icon.png?v=20260314-2" />
     <link rel="stylesheet" href="./styles.css?v=20261124-6" />
   </head>
@@ -38,25 +86,25 @@
           </span>
           <span class="brand-copy">
             <strong>PrivateClaw</strong>
-            <span data-i18n="site.brandTagline"></span>
+            <span data-i18n="site.brandTagline">Private rooms for your OpenClaw</span>
           </span>
         </a>
 
         <nav class="topbar-actions">
           <a class="ghost-button icon-link" href="https://github.com/topcheer/PrivateClaw" target="_blank" rel="noreferrer">
             <img src="./assets/icon-github.svg?v=20260329-1" alt="" class="icon-link-image" />
-            <span class="sr-only" data-i18n="site.navGithub"></span>
+            <span class="sr-only" data-i18n="site.navGithub">GitHub</span>
           </a>
           <a class="ghost-button icon-link google-icon-link" href="https://groups.google.com/g/gg-studio-ai-products" target="_blank" rel="noreferrer">
             <img src="./assets/icon-google-group.svg?v=20260329-1" alt="" class="icon-link-image" />
-            <span class="sr-only" data-i18n="site.navBetaGroup"></span>
+            <span class="sr-only" data-i18n="site.navBetaGroup">Android test group</span>
           </a>
           <a class="ghost-button icon-link" href="https://t.me/+W3RUKxEO9kIxMmZl" target="_blank" rel="noreferrer">
             <img src="./assets/icon-telegram.svg?v=20260329-1" alt="" class="icon-link-image" />
-            <span class="sr-only" data-i18n="site.navTelegramGroup"></span>
+            <span class="sr-only" data-i18n="site.navTelegramGroup">Telegram group chat</span>
           </a>
           <label class="locale-picker" for="locale-select">
-            <span class="sr-only" data-i18n="site.languageLabel"></span>
+            <span class="sr-only" data-i18n="site.languageLabel">Language</span>
             <select id="locale-select" aria-label="Language"></select>
           </label>
         </nav>
@@ -65,28 +113,28 @@
       <main>
         <section class="hero-grid hero-redesign">
           <div class="hero-copy-column">
-            <div class="eyebrow-pill" data-i18n="site.heroBadge"></div>
-            <h1 class="hero-title" data-i18n="site.heroTitle"></h1>
-            <p class="hero-body" data-i18n="site.heroBody"></p>
+            <div class="eyebrow-pill" data-i18n="site.heroBadge">Private • Encrypted • Invite-only</div>
+            <h1 class="hero-title" data-i18n="site.heroTitle">Bring your people into one private OpenClaw room.</h1>
+            <p class="hero-body" data-i18n="site.heroBody">PrivateClaw turns one shared OpenClaw into a beautiful private room for the people you actually trust. Scan once, join instantly, and let the relay carry ciphertext only.</p>
 
             <div class="hero-cta-row">
               <a id="web-entry" class="primary-button" href="./chat/">
-                <span data-i18n="site.heroPrimaryCta"></span>
+                <span data-i18n="site.heroPrimaryCta">Open web chat</span>
               </a>
               <a class="ghost-button button-with-icon" href="https://groups.google.com/g/gg-studio-ai-products" target="_blank" rel="noreferrer">
                 <span class="button-icon-surface" aria-hidden="true">
                   <img src="./assets/icon-google-group.svg?v=20260329-1" alt="" class="button-icon-image" />
                 </span>
-                <span data-i18n="site.heroSecondaryCta"></span>
+                <span data-i18n="site.heroSecondaryCta">Join Android testing</span>
               </a>
             </div>
 
             <div class="device-hint card-inline">
-              <p id="device-hint-copy" data-i18n="site.heroDesktopHint"></p>
+              <p id="device-hint-copy" data-i18n="site.heroDesktopHint">Web chat works on desktop and phone. On desktop, pasting an invite or selecting a saved QR image is usually the fastest way in.</p>
             </div>
 
             <div class="coming-soon-row">
-              <span class="coming-soon-badge" data-i18n="site.appComingSoon"></span>
+              <span class="coming-soon-badge" data-i18n="site.appComingSoon">iPhone App Store + Android closed alpha</span>
               <div class="store-button-grid">
                 <a
                   class="store-button store-button-live store-button-rich"
@@ -97,7 +145,7 @@
                   <span class="button-icon-surface store-button-icon-surface" aria-hidden="true">
                     <img src="./assets/icon-app-store.svg?v=20260329-1" alt="" class="button-icon-image store-button-icon-image" />
                   </span>
-                  <span class="store-button-label" data-i18n="site.iosComingSoon"></span>
+                  <span class="store-button-label" data-i18n="site.iosComingSoon">Download on the App Store</span>
                 </a>
                 <a
                   class="store-button store-button-live store-button-rich"
@@ -108,10 +156,10 @@
                   <span class="button-icon-surface store-button-icon-surface" aria-hidden="true">
                     <img src="./assets/icon-google-play.svg?v=20260329-1" alt="" class="button-icon-image store-button-icon-image" />
                   </span>
-                  <span class="store-button-label" data-i18n="site.androidComingSoon"></span>
+                  <span class="store-button-label" data-i18n="site.androidComingSoon">Join Android closed alpha</span>
                 </a>
               </div>
-              <p class="community-footnote" data-i18n="site.androidBetaNote"></p>
+              <p class="community-footnote" data-i18n="site.androidBetaNote">Android closed alpha is delivered through Google Play. Join the Google Group first or Play will say the test is unavailable.</p>
             </div>
           </div>
 
@@ -144,23 +192,27 @@
 
               <div class="stage-float-card stage-float-lock">
                 <span class="float-icon">🔐</span>
-                <span data-i18n="site.stageLockLabel"></span>
+                <span data-i18n="site.stageLockLabel">End-to-end encrypted</span>
               </div>
               <div class="stage-float-card stage-float-ai">
                 <span class="float-dot"></span>
-                <span data-i18n="site.stageAiLabel"></span>
+                <span data-i18n="site.stageAiLabel">OpenClaw is replying</span>
               </div>
             </div>
           </div>
 
-          <div class="hero-stats" id="hero-stats"></div>
+          <div class="hero-stats" id="hero-stats"><!-- prerender:hero-stats:start -->
+            <div class="stat-card"><strong>One shared OpenClaw</strong><span>Invite your favorite people into the same assistant without exposing the room to strangers.</span></div>
+<div class="stat-card"><strong>Encrypted end to end</strong><span>The relay routes traffic, but it does not get your decrypted chat content.</span></div>
+<div class="stat-card"><strong>Made for real moments</strong><span>Trip planning, private family talks, team check-ins, and fun group sessions all feel natural.</span></div>
+          <!-- prerender:hero-stats:end --></div>
         </section>
 
         <section class="section-block showcase-section">
           <div class="section-heading showcase-heading">
-            <span class="section-kicker" data-i18n="site.showcaseKicker"></span>
-            <h2 data-i18n="site.showcaseTitle"></h2>
-            <p data-i18n="site.showcaseBody"></p>
+            <span class="section-kicker" data-i18n="site.showcaseKicker">See it in motion</span>
+            <h2 data-i18n="site.showcaseTitle">Real screens from the real app.</h2>
+            <p data-i18n="site.showcaseBody">Every frame below is the shipped iOS and web client: no mockups, no renders of features that do not exist.</p>
           </div>
           <div class="showcase-rail">
             <article class="showcase-card showcase-tilt" data-reveal>
@@ -169,8 +221,8 @@
               </div>
               <div class="showcase-copy">
                 <span class="showcase-num">01</span>
-                <h3 data-i18n="site.showcase1Title"></h3>
-                <p data-i18n="site.showcase1Body"></p>
+                <h3 data-i18n="site.showcase1Title">One invite, one room</h3>
+                <p data-i18n="site.showcase1Body">Paste a link or scan a QR code and you are inside a one-time private session. Nothing else to configure.</p>
               </div>
             </article>
             <article class="showcase-card showcase-tilt" data-reveal>
@@ -179,8 +231,8 @@
               </div>
               <div class="showcase-copy">
                 <span class="showcase-num">02</span>
-                <h3 data-i18n="site.showcase2Title"></h3>
-                <p data-i18n="site.showcase2Body"></p>
+                <h3 data-i18n="site.showcase2Title">Group chat that stays yours</h3>
+                <p data-i18n="site.showcase2Body">Invite the people you actually trust. Everyone sees the same encrypted room, and the relay only ever sees ciphertext.</p>
               </div>
             </article>
             <article class="showcase-card showcase-tilt" data-reveal>
@@ -189,8 +241,8 @@
               </div>
               <div class="showcase-copy">
                 <span class="showcase-num">03</span>
-                <h3 data-i18n="site.showcase3Title"></h3>
-                <p data-i18n="site.showcase3Body"></p>
+                <h3 data-i18n="site.showcase3Title">Media that travels encrypted</h3>
+                <p data-i18n="site.showcase3Body">Photos, voice notes, and files are attached to the end-to-end encrypted stream, not uploaded to a public feed.</p>
               </div>
             </article>
             <article class="showcase-card showcase-tilt showcase-card-wide" data-reveal>
@@ -199,8 +251,8 @@
               </div>
               <div class="showcase-copy">
                 <span class="showcase-num">04</span>
-                <h3 data-i18n="site.showcase4Title"></h3>
-                <p data-i18n="site.showcase4Body"></p>
+                <h3 data-i18n="site.showcase4Title">Your OpenClaw, in the loop</h3>
+                <p data-i18n="site.showcase4Body">The assistant you already run at home answers inside the session, from trip plans to files, with its usual memory and tools.</p>
               </div>
             </article>
           </div>
@@ -208,34 +260,43 @@
 
         <section class="section-block">
           <div class="section-heading">
-            <span class="section-kicker" data-i18n="site.featuresKicker"></span>
-            <h2 data-i18n="site.featuresTitle"></h2>
-            <p data-i18n="site.featuresBody"></p>
+            <span class="section-kicker" data-i18n="site.featuresKicker">Why people love it</span>
+            <h2 data-i18n="site.featuresTitle">Private by default, warm by design.</h2>
+            <p data-i18n="site.featuresBody">PrivateClaw is for people who want secure spaces that still feel relaxed, social, and fun around one shared OpenClaw.</p>
           </div>
-          <div class="feature-grid" id="feature-grid"></div>
+          <div class="feature-grid" id="feature-grid"><!-- prerender:feature-grid:start -->
+            <article class="feature-card"><div class="feature-eyebrow">Invite only</div><h3>One scan. One room.</h3><p>A room starts from a QR code or invite link, so you choose who gets in and when.</p></article>
+<article class="feature-card"><div class="feature-eyebrow">Shared assistant</div><h3>One OpenClaw for everyone you trust.</h3><p>Friends, family, or teammates can all talk with the same OpenClaw session and enjoy the same context together.</p></article>
+<article class="feature-card"><div class="feature-eyebrow">Private routing</div><h3>The relay is just a courier.</h3><p>Messages stay encrypted between the app and your OpenClaw side of the session, so the relay only forwards ciphertext.</p></article>
+<article class="feature-card"><div class="feature-eyebrow">Mobile first</div><h3>Feels like a real chat app.</h3><p>Slash commands, media, group presence, and gentle motion all make it feel familiar on a phone.</p></article>
+          <!-- prerender:feature-grid:end --></div>
         </section>
 
         <section class="section-block scenic-section">
           <div class="section-heading">
-            <span class="section-kicker" data-i18n="site.scenariosKicker"></span>
-            <h2 data-i18n="site.scenariosTitle"></h2>
-            <p data-i18n="site.scenariosBody"></p>
+            <span class="section-kicker" data-i18n="site.scenariosKicker">Built for real life</span>
+            <h2 data-i18n="site.scenariosTitle">Security without losing the fun.</h2>
+            <p data-i18n="site.scenariosBody">PrivateClaw is designed for close circles that want to keep using OpenClaw together without turning to public social software.</p>
           </div>
-          <div class="scenario-grid" id="scenario-grid"></div>
+          <div class="scenario-grid" id="scenario-grid"><!-- prerender:scenario-grid:start -->
+            <article class="scenario-card"><div class="scenario-eyebrow">Family</div><h3>Keep private family planning together.</h3><p>Share schedules, ideas, and travel plans around one OpenClaw room that feels calm and personal.</p></article>
+<article class="scenario-card"><div class="scenario-eyebrow">Friends</div><h3>Use group chat for the fun stuff too.</h3><p>Play with prompts, brainstorm gifts, or build shared plans with the same assistant in the same room.</p></article>
+<article class="scenario-card"><div class="scenario-eyebrow">Teams</div><h3>Open a short-lived secure side channel.</h3><p>Spin up an invite-only room when you need a focused conversation without dragging people into another public chat silo.</p></article>
+          <!-- prerender:scenario-grid:end --></div>
         </section>
 
         <section class="section-block">
           <div class="section-heading">
-            <span class="section-kicker" data-i18n="site.desktopDownloadsKicker"></span>
-            <h2 data-i18n="site.desktopDownloadsTitle"></h2>
-            <p data-i18n="site.desktopDownloadsBody"></p>
+            <span class="section-kicker" data-i18n="site.desktopDownloadsKicker">Desktop apps</span>
+            <h2 data-i18n="site.desktopDownloadsTitle">PrivateClaw on Windows, macOS, and Linux.</h2>
+            <p data-i18n="site.desktopDownloadsBody">PrivateClaw for Windows is live on the Microsoft Store, so it installs and updates like any other Windows app. macOS and Linux builds are published on GitHub; a Mac App Store version is not available yet.</p>
           </div>
           <div class="coming-soon-row">
             <span class="coming-soon-badge badge-with-icon">
               <span class="badge-icon-surface" aria-hidden="true">
                 <img src="./assets/icon-windows.svg?v=20260329-1" alt="" class="badge-icon-image" />
               </span>
-              <span data-i18n="site.desktopDownloadsBadge"></span>
+              <span data-i18n="site.desktopDownloadsBadge">Microsoft Store + GitHub releases</span>
             </span>
             <div class="store-button-grid">
               <a
@@ -247,7 +308,7 @@
                 <span class="button-icon-surface store-button-icon-surface" aria-hidden="true">
                   <img src="./assets/icon-windows.svg?v=20260329-1" alt="" class="button-icon-image store-button-icon-image" />
                 </span>
-                <span class="store-button-label" data-i18n="site.desktopDownloadWindowsStore"></span>
+                <span class="store-button-label" data-i18n="site.desktopDownloadWindowsStore">Get it from Microsoft Store</span>
               </a>
               <a
                 class="store-button store-button-live store-button-rich"
@@ -258,7 +319,7 @@
                 <span class="button-icon-surface store-button-icon-surface" aria-hidden="true">
                   <img src="./assets/icon-windows.svg?v=20260329-1" alt="" class="button-icon-image store-button-icon-image" />
                 </span>
-                <span class="store-button-label" data-i18n="site.desktopDownloadWindowsX64"></span>
+                <span class="store-button-label" data-i18n="site.desktopDownloadWindowsX64">Windows ZIP (sideload)</span>
               </a>
               <a
                 class="store-button store-button-live store-button-rich"
@@ -269,7 +330,7 @@
                 <span class="button-icon-surface store-button-icon-surface" aria-hidden="true">
                   <img src="./assets/icon-macos.svg?v=20260329-1" alt="" class="button-icon-image store-button-icon-image" />
                 </span>
-                <span class="store-button-label" data-i18n="site.desktopDownloadMacosArm64"></span>
+                <span class="store-button-label" data-i18n="site.desktopDownloadMacosArm64">macOS Apple Silicon DMG</span>
               </a>
               <a
                 class="store-button store-button-live store-button-rich"
@@ -280,7 +341,7 @@
                 <span class="button-icon-surface store-button-icon-surface" aria-hidden="true">
                   <img src="./assets/icon-macos.svg?v=20260329-1" alt="" class="button-icon-image store-button-icon-image" />
                 </span>
-                <span class="store-button-label" data-i18n="site.desktopDownloadMacosX64"></span>
+                <span class="store-button-label" data-i18n="site.desktopDownloadMacosX64">macOS Intel DMG</span>
               </a>
               <a
                 class="store-button store-button-live store-button-rich"
@@ -291,7 +352,7 @@
                 <span class="button-icon-surface store-button-icon-surface" aria-hidden="true">
                   <img src="./assets/icon-linux.svg?v=20260329-1" alt="" class="button-icon-image store-button-icon-image" />
                 </span>
-                <span class="store-button-label" data-i18n="site.desktopDownloadLinuxX64"></span>
+                <span class="store-button-label" data-i18n="site.desktopDownloadLinuxX64">Linux x64 tar.gz</span>
               </a>
               <a
                 class="store-button store-button-live store-button-rich"
@@ -302,43 +363,47 @@
                 <span class="button-icon-surface store-button-icon-surface" aria-hidden="true">
                   <img src="./assets/icon-linux.svg?v=20260329-1" alt="" class="button-icon-image store-button-icon-image" />
                 </span>
-                <span class="store-button-label" data-i18n="site.desktopDownloadLinuxArm64"></span>
+                <span class="store-button-label" data-i18n="site.desktopDownloadLinuxArm64">Linux ARM64 tar.gz</span>
               </a>
             </div>
           </div>
-          <p class="community-footnote" data-i18n="site.desktopDownloadsNote"></p>
+          <p class="community-footnote" data-i18n="site.desktopDownloadsNote">The Microsoft Store link is the live listing (Windows 10/11, auto-updates). The GitHub links are the direct v0.1.20 release assets for macOS, Linux, and Windows sideloading.</p>
         </section>
 
         <section class="section-block setup-section">
           <div class="section-heading">
-            <span class="section-kicker" data-i18n="site.setupKicker"></span>
-            <h2 data-i18n="site.setupTitle"></h2>
-            <p data-i18n="site.setupBody"></p>
+            <span class="section-kicker" data-i18n="site.setupKicker">Install the OpenClaw plugin</span>
+            <h2 data-i18n="site.setupTitle">Install from ClawHub. Pair. Done.</h2>
+            <p data-i18n="site.setupBody">PrivateClaw is a ClawHub-reviewed plugin, so the official registry install works on current OpenClaw hosts with no override flags. Install, enable, restart the gateway, and pair from the CLI or from any chat channel.</p>
           </div>
-          <div class="setup-grid" id="setup-grid"></div>
+          <div class="setup-grid" id="setup-grid"><!-- prerender:setup-grid:start -->
+            <article class="setup-card setup-card-featured setup-card-recommended"><div class="setup-step-label">Recommended</div><h3>Install the plugin from ClawHub</h3><p>This is the official path. ClawHub serves the audited package, OpenClaw verifies it, and the plugin is enabled in two commands.</p><div class="setup-command-list"><pre class="setup-command"><code>openclaw plugins install clawhub:@privateclaw/privateclaw --accept-capabilities</code></pre><pre class="setup-command"><code>openclaw plugins enable privateclaw</code></pre></div><p class="setup-note">On current OpenClaw hosts the bare form `openclaw plugins install @privateclaw/privateclaw` resolves to ClawHub as well. Restart the OpenClaw gateway after enabling so it loads the plugin.</p></article>
+<article class="setup-card setup-card-fallback"><div class="setup-step-label">Then</div><h3>Restart the gateway and pair</h3><p>Restart OpenClaw, then open a pairing link from the CLI or create a room invite from any existing OpenClaw chat channel.</p><div class="setup-command-list"><pre class="setup-command"><code>openclaw privateclaw pair --open</code></pre><pre class="setup-command"><code>/privateclaw</code></pre><pre class="setup-command"><code>/privateclaw group</code></pre></div><p class="setup-note">Use `openclaw privateclaw pair --group --open` or `/privateclaw group` when you want multiple people sharing the same room.</p></article>
+<article class="setup-card setup-card-fallback"><div class="setup-step-label">Alternative</div><h3>One-command setup wizard</h3><p>If you would rather not run the plugin commands by hand, the npx wizard installs or updates the plugin, enables it, restarts the gateway, and walks you straight into pairing.</p><div class="setup-command-list"><pre class="setup-command"><code>npx -y @privateclaw/privateclaw@latest</code></pre></div><p class="setup-note">The wizard asks for single or group chat and a session duration from 30 minutes to permanent. It pulls the npm package directly, so it is also the fastest way to pick up a brand-new patch.</p></article>
+          <!-- prerender:setup-grid:end --></div>
         </section>
 
         <section class="section-block community-section">
           <div class="community-card glass-panel">
             <div>
-              <span class="section-kicker" data-i18n="site.betaKicker"></span>
-              <h2 data-i18n="site.betaTitle"></h2>
-              <p data-i18n="site.betaBody"></p>
+              <span class="section-kicker" data-i18n="site.betaKicker">Mobile apps</span>
+              <h2 data-i18n="site.betaTitle">Get Hearth Room on iPhone. Join Android testing.</h2>
+              <p data-i18n="site.betaBody">Hearth Room is now live on the App Store for iPhone, and Android closed alpha is live on Google Play. Join the Google Group first so Google Play will admit you to the Android test.</p>
             </div>
             <div class="community-actions">
               <a class="primary-button button-with-icon" href="https://groups.google.com/g/gg-studio-ai-products" target="_blank" rel="noreferrer">
                 <span class="button-icon-surface" aria-hidden="true">
                   <img src="./assets/icon-google-group.svg?v=20260329-1" alt="" class="button-icon-image" />
                 </span>
-                <span data-i18n="site.betaPrimaryCta"></span>
+                <span data-i18n="site.betaPrimaryCta">Join Android test group</span>
               </a>
               <a class="ghost-button button-with-icon" href="https://t.me/+W3RUKxEO9kIxMmZl" target="_blank" rel="noreferrer">
                 <span class="button-icon-surface" aria-hidden="true">
                   <img src="./assets/icon-telegram.svg?v=20260329-1" alt="" class="button-icon-image" />
                 </span>
-                <span data-i18n="site.betaTelegramCta"></span>
+                <span data-i18n="site.betaTelegramCta">Join the Telegram chat</span>
               </a>
-              <span class="community-footnote" data-i18n="site.betaFootnote"></span>
+              <span class="community-footnote" data-i18n="site.betaFootnote">Android closed alpha still requires Google Group membership first. iPhone users can now download Hearth Room on the App Store, and Telegram stays open for the early community.</span>
             </div>
           </div>
         </section>
@@ -347,17 +412,17 @@
       <footer class="footer-bar glass-panel">
         <div class="footer-copy">
           <strong>PrivateClaw</strong>
-          <p data-i18n="site.footerLine"></p>
-          <p class="footer-note" data-i18n="site.footerDisclaimer"></p>
+          <p data-i18n="site.footerLine">Private rooms, shared OpenClaw, and a calmer way to chat.</p>
+          <p class="footer-note" data-i18n="site.footerDisclaimer">PrivateClaw is independent and not affiliated with OpenClaw.</p>
           <div class="footer-links">
-            <a href="./privacy/" data-i18n="site.footerPrivacy"></a>
-            <a href="./terms/" data-i18n="site.footerTerms"></a>
+            <a href="./privacy/" data-i18n="site.footerPrivacy">Privacy</a>
+            <a href="./terms/" data-i18n="site.footerTerms">Terms</a>
           </div>
         </div>
         <div class="footer-meta footer-legal">
           <span>privateclaw.us</span>
-          <span data-i18n="site.footerSupport"></span>
-          <span data-i18n="site.footerCopyright"></span>
+          <span data-i18n="site.footerSupport">Android testing updates live in the Google Group.</span>
+          <span data-i18n="site.footerCopyright">Copyright GG AI Studio 2026.</span>
         </div>
       </footer>
     </div>

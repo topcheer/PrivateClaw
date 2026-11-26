@@ -1,0 +1,5 @@
+# PrivateClaw website. Search engines and AI assistants may crawl this site.
+User-agent: *
+Allow: /
+
+Sitemap: https://privateclaw.us/sitemap.xml

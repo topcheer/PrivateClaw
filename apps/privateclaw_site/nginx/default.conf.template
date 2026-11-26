@@ -5,6 +5,27 @@ server {
   root /usr/share/nginx/html;
   index index.html;
 
+  # Long-lived caching for static assets; CSS/JS carry a ?v= version query.
+  location ~* \.(?:png|jpg|jpeg|webp|svg|ico|woff2?)$ {
+    expires 30d;
+    add_header Cache-Control "public, max-age=2592000, immutable";
+    access_log off;
+    try_files $uri =404;
+  }
+
+  location ~* \.(?:css|js)$ {
+    expires 7d;
+    add_header Cache-Control "public, max-age=604800";
+    access_log off;
+    try_files $uri =404;
+  }
+
+  # HTML must always revalidate so deploys show up immediately.
+  location ~* \.html$ {
+    add_header Cache-Control "no-cache";
+    try_files $uri =404;
+  }
+
   location = /healthz {
     add_header Content-Type text/plain;
     return 200 'ok';

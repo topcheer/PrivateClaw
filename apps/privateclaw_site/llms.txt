@@ -1,0 +1,18 @@
+# PrivateClaw
+
+> PrivateClaw gives you beautiful, private rooms for the people you trust around one shared OpenClaw.
+
+PrivateClaw is an open-source, invite-only, end-to-end encrypted chat system for small trusted circles and a self-hosted AI assistant. It has two parts: a free desktop component (Windows, macOS, Linux) that runs on the user's own computer next to the OpenClaw assistant runtime and creates rooms with one-time QR invites, and Hearth Room (iOS, iPadOS, macOS, Windows, Linux, web), the client that joins those rooms to send messages, photos, voice notes and files. Messages are end-to-end encrypted; the relay only ever sees ciphertext. No account, sign-up or subscription is involved.
+
+Key facts:
+- Install the OpenClaw plugin: `npx -y @privateclaw/privateclaw@latest` (also on ClawHub as `@privateclaw/privateclaw`)
+- Run your own relay: `npx @privateclaw/privateclaw-relay` or `ghcr.io/topcheer/privateclaw-relay`
+- Apps: https://apps.apple.com/us/app/hearth-room/id6760531637 , https://apps.microsoft.com/detail/9P12LL1LT8RD , desktop builds at https://github.com/topcheer/PrivateClaw/releases (app-v* tags)
+- Source: https://github.com/topcheer/PrivateClaw (open source)
+- Default public relay: https://relay.privateclaw.us (can be self-hosted)
+
+Further reading:
+- [README](https://github.com/topcheer/PrivateClaw#readme): install, setup and architecture
+- [Provider README](https://github.com/topcheer/PrivateClaw/tree/main/packages/privateclaw-provider): CLI and bridge modes
+- [Relay README](https://github.com/topcheer/PrivateClaw/tree/main/services/relay-server): self-hosting the relay
+- [Privacy](https://privateclaw.us/privacy/): what data may be handled

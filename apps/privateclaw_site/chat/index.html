@@ -6,6 +6,7 @@
     <meta name="theme-color" content="#0b1020" />
     <meta name="description" content="PrivateClaw web chat." />
     <title>PrivateClaw Web Chat</title>
+    <link rel="canonical" href="https://privateclaw.us/chat/" />
     <link rel="icon" type="image/png" href="../assets/privateclaw_app_icon.png?v=20260314-2" />
     <link rel="stylesheet" href="../styles.css?v=20260329-2" />
   </head>
@@ -24,7 +25,7 @@
             </span>
             <span class="brand-copy">
               <strong>PrivateClaw</strong>
-              <span data-i18n="chat.headerTagline"></span>
+              <span data-i18n="chat.headerTagline">Web chat</span>
             </span>
           </a>
         </div>
@@ -32,15 +33,15 @@
         <div class="chat-header-actions">
           <a class="ghost-button subtle-button icon-link" href="https://github.com/topcheer/PrivateClaw" target="_blank" rel="noreferrer">
             <img src="../assets/icon-github.svg?v=20260329-1" alt="" class="icon-link-image" />
-            <span class="sr-only" data-i18n="site.navGithub"></span>
+            <span class="sr-only" data-i18n="site.navGithub">GitHub</span>
           </a>
           <span class="status-pill" id="status-pill"></span>
           <label class="locale-picker" for="chat-locale-select">
-            <span class="sr-only" data-i18n="site.languageLabel"></span>
+            <span class="sr-only" data-i18n="site.languageLabel">Language</span>
             <select id="chat-locale-select" aria-label="Language"></select>
           </label>
           <button id="disconnect-button" class="ghost-button subtle-button hidden" type="button" hidden>
-            <span data-i18n="chat.disconnectButton"></span>
+            <span data-i18n="chat.disconnectButton">Disconnect</span>
           </button>
         </div>
       </header>
@@ -48,96 +49,96 @@
       <main class="chat-main">
         <section class="session-sidebar glass-panel" id="session-sidebar">
           <div class="desktop-note hidden" id="desktop-note" hidden>
-            <strong data-i18n="chat.desktopNoteTitle"></strong>
-            <p data-i18n="chat.desktopNoteBody"></p>
+            <strong data-i18n="chat.desktopNoteTitle">Desktop works too</strong>
+            <p data-i18n="chat.desktopNoteBody">This room is fully usable on larger screens as well. On desktop, pasting the invite or choosing a saved QR image is often the quickest way to join.</p>
           </div>
 
           <div class="session-card-header">
             <div>
-              <span class="section-kicker" data-i18n="chat.connectKicker"></span>
-              <h1 data-i18n="chat.connectTitle"></h1>
-              <p data-i18n="chat.connectBody"></p>
+              <span class="section-kicker" data-i18n="chat.connectKicker">Secure pairing</span>
+              <h1 data-i18n="chat.connectTitle">Paste your PrivateClaw invite.</h1>
+              <p data-i18n="chat.connectBody">Paste the invite text, QR payload, or full announcement message from OpenClaw to enter the room.</p>
             </div>
             <button id="toggle-invite-button" class="ghost-button subtle-button hidden" type="button" hidden>
-              <span data-i18n="chat.changeInviteButton"></span>
+              <span data-i18n="chat.changeInviteButton">Use another invite</span>
             </button>
           </div>
 
           <div class="status-panel" id="status-panel">
             <div class="status-panel-icon">&#128274;</div>
             <div>
-              <div class="status-panel-title" data-i18n="chat.statusPanelTitle"></div>
+              <div class="status-panel-title" data-i18n="chat.statusPanelTitle">End-to-end encrypted</div>
               <div class="status-panel-copy" id="status-copy"></div>
             </div>
           </div>
 
           <form id="connect-form" class="connect-form">
-            <label class="field-label" for="invite-input" data-i18n="chat.inviteInputLabel"></label>
+            <label class="field-label" for="invite-input" data-i18n="chat.inviteInputLabel">Invite</label>
             <textarea id="invite-input" rows="4" spellcheck="false"></textarea>
-            <p class="field-help" data-i18n="chat.inviteInputHelp"></p>
+            <p class="field-help" data-i18n="chat.inviteInputHelp">You can paste a raw privateclaw:// link, a base64 payload, JSON, or even a full message that contains the invite.</p>
             <div class="connect-aux-row">
               <button id="scan-button" class="ghost-button" type="button">
-                <span data-i18n="chat.scanButton"></span>
+                <span data-i18n="chat.scanButton">Scan QR</span>
               </button>
               <button id="scan-image-button" class="ghost-button" type="button">
-                <span data-i18n="chat.scanImageButton"></span>
+                <span data-i18n="chat.scanImageButton">Use QR image</span>
               </button>
               <input id="invite-scan-input" type="file" accept="image/*" hidden />
             </div>
-            <p class="field-help" id="scan-help" data-i18n="chat.scanHelp"></p>
+            <p class="field-help" id="scan-help" data-i18n="chat.scanHelp">Use your camera on supported browsers, or choose a QR screenshot from your device.</p>
             <button class="primary-button full-width" id="connect-button" type="submit">
-              <span data-i18n="chat.connectButton"></span>
+              <span data-i18n="chat.connectButton">Connect securely</span>
             </button>
           </form>
 
           <div class="session-meta hidden" id="session-meta" hidden>
             <div class="meta-grid">
               <div class="meta-item">
-                <span class="meta-label" data-i18n="chat.providerLabel"></span>
+                <span class="meta-label" data-i18n="chat.providerLabel">Provider</span>
                 <strong id="provider-label">-</strong>
               </div>
               <div class="meta-item">
-                <span class="meta-label" data-i18n="chat.expiresLabel"></span>
+                <span class="meta-label" data-i18n="chat.expiresLabel">Expires</span>
                 <strong id="expires-label">-</strong>
               </div>
               <div class="meta-item">
-                <span class="meta-label" data-i18n="chat.modeLabel"></span>
+                <span class="meta-label" data-i18n="chat.modeLabel">Mode</span>
                 <strong id="mode-label">-</strong>
               </div>
               <div class="meta-item">
-                <span class="meta-label" data-i18n="chat.relayLabel"></span>
+                <span class="meta-label" data-i18n="chat.relayLabel">Relay</span>
                 <strong id="relay-label">-</strong>
               </div>
               <div class="meta-item">
-                <span class="meta-label" data-i18n="chat.identityLabel"></span>
+                <span class="meta-label" data-i18n="chat.identityLabel">Identity</span>
                 <strong id="identity-label">-</strong>
               </div>
             </div>
             <div class="participant-section">
               <div class="participant-header">
-                <span data-i18n="chat.participantsLabel"></span>
+                <span data-i18n="chat.participantsLabel">Participants</span>
                 <span class="participant-count" id="participant-count">0</span>
               </div>
               <div class="participant-chips" id="participant-chips"></div>
             </div>
           </div>
 
-          <a class="ghost-button full-width beta-link" href="https://groups.google.com/g/gg-studio-ai-products" target="_blank" rel="noreferrer" data-i18n="chat.betaGroupButton"></a>
+          <a class="ghost-button full-width beta-link" href="https://groups.google.com/g/gg-studio-ai-products" target="_blank" rel="noreferrer" data-i18n="chat.betaGroupButton">Join the beta Google Group</a>
         </section>
 
         <section class="chat-card glass-panel">
           <div class="messages-scroll" id="messages-scroll">
             <div class="empty-state" id="empty-state">
               <div class="empty-icon">&#10024;</div>
-              <h2 data-i18n="chat.emptyTitle"></h2>
-              <p data-i18n="chat.emptyBody"></p>
+              <h2 data-i18n="chat.emptyTitle">Your private room will appear here</h2>
+              <p data-i18n="chat.emptyBody">Once connected, messages, slash commands, and media from OpenClaw stay inside this encrypted session.</p>
             </div>
             <div class="message-list" id="message-list"></div>
           </div>
 
           <div class="draft-strip hidden" id="draft-strip" hidden>
             <div class="draft-strip-header">
-              <span data-i18n="chat.draftAttachmentsLabel"></span>
+              <span data-i18n="chat.draftAttachmentsLabel">Ready to send</span>
             </div>
             <div class="draft-chip-row" id="draft-chip-row"></div>
           </div>
@@ -148,7 +149,7 @@
             <button id="command-button" class="icon-button" type="button" aria-label="Slash commands">&#47;</button>
             <textarea id="composer-input" rows="1" spellcheck="true"></textarea>
             <button id="send-button" class="primary-button send-button" type="submit">
-              <span data-i18n="chat.sendButton"></span>
+              <span data-i18n="chat.sendButton">Send</span>
             </button>
           </form>
         </section>
@@ -158,7 +159,7 @@
     <div class="sheet-overlay hidden" id="command-sheet" hidden>
       <div class="sheet-card glass-panel">
         <div class="sheet-header">
-          <strong data-i18n="chat.commandSheetTitle"></strong>
+          <strong data-i18n="chat.commandSheetTitle">Slash commands</strong>
           <button id="close-command-sheet" class="ghost-button subtle-button" type="button">Close</button>
         </div>
         <div class="command-list" id="command-list"></div>
@@ -169,21 +170,21 @@
       <div class="sheet-card glass-panel scanner-sheet-card">
         <div class="sheet-header">
           <div>
-            <strong data-i18n="chat.scannerTitle"></strong>
-            <p class="field-help scanner-body" data-i18n="chat.scannerBody"></p>
+            <strong data-i18n="chat.scannerTitle">Scan a PrivateClaw QR</strong>
+            <p class="field-help scanner-body" data-i18n="chat.scannerBody">Point your camera at a PrivateClaw invite QR. The room will open as soon as it is recognized.</p>
           </div>
           <button id="close-scanner-sheet" class="ghost-button subtle-button" type="button">
-            <span data-i18n="chat.scannerCloseButton"></span>
+            <span data-i18n="chat.scannerCloseButton">Close</span>
           </button>
         </div>
         <div class="scanner-preview-frame">
           <video id="scanner-video" class="scanner-video" playsinline muted></video>
           <div class="scanner-guides" aria-hidden="true"></div>
         </div>
-        <p class="scanner-status" id="scanner-status" data-i18n="chat.scannerStatusStarting"></p>
+        <p class="scanner-status" id="scanner-status" data-i18n="chat.scannerStatusStarting">Opening camera…</p>
         <div class="scanner-actions">
           <button id="scanner-upload-button" class="ghost-button full-width" type="button">
-            <span data-i18n="chat.scanImageButton"></span>
+            <span data-i18n="chat.scanImageButton">Use QR image</span>
           </button>
         </div>
       </div>

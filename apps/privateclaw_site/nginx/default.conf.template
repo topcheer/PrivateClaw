@@ -5,6 +5,11 @@ server {
   root /usr/share/nginx/html;
   index index.html;
 
+  # Directory redirects (e.g. /zh-CN -> /zh-CN/) must stay relative: the
+  # container listens on an internal port behind the proxy.
+  absolute_redirect off;
+  port_in_redirect off;
+
   # Long-lived caching for static assets; CSS/JS carry a ?v= version query.
   location ~* \.(?:png|jpg|jpeg|webp|svg|ico|woff2?)$ {
     expires 30d;

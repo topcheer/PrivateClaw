@@ -18,7 +18,7 @@ Provider 生成的邀请说明、`openclaw privateclaw pair` 的终端输出，�
 
 客户端下载入口：
 
-- iOS App Store（YourClaw）：https://apps.apple.com/us/app/yourclaw/id6760531637
+- iOS App Store（(Hearth Room)）：https://apps.apple.com/us/app/hearth-room/id6760531637
 - Android 封闭 alpha 测试群组（Google Group）：https://groups.google.com/g/gg-studio-ai-products
 - Android 封闭 alpha 测试地址（Google Play）：https://play.google.com/store/apps/details?id=gg.ai.privateclaw
 - 桌面版 GitHub Releases（Windows / macOS / Linux，请选择 `app-v*`）：https://github.com/topcheer/PrivateClaw/releases

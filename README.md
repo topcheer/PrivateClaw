@@ -16,7 +16,7 @@ Join the community on Telegram: [PrivateClaw Telegram group](https://t.me/+W3RUK
 
 Mobile app access:
 
-- iOS App Store (YourClaw): https://apps.apple.com/us/app/yourclaw/id6760531637
+- iOS App Store ((Hearth Room)): https://apps.apple.com/us/app/hearth-room/id6760531637
 - Android closed alpha tester group: https://groups.google.com/g/gg-studio-ai-products
 - Android closed alpha (Google Play): https://play.google.com/store/apps/details?id=gg.ai.privateclaw
 

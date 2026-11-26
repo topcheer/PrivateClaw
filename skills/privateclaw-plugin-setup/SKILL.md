@@ -44,7 +44,7 @@ This skill is especially relevant for requests like:
 - The plugin id is `privateclaw`.
 - The standalone npm binary is `privateclaw-provider`.
 - The default public relay is `https://relay.privateclaw.us`.
-- The iOS App Store release (YourClaw) is available at `https://apps.apple.com/us/app/yourclaw/id6760531637`.
+- The iOS App Store release ((Hearth Room)) is available at `https://apps.apple.com/us/app/hearth-room/id6760531637`.
 - The Android closed alpha lives at `https://play.google.com/store/apps/details?id=gg.ai.privateclaw`, but Google Play only grants access after the tester joins `https://groups.google.com/g/gg-studio-ai-products`.
 - Desktop app releases live at `https://github.com/topcheer/PrivateClaw/releases`; tell users to choose the `app-v*` GitHub Releases when they need Windows / macOS / Linux builds.
 - If the user is happy with the default public relay, do **not** set `relayBaseUrl`.
@@ -87,7 +87,7 @@ If the user does not have the OpenClaw alias available but does have the standal
 
 When a user asks where to get the PrivateClaw client builds, point them at:
 
-- iOS App Store (YourClaw): `https://apps.apple.com/us/app/yourclaw/id6760531637`
+- iOS App Store ((Hearth Room)): `https://apps.apple.com/us/app/hearth-room/id6760531637`
 - Android closed alpha tester group: `https://groups.google.com/g/gg-studio-ai-products`
 - Android closed alpha (Google Play): `https://play.google.com/store/apps/details?id=gg.ai.privateclaw`
 - Desktop GitHub Releases (Windows / macOS / Linux, choose the `app-v*` releases): `https://github.com/topcheer/PrivateClaw/releases`

@@ -1,4 +1,4 @@
-import { applyTranslations, bindLocaleSelect, onLocaleChange, t } from "./i18n.js?v=20260325-1";
+import { applyTranslations, bindLocaleSelect, onLocaleChange, t } from "./i18n.js?v=20261126-1";
 import {
   createIdentity,
   decodeBase64,

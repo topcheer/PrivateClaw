@@ -11,6 +11,10 @@ Key facts:
 - Source: https://github.com/topcheer/PrivateClaw (open source)
 - Default public relay: https://relay.privateclaw.us (can be self-hosted)
 
+Localized pages:
+- 简体中文: https://privateclaw.us/zh-CN/ (web chat: https://privateclaw.us/zh-CN/chat/ , privacy: https://privateclaw.us/zh-CN/privacy/ , terms: https://privateclaw.us/zh-CN/terms/ )
+- 繁體中文: https://privateclaw.us/zh-Hant/ (web chat: https://privateclaw.us/zh-Hant/chat/ , privacy: https://privateclaw.us/zh-Hant/privacy/ , terms: https://privateclaw.us/zh-Hant/terms/ )
+
 Further reading:
 - [README](https://github.com/topcheer/PrivateClaw#readme): install, setup and architecture
 - [Provider README](https://github.com/topcheer/PrivateClaw/tree/main/packages/privateclaw-provider): CLI and bridge modes

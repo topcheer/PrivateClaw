@@ -1,4 +1,4 @@
-import { applyTranslations, bindLocaleSelect, getValue, onLocaleChange, t } from "./i18n.js?v=20261124-9";
+import { applyTranslations, bindLocaleSelect, getValue, localeFromPath, localizedPath, normalizeLocale, onLocaleChange, t } from "./i18n.js?v=20261126-1";
 
 const localeSelect = document.getElementById("locale-select");
 const webEntry = document.getElementById("web-entry");
@@ -229,6 +229,46 @@ window.addEventListener("resize", renderWebEntry);
       card.style.transform = "";
     });
   }
+})();
+
+// --- Locale suggestion: "/" is always English (one language per URL), so offer
+// the localized page once to visitors whose browser prefers another language.
+(() => {
+  const current = localeFromPath(window.location.pathname);
+  const preferred = normalizeLocale(navigator.language || "");
+  if (current !== "en" || !preferred || preferred === "en") {
+    return;
+  }
+  const storageKey = `privateclaw.site.localeHint.${preferred}`;
+  try {
+    if (window.localStorage.getItem(storageKey)) {
+      return;
+    }
+  } catch {
+    return;
+  }
+  const labels = { "zh-CN": "本站有简体中文版本", "zh-Hant": "本站有繁體中文版本" };
+  const hint = document.createElement("div");
+  hint.className = "locale-hint";
+  hint.setAttribute("role", "status");
+  const link = document.createElement("a");
+  link.href = localizedPath(preferred);
+  link.hreflang = preferred;
+  link.textContent = labels[preferred] ?? preferred;
+  const close = document.createElement("button");
+  close.type = "button";
+  close.setAttribute("aria-label", "Dismiss");
+  close.textContent = "×";
+  close.addEventListener("click", () => {
+    try {
+      window.localStorage.setItem(storageKey, "1");
+    } catch {
+      // storage unavailable: just hide it for this visit
+    }
+    hint.remove();
+  });
+  hint.append(link, close);
+  document.body.append(hint);
 })();
 
 onLocaleChange(renderPage);

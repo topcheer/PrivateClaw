@@ -19,6 +19,7 @@ const BUNDLES = {
       showcase4Title: "Your OpenClaw, in the loop",
       showcase4Body: "The assistant you already run at home answers inside the session, from trip plans to files, with its usual memory and tools.",
       documentTitle: "PrivateClaw | Private rooms for your OpenClaw",
+      metaDescription: "PrivateClaw gives you beautiful, private rooms for the people you trust around one shared OpenClaw: end-to-end encrypted chat on iPhone, Mac, Windows, Linux and the web, with your own AI assistant inside.",
       brandTagline: "Private rooms for your OpenClaw",
       languageLabel: "Language",
       navGithub: "GitHub",
@@ -204,6 +205,7 @@ const BUNDLES = {
     },
     chat: {
       documentTitle: "PrivateClaw Web Chat",
+      metaDescription: "Open a PrivateClaw room right in your browser: paste an invite link or scan a QR code to join an end-to-end encrypted chat with your OpenClaw assistant.",
       headerTagline: "Web chat",
       disconnectButton: "Disconnect",
       desktopNoteTitle: "Desktop works too",
@@ -346,6 +348,7 @@ const BUNDLES = {
       showcase4Title: "你自己的 OpenClaw 在场",
       showcase4Body: "你家里已经在运行的助手直接在会话里回答，从行程规划到文件，保留它原有的记忆与工具。",
       documentTitle: "PrivateClaw | 给 OpenClaw 的私密聊天室",
+      metaDescription: "PrivateClaw 把一套共享的 OpenClaw 变成只属于你信任的人的私密房间：端到端加密聊天，支持 iPhone、Mac、Windows、Linux 与网页，你自己的 AI 助手也在房间里。",
       brandTagline: "给 OpenClaw 的私密聊天室",
       languageLabel: "语言",
       navGithub: "GitHub",
@@ -528,6 +531,7 @@ const BUNDLES = {
     },
     chat: {
       documentTitle: "PrivateClaw 网页聊天",
+      metaDescription: "直接在浏览器里打开 PrivateClaw 房间：粘贴邀请链接或扫描二维码，即可加入与你自己的 OpenClaw 助手端到端加密聊天。",
       headerTagline: "网页聊天",
       disconnectButton: "断开连接",
       desktopNoteTitle: "桌面端也可以直接使用",
@@ -658,6 +662,7 @@ const BUNDLES = {
       showcase4Title: "你自己的 OpenClaw 在場",
       showcase4Body: "你家裡已經在執行的助手直接在會話裡回答，從行程規劃到檔案，保留它原有的記憶與工具。",
       documentTitle: "PrivateClaw | 給 OpenClaw 的私密聊天室",
+      metaDescription: "PrivateClaw 把一套共享的 OpenClaw 變成只屬於你信任的人的私密房間：端對端加密聊天，支援 iPhone、Mac、Windows、Linux 與網頁，你自己的 AI 助理也在房間裡。",
       brandTagline: "給 OpenClaw 的私密聊天室",
       languageLabel: "語言",
       navGithub: "GitHub",
@@ -840,6 +845,7 @@ const BUNDLES = {
     },
     chat: {
       documentTitle: "PrivateClaw 網頁聊天",
+      metaDescription: "直接在瀏覽器裡打開 PrivateClaw 房間：貼上邀請連結或掃描 QR 碼，即可加入與你自己的 OpenClaw 助理端對端加密聊天。",
       headerTagline: "網頁聊天",
       disconnectButton: "中斷連線",
       desktopNoteTitle: "桌面端也可以直接使用",
@@ -954,6 +960,8 @@ const BUNDLES = {
 
 const LOCALE_KEY = "privateclaw.site.locale";
 const LOCALE_ORDER = ["en", "zh-CN", "zh-Hant"];
+const LOCALE_PREFIXES = { "zh-CN": "/zh-CN/", "zh-Hant": "/zh-Hant/" };
+
 const localeListeners = new Set();
 let currentLocale = detectLocale();
 
@@ -974,26 +982,32 @@ function writeStoredLocale(locale) {
   }
 }
 
-function detectLocale() {
-  const stored = normalizeLocale(readStoredLocale());
-  if (stored) {
-    return stored;
-  }
-
-  const requested = [
-    ...(navigator.languages || []),
-    navigator.language || "en",
-  ];
-  for (const locale of requested) {
-    const normalized = normalizeLocale(locale);
-    if (normalized) {
-      return normalized;
+// The URL is the source of truth for the page language: "/" is English,
+// "/zh-CN/..." and "/zh-Hant/..." serve the localized pages (one language per
+// URL, as crawlers and hreflang expect). The stored or browser locale is only
+// used to suggest the localized version, never to swap the page in place.
+export function localeFromPath(pathname) {
+  for (const [locale, prefix] of Object.entries(LOCALE_PREFIXES)) {
+    if (pathname === prefix.slice(0, -1) || pathname.startsWith(prefix)) {
+      return locale;
     }
   }
   return "en";
 }
 
-function normalizeLocale(input) {
+// Path of the same page in another locale, e.g. /privacy/ -> /zh-Hant/privacy/.
+export function localizedPath(locale, pathname = window.location.pathname) {
+  const current = localeFromPath(pathname);
+  const rest =
+    current === "en" ? pathname : pathname.slice(LOCALE_PREFIXES[current].length - 1);
+  return locale === "en" ? rest : `${LOCALE_PREFIXES[locale].slice(0, -1)}${rest}`;
+}
+
+function detectLocale() {
+  return localeFromPath(window.location.pathname);
+}
+
+export function normalizeLocale(input) {
   if (typeof input !== "string" || input.trim() === "") {
     return null;
   }
@@ -1050,6 +1064,12 @@ export function getLocale() {
 
 export function setLocale(locale) {
   const nextLocale = normalizeLocale(locale) || "en";
+  writeStoredLocale(nextLocale);
+  const target = localizedPath(nextLocale);
+  if (target !== window.location.pathname) {
+    window.location.assign(target);
+    return;
+  }
   if (nextLocale === currentLocale) {
     return;
   }

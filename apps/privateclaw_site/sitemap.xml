@@ -1,27 +1,123 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
     <loc>https://privateclaw.us/</loc>
     <lastmod>2026-11-26</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
+    <xhtml:link rel="alternate" hreflang="en" href="https://privateclaw.us/" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://privateclaw.us/zh-CN/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hant" href="https://privateclaw.us/zh-Hant/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://privateclaw.us/" />
+  </url>
+  <url>
+    <loc>https://privateclaw.us/zh-CN/</loc>
+    <lastmod>2026-11-26</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+    <xhtml:link rel="alternate" hreflang="en" href="https://privateclaw.us/" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://privateclaw.us/zh-CN/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hant" href="https://privateclaw.us/zh-Hant/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://privateclaw.us/" />
+  </url>
+  <url>
+    <loc>https://privateclaw.us/zh-Hant/</loc>
+    <lastmod>2026-11-26</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+    <xhtml:link rel="alternate" hreflang="en" href="https://privateclaw.us/" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://privateclaw.us/zh-CN/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hant" href="https://privateclaw.us/zh-Hant/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://privateclaw.us/" />
   </url>
   <url>
     <loc>https://privateclaw.us/chat/</loc>
     <lastmod>2026-11-26</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
+    <xhtml:link rel="alternate" hreflang="en" href="https://privateclaw.us/chat/" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://privateclaw.us/zh-CN/chat/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hant" href="https://privateclaw.us/zh-Hant/chat/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://privateclaw.us/chat/" />
+  </url>
+  <url>
+    <loc>https://privateclaw.us/zh-CN/chat/</loc>
+    <lastmod>2026-11-26</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+    <xhtml:link rel="alternate" hreflang="en" href="https://privateclaw.us/chat/" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://privateclaw.us/zh-CN/chat/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hant" href="https://privateclaw.us/zh-Hant/chat/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://privateclaw.us/chat/" />
+  </url>
+  <url>
+    <loc>https://privateclaw.us/zh-Hant/chat/</loc>
+    <lastmod>2026-11-26</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+    <xhtml:link rel="alternate" hreflang="en" href="https://privateclaw.us/chat/" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://privateclaw.us/zh-CN/chat/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hant" href="https://privateclaw.us/zh-Hant/chat/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://privateclaw.us/chat/" />
   </url>
   <url>
     <loc>https://privateclaw.us/privacy/</loc>
     <lastmod>2026-03-14</lastmod>
     <changefreq>yearly</changefreq>
     <priority>0.3</priority>
+    <xhtml:link rel="alternate" hreflang="en" href="https://privateclaw.us/privacy/" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://privateclaw.us/zh-CN/privacy/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hant" href="https://privateclaw.us/zh-Hant/privacy/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://privateclaw.us/privacy/" />
+  </url>
+  <url>
+    <loc>https://privateclaw.us/zh-CN/privacy/</loc>
+    <lastmod>2026-03-14</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
+    <xhtml:link rel="alternate" hreflang="en" href="https://privateclaw.us/privacy/" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://privateclaw.us/zh-CN/privacy/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hant" href="https://privateclaw.us/zh-Hant/privacy/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://privateclaw.us/privacy/" />
+  </url>
+  <url>
+    <loc>https://privateclaw.us/zh-Hant/privacy/</loc>
+    <lastmod>2026-03-14</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
+    <xhtml:link rel="alternate" hreflang="en" href="https://privateclaw.us/privacy/" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://privateclaw.us/zh-CN/privacy/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hant" href="https://privateclaw.us/zh-Hant/privacy/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://privateclaw.us/privacy/" />
   </url>
   <url>
     <loc>https://privateclaw.us/terms/</loc>
     <lastmod>2026-03-14</lastmod>
     <changefreq>yearly</changefreq>
     <priority>0.3</priority>
+    <xhtml:link rel="alternate" hreflang="en" href="https://privateclaw.us/terms/" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://privateclaw.us/zh-CN/terms/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hant" href="https://privateclaw.us/zh-Hant/terms/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://privateclaw.us/terms/" />
+  </url>
+  <url>
+    <loc>https://privateclaw.us/zh-CN/terms/</loc>
+    <lastmod>2026-03-14</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
+    <xhtml:link rel="alternate" hreflang="en" href="https://privateclaw.us/terms/" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://privateclaw.us/zh-CN/terms/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hant" href="https://privateclaw.us/zh-Hant/terms/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://privateclaw.us/terms/" />
+  </url>
+  <url>
+    <loc>https://privateclaw.us/zh-Hant/terms/</loc>
+    <lastmod>2026-03-14</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
+    <xhtml:link rel="alternate" hreflang="en" href="https://privateclaw.us/terms/" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://privateclaw.us/zh-CN/terms/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hant" href="https://privateclaw.us/zh-Hant/terms/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://privateclaw.us/terms/" />
   </url>
 </urlset>

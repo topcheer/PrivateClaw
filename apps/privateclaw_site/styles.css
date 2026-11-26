@@ -2212,3 +2212,49 @@ html {
   }
   [data-reveal], .showcase-card { opacity: 1; transform: none; transition: none; }
 }
+
+/* FAQ */
+.faq-list {
+  display: grid;
+  gap: 12px;
+  max-width: 860px;
+}
+
+.faq-item {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.045);
+  backdrop-filter: blur(12px);
+  padding: 0 20px;
+}
+
+.faq-item summary {
+  cursor: pointer;
+  padding: 18px 0;
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: var(--text);
+  list-style: none;
+}
+
+.faq-item summary::-webkit-details-marker {
+  display: none;
+}
+
+.faq-item summary::before {
+  content: "+";
+  display: inline-block;
+  width: 1.4em;
+  color: var(--accent-2);
+  font-weight: 700;
+}
+
+.faq-item[open] summary::before {
+  content: "\2212";
+}
+
+.faq-item p {
+  margin: 0 0 18px 1.4em;
+  color: var(--text-soft);
+  line-height: 1.6;
+}

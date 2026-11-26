@@ -67,11 +67,13 @@ function text(bundle, keyPath) {
   return typeof value === "string" ? value : undefined;
 }
 
-// Fill <tag ... data-i18n="key"></tag> nodes that are still empty.
+// Fill <tag ... data-i18n="key">...</tag> nodes. The runtime sets textContent
+// from the same bundle, so overwriting is always correct and keeps the static
+// copy in sync when the copy changes.
 function fillI18n(html, bundle) {
   return html.replace(
-    /<([a-zA-Z][\w-]*)([^>]*\sdata-i18n="([^"]+)"[^>]*)>(\s*)<\/\1>/g,
-    (match, tag, attrs, keyPath, inner) => {
+    /<([a-zA-Z][\w-]*)([^>]*\sdata-i18n="([^"]+)"[^>]*)>([\s\S]*?)<\/\1>/g,
+    (match, tag, attrs, keyPath) => {
       const value = text(bundle, keyPath.trim());
       return value === undefined ? match : `<${tag}${attrs}>${esc(value)}</${tag}>`;
     },
@@ -185,6 +187,27 @@ function writeIfChanged(relativePath, before, after) {
   html = setInnerById(html, "scenario-grid", `\n            ${renderCards(get(en, "site.scenarios"), "scenario-card")}\n          `);
   html = setInnerById(html, "setup-grid", `\n            ${renderSetupSteps(get(en, "site.setupSteps"))}\n          `);
   html = setTitle(html, text(en, "site.documentTitle") ?? "PrivateClaw");
+  // FAQPage structured data, generated from the same bundle as the visible
+  // text so both stay word-for-word identical (a Google requirement).
+  const faq = [];
+  for (let i = 1; text(en, `site.faqQ${i}`) !== undefined; i += 1) {
+    const question = text(en, `site.faqQ${i}`);
+    const answer = text(en, `site.faqA${i}`);
+    if (answer !== undefined) faq.push({ "@type": "Question", name: question, acceptedAnswer: { "@type": "Answer", text: answer } });
+  }
+  const faqJson = JSON.stringify(
+    { "@context": "https://schema.org", "@type": "FAQPage", mainEntity: faq },
+    null,
+    2,
+  ).replace(/</g, "&lt;");
+  const faqStart = "<!-- prerender:faq-jsonld:start -->";
+  const faqEnd = "<!-- prerender:faq-jsonld:end -->";
+  const faqBlock = `${faqStart}\n    <script type="application/ld+json">\n${faqJson}\n    </script>\n    ${faqEnd}`;
+  if (html.includes(faqStart)) {
+    const a = html.indexOf(faqStart);
+    const b = html.indexOf(faqEnd, a);
+    html = `${html.slice(0, a)}${faqBlock}${html.slice(b + faqEnd.length)}`;
+  }
   writeIfChanged(file, before, html);
 }
 

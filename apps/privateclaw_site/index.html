@@ -68,6 +68,64 @@
         ]
       }
     </script>
+    <!-- prerender:faq-jsonld:start -->
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "What is Hearth Room?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Hearth Room is the PrivateClaw client: an app for iPhone, iPad, Mac, Windows, Linux and the web that joins end-to-end encrypted chat rooms created by PrivateClaw on your computer."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is it free?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. PrivateClaw, the OpenClaw plugin and Hearth Room are open source and free to use, with no account, subscription or in-app purchase."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How private is it?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Messages, photos, voice notes and files are end-to-end encrypted between the members of a room. The relay only routes ciphertext and never sees the content or the keys."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How do rooms and invites work?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "A room is created with a one-time QR code or invite link and can be set to expire after a few hours, days or a longer period. Anyone with the invite can join until it expires or is revoked."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Which platforms are supported?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Hearth Room runs on iOS and iPadOS, macOS, Windows and Linux, plus a web chat in the browser. An Android version is in closed testing."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How does it relate to OpenClaw?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "PrivateClaw is a plugin for OpenClaw, the assistant runtime you run on your own computer. It creates the rooms, issues the invites and lets your OpenClaw assistant answer inside them."
+      }
+    }
+  ]
+}
+    </script>
+    <!-- prerender:faq-jsonld:end -->
     <title>PrivateClaw | Private rooms for your OpenClaw</title>
     <link rel="icon" type="image/png" href="./assets/privateclaw_app_icon.png?v=20260314-2" />
     <link rel="stylesheet" href="./styles.css?v=20261124-6" />
@@ -367,7 +425,7 @@
               </a>
             </div>
           </div>
-          <p class="community-footnote" data-i18n="site.desktopDownloadsNote">The Microsoft Store link is the live listing (Windows 10/11, auto-updates). The GitHub links are the direct v0.1.20 release assets for macOS, Linux, and Windows sideloading.</p>
+          <p class="community-footnote" data-i18n="site.desktopDownloadsNote">The Microsoft Store link is the live listing (Windows 10/11, auto-updates). The GitHub links are the direct v0.1.21 release assets for macOS, Linux, and Windows sideloading.</p>
         </section>
 
         <section class="section-block setup-section">
@@ -405,6 +463,38 @@
               </a>
               <span class="community-footnote" data-i18n="site.betaFootnote">Android closed alpha still requires Google Group membership first. iPhone users can now download Hearth Room on the App Store, and Telegram stays open for the early community.</span>
             </div>
+          </div>
+        </section>
+
+        <section class="section-block faq-section" id="faq">
+          <span class="section-kicker" data-i18n="site.faqKicker">FAQ</span>
+          <h2 data-i18n="site.faqTitle">Questions people ask</h2>
+          <p data-i18n="site.faqIntro">Short answers about what Hearth Room and PrivateClaw are, how they work and what they cost.</p>
+          <div class="faq-list">
+          <details class="faq-item" open>
+            <summary data-i18n="site.faqQ1">What is Hearth Room?</summary>
+            <p data-i18n="site.faqA1">Hearth Room is the PrivateClaw client: an app for iPhone, iPad, Mac, Windows, Linux and the web that joins end-to-end encrypted chat rooms created by PrivateClaw on your computer.</p>
+          </details>
+          <details class="faq-item">
+            <summary data-i18n="site.faqQ2">Is it free?</summary>
+            <p data-i18n="site.faqA2">Yes. PrivateClaw, the OpenClaw plugin and Hearth Room are open source and free to use, with no account, subscription or in-app purchase.</p>
+          </details>
+          <details class="faq-item">
+            <summary data-i18n="site.faqQ3">How private is it?</summary>
+            <p data-i18n="site.faqA3">Messages, photos, voice notes and files are end-to-end encrypted between the members of a room. The relay only routes ciphertext and never sees the content or the keys.</p>
+          </details>
+          <details class="faq-item">
+            <summary data-i18n="site.faqQ4">How do rooms and invites work?</summary>
+            <p data-i18n="site.faqA4">A room is created with a one-time QR code or invite link and can be set to expire after a few hours, days or a longer period. Anyone with the invite can join until it expires or is revoked.</p>
+          </details>
+          <details class="faq-item">
+            <summary data-i18n="site.faqQ5">Which platforms are supported?</summary>
+            <p data-i18n="site.faqA5">Hearth Room runs on iOS and iPadOS, macOS, Windows and Linux, plus a web chat in the browser. An Android version is in closed testing.</p>
+          </details>
+          <details class="faq-item">
+            <summary data-i18n="site.faqQ6">How does it relate to OpenClaw?</summary>
+            <p data-i18n="site.faqA6">PrivateClaw is a plugin for OpenClaw, the assistant runtime you run on your own computer. It creates the rooms, issues the invites and lets your OpenClaw assistant answer inside them.</p>
+          </details>
           </div>
         </section>
       </main>

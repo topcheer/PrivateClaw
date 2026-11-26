@@ -1,4 +1,10 @@
 # PrivateClaw website. Search engines and AI assistants may crawl this site.
+#
+# Content-Signal (https://contentsignals.org/): building a search index and
+# using this content as retrieval input for AI answers is granted; training or
+# fine-tuning models on it is not.
+Content-Signal: search=yes,ai-input=yes,ai-train=no,use=reference
+
 User-agent: *
 Allow: /
 

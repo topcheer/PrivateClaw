@@ -14,7 +14,7 @@ import fs from "fs";
 import path from "path";
 import { execSync, execFileSync } from "child_process";
 import { fileURLToPath } from "url";
-import { resolveWindowsStoreVersion } from "resolve-windows-store-version.mjs";
+import { resolveWindowsStoreVersion } from "./resolve-windows-store-version.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
